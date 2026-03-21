@@ -1,0 +1,217 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    /**
+     * Assumption for rules:
+     * - profileId == request.auth.uid
+     * - membership doc id = "{communityId}_{profileId}"
+     *
+     * If you use UUID profile IDs instead, add a profile->uid mapping strategy
+     * that can be checked in rules.
+     */
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function uid() {
+      return request.auth.uid;
+    }
+
+    function isOwnProfile(profileId) {
+      return signedIn() && uid() == profileId;
+    }
+
+    function membershipIdFor(communityId, profileId) {
+      return communityId + "_" + profileId;
+    }
+
+    function isCommunityMember(communityId) {
+      return signedIn() &&
+        exists(
+          /databases/$(database)/documents/memberships/$(membershipIdFor(communityId, uid()))
+        );
+    }
+
+    function keysOnly(allowed) {
+      return request.resource.data.keys().hasOnly(allowed);
+    }
+
+    function hasProfileKeys() {
+      return keysOnly([
+        "id",
+        "googleAuthId",
+        "displayName",
+        "profilePhotoUrl",
+        "overallOdds",
+        "ageConfirmed21PlusAt",
+        "onboardingCompleteAt",
+        "createdAt",
+        "updatedAt"
+      ]);
+    }
+
+    function hasCommunityKeys() {
+      return keysOnly([
+        "id",
+        "name",
+        "createdByProfileId",
+        "inviteCode",
+        "inviteLink",
+        "createdAt",
+        "updatedAt"
+      ]);
+    }
+
+    function hasMembershipKeys() {
+      return keysOnly([
+        "id",
+        "communityId",
+        "profileId",
+        "joinedAt",
+        "communityOdds",
+        "createdAt",
+        "updatedAt"
+      ]);
+    }
+
+    function hasGameLogKeys() {
+      return keysOnly([
+        "id",
+        "communityId",
+        "gameType",
+        "createdByProfileId",
+        "participantProfileIds",
+        "winnerProfileIds",
+        "loserProfileIds",
+        "photoUrls",
+        "notes",
+        "pongStats",
+        "createdAt",
+        "updatedAt"
+      ]);
+    }
+
+    function hasBracketKeys() {
+      return keysOnly([
+        "id",
+        "communityId",
+        "participantProfileIds",
+        "seedMethod",
+        "status",
+        "rounds",
+        "createdAt",
+        "updatedAt"
+      ]);
+    }
+
+    match /profiles/{profileId} {
+      allow read: if isOwnProfile(profileId);
+
+      // Client can create/update own profile but cannot set server-owned fields.
+      allow create: if isOwnProfile(profileId) &&
+        hasProfileKeys() &&
+        request.resource.data.id == profileId &&
+        request.resource.data.googleAuthId == uid() &&
+        request.resource.data.overallOdds == 0;
+
+      allow update: if isOwnProfile(profileId) &&
+        hasProfileKeys() &&
+        request.resource.data.id == resource.data.id &&
+        request.resource.data.googleAuthId == resource.data.googleAuthId &&
+        request.resource.data.overallOdds == resource.data.overallOdds &&
+        request.resource.data.createdAt == resource.data.createdAt;
+
+      allow delete: if false;
+    }
+
+    match /communities/{communityId} {
+      allow read: if isCommunityMember(communityId);
+
+      allow create: if signedIn() &&
+        hasCommunityKeys() &&
+        request.resource.data.id == communityId &&
+        request.resource.data.createdByProfileId == uid();
+
+      // Allow updates only by creator and existing members.
+      allow update: if signedIn() &&
+        hasCommunityKeys() &&
+        isCommunityMember(communityId) &&
+        resource.data.createdByProfileId == uid() &&
+        request.resource.data.id == resource.data.id &&
+        request.resource.data.createdByProfileId == resource.data.createdByProfileId &&
+        request.resource.data.createdAt == resource.data.createdAt;
+
+      allow delete: if false;
+    }
+
+    match /memberships/{membershipId} {
+      // User can read only their own membership docs.
+      allow read: if signedIn() && resource.data.profileId == uid();
+
+      // Only allow a user to create their own membership document.
+      // Community existence check prevents orphan memberships.
+      allow create: if signedIn() &&
+        hasMembershipKeys() &&
+        request.resource.data.id == membershipId &&
+        request.resource.data.profileId == uid() &&
+        request.resource.data.id == membershipIdFor(
+          request.resource.data.communityId,
+          request.resource.data.profileId
+        ) &&
+        exists(/databases/$(database)/documents/communities/$(request.resource.data.communityId));
+
+      // Client cannot mutate membership once created (server can via Admin SDK).
+      allow update, delete: if false;
+    }
+
+    match /gameLogs/{gameLogId} {
+      allow read: if isCommunityMember(resource.data.communityId);
+
+      allow create: if signedIn() &&
+        hasGameLogKeys() &&
+        request.resource.data.id == gameLogId &&
+        request.resource.data.createdByProfileId == uid() &&
+        isCommunityMember(request.resource.data.communityId) &&
+        request.resource.data.winnerProfileIds.size() > 0 &&
+        request.resource.data.loserProfileIds.size() > 0 &&
+        request.resource.data.photoUrls.size() > 0;
+
+      // Only log creator can update/delete.
+      allow update: if signedIn() &&
+        hasGameLogKeys() &&
+        isCommunityMember(resource.data.communityId) &&
+        resource.data.createdByProfileId == uid() &&
+        request.resource.data.id == resource.data.id &&
+        request.resource.data.communityId == resource.data.communityId &&
+        request.resource.data.createdByProfileId == resource.data.createdByProfileId &&
+        request.resource.data.createdAt == resource.data.createdAt &&
+        request.resource.data.winnerProfileIds.size() > 0 &&
+        request.resource.data.loserProfileIds.size() > 0 &&
+        request.resource.data.photoUrls.size() > 0;
+
+      allow delete: if signedIn() &&
+        isCommunityMember(resource.data.communityId) &&
+        resource.data.createdByProfileId == uid();
+    }
+
+    match /brackets/{bracketId} {
+      allow read: if isCommunityMember(resource.data.communityId);
+
+      allow create: if signedIn() &&
+        hasBracketKeys() &&
+        request.resource.data.id == bracketId &&
+        isCommunityMember(request.resource.data.communityId);
+
+      // Updates allowed only for community members.
+      allow update: if signedIn() &&
+        hasBracketKeys() &&
+        isCommunityMember(resource.data.communityId) &&
+        request.resource.data.id == resource.data.id &&
+        request.resource.data.communityId == resource.data.communityId &&
+        request.resource.data.createdAt == resource.data.createdAt;
+
+      allow delete: if false;
+    }
+  }
+}
