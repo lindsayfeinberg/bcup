@@ -1,11 +1,29 @@
 # API Contracts
 
-All Cloud Functions return the following envelope on error:
+## Standard Envelopes
+
+### Success (all callables)
 ```json
 {
+  "ok": true,
+  "apiVersion": "v1",
+  "data": {},
+  "meta": {
+    "requestId": "string"
+  }
+}
+```
+
+### Error (all callables)
+```json
+{
+  "ok": false,
+  "apiVersion": "v1",
   "error": {
-    "code": "string",
-    "message": "string"
+    "code": "UNAUTHENTICATED | INVALID_ARGUMENT | PERMISSION_DENIED | NOT_FOUND | ALREADY_EXISTS | INTERNAL",
+    "message": "string",
+    "details": "string | null",
+    "requestId": "string"
   }
 }
 ```
@@ -15,10 +33,11 @@ All Cloud Functions return the following envelope on error:
 ## Auth
 
 ### `onUserCreated`
-- **Trigger:** Firebase Auth `onCreate`
-- **Action:** Creates a `profiles` document for the new user
-- **Input:** Firebase Auth user object
-- **Output:** `profiles/{userId}` document created
+- **Trigger:** Firebase Auth `onCreate` (background, not callable)
+- **Auth:** None required
+- **Action:** Creates `profiles/{userId}` document on first Google sign-in
+- **Input:** Firebase Auth user object (automatic)
+- **Output:** `profiles/{userId}` document created — no response envelope
 
 ---
 
@@ -26,27 +45,65 @@ All Cloud Functions return the following envelope on error:
 
 ### `createCommunity`
 - **Trigger:** HTTPS callable
-- **Input:**
+- **Auth:** Must be authenticated
+- **Validation:** `name` must be non-empty string
+
+**Request:**
 ```json
-  { "name": "string" }
+{
+  "apiVersion": "v1",
+  "data": {
+    "name": "Sunday Funday"
+  }
+}
 ```
-- **Output:**
+
+**Response:**
 ```json
-  { "communityId": "string", "inviteCode": "string", "inviteLink": "string" }
+{
+  "ok": true,
+  "apiVersion": "v1",
+  "data": {
+    "communityId": "abc123",
+    "inviteCode": "XYZ99",
+    "inviteLink": "https://bcup.app/join/XYZ99"
+  },
+  "meta": { "requestId": "req_001" }
+}
 ```
-- **Errors:** `unauthenticated`, `invalid-argument`
+
+**Errors:** `UNAUTHENTICATED`, `INVALID_ARGUMENT`
+
+---
 
 ### `joinCommunity`
 - **Trigger:** HTTPS callable
-- **Input:**
+- **Auth:** Must be authenticated
+- **Validation:** `inviteCode` must match an existing community; user must not already be a member
+
+**Request:**
 ```json
-  { "inviteCode": "string" }
+{
+  "apiVersion": "v1",
+  "data": {
+    "inviteCode": "XYZ99"
+  }
+}
 ```
-- **Output:**
+
+**Response:**
 ```json
-  { "communityId": "string" }
+{
+  "ok": true,
+  "apiVersion": "v1",
+  "data": {
+    "communityId": "abc123"
+  },
+  "meta": { "requestId": "req_002" }
+}
 ```
-- **Errors:** `unauthenticated`, `not-found`, `already-exists`
+
+**Errors:** `UNAUTHENTICATED`, `NOT_FOUND`, `ALREADY_EXISTS`
 
 ---
 
@@ -54,46 +111,147 @@ All Cloud Functions return the following envelope on error:
 
 ### `createGameLog`
 - **Trigger:** HTTPS callable
-- **Input:**
+- **Auth:** Must be authenticated and a member of `communityId`
+- **Validation:**
+  - `winnerProfileIds` and `loserProfileIds` min length 1
+  - Both must be subsets of `participantProfileIds`
+  - No profile can appear in both winners and losers
+  - `photoUrls` min length 1
+  - `pongStats` required only when `gameType` is `PONG`
+
+**Request:**
 ```json
-  {
-    "communityId": "string",
-    "gameType": "PONG | BEER_BALL | BATTLE_PONG | BASEBALL",
-    "participantProfileIds": ["string"],
-    "winnerProfileIds": ["string"],
-    "loserProfileIds": ["string"],
-    "photoUrls": ["string"],
-    "notes": "string | null",
-    "pongStats": { "playerCupsHit": { "profileId": "integer" } }
+{
+  "apiVersion": "v1",
+  "data": {
+    "communityId": "abc123",
+    "gameType": "PONG",
+    "participantProfileIds": ["uid_1", "uid_2"],
+    "winnerProfileIds": ["uid_1"],
+    "loserProfileIds": ["uid_2"],
+    "photoUrls": ["https://storage.firebase.com/photo1.jpg"],
+    "notes": null,
+    "pongStats": {
+      "playerCupsHit": { "uid_1": 10, "uid_2": 6 }
+    }
   }
+}
 ```
-- **Output:**
+
+**Response:**
 ```json
-  { "gameLogId": "string" }
+{
+  "ok": true,
+  "apiVersion": "v1",
+  "data": {
+    "gameLogId": "log_abc"
+  },
+  "meta": { "requestId": "req_003" }
+}
 ```
-- **Errors:** `unauthenticated`, `invalid-argument`, `permission-denied`
+
+**Errors:** `UNAUTHENTICATED`, `INVALID_ARGUMENT`, `PERMISSION_DENIED`
+
+---
 
 ### `updateGameLog`
 - **Trigger:** HTTPS callable
-- **Input:** Same as `createGameLog` plus `"gameLogId": "string"`
-- **Output:** `{ "success": true }`
-- **Errors:** `unauthenticated`, `permission-denied` (non-creator), `not-found`
+- **Auth:** Must be authenticated and the original log creator
+- **Validation:** Same field rules as `createGameLog`
+
+**Request:**
+```json
+{
+  "apiVersion": "v1",
+  "data": {
+    "gameLogId": "log_abc",
+    "photoUrls": ["https://storage.firebase.com/photo2.jpg"],
+    "notes": "Updated note"
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "ok": true,
+  "apiVersion": "v1",
+  "data": {},
+  "meta": { "requestId": "req_004" }
+}
+```
+
+**Errors:** `UNAUTHENTICATED`, `PERMISSION_DENIED`, `NOT_FOUND`
+
+---
 
 ### `deleteGameLog`
 - **Trigger:** HTTPS callable
-- **Input:** `{ "gameLogId": "string" }`
-- **Output:** `{ "success": true }`
-- **Errors:** `unauthenticated`, `permission-denied` (non-creator), `not-found`
+- **Auth:** Must be authenticated and the original log creator
+
+**Request:**
+```json
+{
+  "apiVersion": "v1",
+  "data": {
+    "gameLogId": "log_abc"
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "ok": true,
+  "apiVersion": "v1",
+  "data": {},
+  "meta": { "requestId": "req_005" }
+}
+```
+
+**Errors:** `UNAUTHENTICATED`, `PERMISSION_DENIED`, `NOT_FOUND`
 
 ---
 
 ## Odds
 
 ### `recalculateOdds`
-- **Trigger:** Firestore `onCreate / onUpdate / onDelete` on `gameLogs`
-- **Action:** Recomputes `overallOdds` on profile and `communityOdds` on membership
+- **Trigger:** Firestore `onCreate / onUpdate / onDelete` on `gameLogs` (background, not callable)
+- **Auth:** None required
 - **Input:** Firestore event (automatic)
-- **Output:** Updates `profiles/{userId}.overallOdds` and `memberships/{id}.communityOdds`
+- **Output:** Writes updated odds fields directly to Firestore — no response envelope
+
+#### Definitions
+- **Eligible game log:** exists (not deleted) and has `winnerProfileIds.length >= 1`,
+  `loserProfileIds.length >= 1`, and `participantProfileIds` present
+- **Win:** profile appears in `winnerProfileIds`
+- **Game played:** profile appears in `participantProfileIds`
+- **Precision:** store full numeric precision; UI displays 3 decimals
+
+#### Formulas
+- `overallOdds(profileId)` = `overallWins / overallGames` (0 if no games)
+- `communityOdds(profileId, communityId)` = `communityWins / communityGames` (0 if no games)
+
+#### Recalculation triggers and write targets
+- Triggers on every game log create, update, and delete
+- Recomputes for all impacted participants:
+  - `after` snapshot participants for create/update
+  - `before` snapshot participants for update/delete
+- If `communityId` changes on update, recalculate both old and new communities
+- Writes to:
+  - `profiles/{profileId}.overallOdds`
+  - `memberships/{communityId}_{profileId}.communityOdds`
+
+#### Tie-break order (mandatory for bracket seeding and leaderboards)
+1. Higher odds (`DESC`)
+2. More games played (`DESC`)
+3. Head-to-head wins among tied profiles (`DESC`) when available
+4. Earlier `profiles.createdAt` (`ASC`)
+5. Lexicographic `profileId` (`ASC`)
+
+#### Acceptance examples
+- Profile A: `wins=2, games=4` → `0.5` | Profile B: `wins=1, games=2` → `0.5` → **A wins** (more games)
+- Profile C: `wins=0, games=0` → `0` | Profile D: `wins=0, games=0` → `0` → **earlier `createdAt`** wins; if still tied, lower `profileId`
 
 ---
 
@@ -101,21 +259,63 @@ All Cloud Functions return the following envelope on error:
 
 ### `createBracket`
 - **Trigger:** HTTPS callable
-- **Input:**
+- **Auth:** Must be authenticated and a member of `communityId`
+- **Validation:**
+  - `seedMethod` must be one of `COMMUNITY_ODDS`, `MANUAL`, `RANDOM`
+  - If `COMMUNITY_ODDS` and data is sparse, fall back to `overallOdds`
+
+**Request:**
 ```json
-  { "communityId": "string", "seedMethod": "COMMUNITY_ODDS | MANUAL | RANDOM" }
+{
+  "apiVersion": "v1",
+  "data": {
+    "communityId": "abc123",
+    "seedMethod": "COMMUNITY_ODDS"
+  }
+}
 ```
-- **Output:**
+
+**Response:**
 ```json
-  { "bracketId": "string" }
+{
+  "ok": true,
+  "apiVersion": "v1",
+  "data": {
+    "bracketId": "bracket_xyz"
+  },
+  "meta": { "requestId": "req_006" }
+}
 ```
-- **Errors:** `unauthenticated`, `invalid-argument`, `permission-denied`
+
+**Errors:** `UNAUTHENTICATED`, `INVALID_ARGUMENT`, `PERMISSION_DENIED`
+
+---
 
 ### `updateMatchResult`
 - **Trigger:** HTTPS callable
-- **Input:**
+- **Auth:** Must be authenticated and a member of the bracket's community
+- **Validation:** `winnerId` must be one of the two participants in the match
+
+**Request:**
 ```json
-  { "bracketId": "string", "matchId": "string", "winnerId": "string" }
+{
+  "apiVersion": "v1",
+  "data": {
+    "bracketId": "bracket_xyz",
+    "matchId": "match_1",
+    "winnerId": "uid_1"
+  }
+}
 ```
-- **Output:** `{ "success": true }`
-- **Errors:** `unauthenticated`, `not-found`, `invalid-argument`
+
+**Response:**
+```json
+{
+  "ok": true,
+  "apiVersion": "v1",
+  "data": {},
+  "meta": { "requestId": "req_007" }
+}
+```
+
+**Errors:** `UNAUTHENTICATED`, `NOT_FOUND`, `INVALID_ARGUMENT`, `PERMISSION_DENIED`
