@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CLIENT_ID</key>
+	<string>529678374114-79lv3tlr64olvs5qfchme83275mhb5og.apps.googleusercontent.com</string>
+	<key>REVERSED_CLIENT_ID</key>
+	<string>com.googleusercontent.apps.529678374114-79lv3tlr64olvs5qfchme83275mhb5og</string>
+	<key>API_KEY</key>
+	<string>AIzaSyA0AqS-KPYoXFAAsJZHEKoyuJMNHRt2EcA</string>
+	<key>GCM_SENDER_ID</key>
+	<string>529678374114</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>Com.lindsay.bitchcup</string>
+	<key>PROJECT_ID</key>
+	<string>bitchcup-dev</string>
+	<key>STORAGE_BUCKET</key>
+	<string>bitchcup-dev.firebasestorage.app</string>
+	<key>IS_ADS_ENABLED</key>
+	<false/>
+	<key>IS_ANALYTICS_ENABLED</key>
+	<false/>
+	<key>IS_APPINVITE_ENABLED</key>
+	<true/>
+	<key>IS_GCM_ENABLED</key>
+	<true/>
+	<key>IS_SIGNIN_ENABLED</key>
+	<true/>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:529678374114:ios:272cfbf51b92ac3cd87abb</string>
+</dict>
+</plist>

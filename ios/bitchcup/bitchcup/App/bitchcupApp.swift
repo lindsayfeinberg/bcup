@@ -28,7 +28,7 @@ struct bitchcupApp: App {
                 .environmentObject(container)
                 .onAppear {
                     // TODO: replace with real value from Firestore in T05
-                    let onboardingCompleteAt: Date? = Date()
+                    let onboardingCompleteAt: Date? = nil
                     router.resolve(onboardingCompleteAt: onboardingCompleteAt)
                 }
         }
