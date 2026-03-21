@@ -1,24 +1,14 @@
-//
-//  ContentView.swift
-//  bitchcup
-//
-//  Created by Lindsay Feinberg on 3/21/26.
-//
-
 import SwiftUI
 
 struct ContentView: View {
-    var body: some View {
-        VStack {
-            Image(systemName: "globe")
-                .imageScale(.large)
-                .foregroundStyle(.tint)
-            Text("Hello, world!")
-        }
-        .padding()
-    }
-}
+    @EnvironmentObject var router: AppRouter
 
-#Preview {
-    ContentView()
+    var body: some View {
+        switch router.route {
+        case .onboarding:
+            Text("Onboarding placeholder")
+        case .home:
+            Text("Home feed placeholder")
+        }
+    }
 }
