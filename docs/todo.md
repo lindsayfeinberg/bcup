@@ -24,6 +24,11 @@ This plan is sequenced to let two developers work in parallel with clear handoff
 
 **Depends on:** `[T01]`
 
+**Reference docs:**
+- `docs/architecture/data-model.md`
+- `docs/architecture/data-contracts.md`
+- `docs/architecture/api-contracts.md`
+
 - `T02.1` Finalize Firestore collection/document shapes for `profiles`, `communities`, `memberships`, `gameLogs`, and `brackets`.
 - `T02.2` Define enums/constants for game types and seeding methods (`COMMUNITY_ODDS`, `MANUAL`, `RANDOM`).
 - `T02.3` Define Cloud Functions API contracts (request/response/error format).

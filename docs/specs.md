@@ -36,6 +36,12 @@ V1 is intentionally scoped around private communities and `Pong` as the most ful
 - Content quality: % of logs with complete required fields and valid photos
 - Competitive engagement: average number of bracket updates viewed per active user
 
+## Canonical architecture docs
+
+- Data model and enums: `docs/architecture/data-model.md`
+- Firestore data contracts: `docs/architecture/data-contracts.md`
+- Cloud Functions API contracts: `docs/architecture/api-contracts.md`
+
 ## Core requirements
 
 ### Authentication and onboarding
