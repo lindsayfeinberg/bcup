@@ -6,9 +6,9 @@ struct ContentView: View {
     var body: some View {
         switch router.route {
         case .onboarding:
-            Text("Onboarding placeholder")
+            OnboardingView()
         case .home:
-            Text("Home feed placeholder")
+            FeedView()
         }
     }
 }

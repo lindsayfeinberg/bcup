@@ -1,4 +1,5 @@
 import SwiftUI
+import Foundation
 
 enum AppRoute {
     case onboarding
@@ -7,4 +8,12 @@ enum AppRoute {
 
 class AppRouter: ObservableObject {
     @Published var route: AppRoute = .onboarding
+
+    func resolve(onboardingCompleteAt: Date?) {
+        if onboardingCompleteAt != nil {
+            route = .home
+        } else {
+            route = .onboarding
+        }
+    }
 }
