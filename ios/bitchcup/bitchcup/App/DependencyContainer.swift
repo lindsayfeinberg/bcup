@@ -15,14 +15,19 @@ protocol CommunityServiceProtocol {
     func fetchCommunities() async throws
 }
 
+protocol GameLogServiceProtocol {
+    func fetchLogs(communityId: String) async throws
+}
+
 // MARK: - Container
 
-class DependencyContainer {
+class DependencyContainer: ObservableObject {
     static let shared = DependencyContainer()
     private init() {}
 
-    // Services wired here when implemented in T05+
+    // Wired when implemented in T05+
     // var authService: AuthServiceProtocol = AuthService()
     // var userService: UserServiceProtocol = UserService()
     // var communityService: CommunityServiceProtocol = CommunityService()
+    // var gameLogService: GameLogServiceProtocol = GameLogService()
 }
