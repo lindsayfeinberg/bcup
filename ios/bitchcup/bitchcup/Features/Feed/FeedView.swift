@@ -5,6 +5,11 @@ struct FeedView: View {
     @State private var showGameLog = false
     @State private var showProfile = false
 
+    // TODO: replace with real state from view model in T08
+    @State private var isLoading = false
+    @State private var hasError = false
+    @State private var isEmpty = true
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
@@ -24,12 +29,27 @@ struct FeedView: View {
                 .padding(.horizontal)
                 .padding(.vertical, 8)
 
-                // Feed
-                ScrollView {
-                    VStack {
-                        Text("Feed placeholder - scrollable photos here")
-                            .padding()
-                        Spacer()
+                // Feed content
+                if isLoading {
+                    LoadingView(message: "Loading feed...")
+                } else if hasError {
+                    ErrorView(message: "Could not load feed.") {
+                        // TODO: retry fetch in T08
+                    }
+                } else if isEmpty {
+                    EmptyStateView(
+                        title: "No games yet",
+                        message: "Log a game or join a community to see activity here.",
+                        actionLabel: "Log a Game"
+                    ) {
+                        showGameLog = true
+                    }
+                } else {
+                    ScrollView {
+                        VStack {
+                            Text("Feed placeholder - scrollable photos here")
+                                .padding()
+                        }
                     }
                 }
 
