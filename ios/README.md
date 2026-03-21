@@ -104,7 +104,6 @@ xcodebuild \
 Use separate Firebase projects by environment:
 
 - `bcup-dev` for local development
-- `bcup-staging` for QA
 - `bcup-prod` for release
 
 Keep environment-specific config isolated (plist, bundle IDs, and any API host overrides).

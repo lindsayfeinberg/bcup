@@ -138,7 +138,6 @@ npm run build
 Use separate Firebase projects:
 
 - `dev` for local development
-- `staging` for QA
 - `prod` for release
 
 Keep secrets out of source control. Use environment-specific config and Secret Manager for production secrets.

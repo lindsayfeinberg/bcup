@@ -17,7 +17,7 @@ This plan is sequenced to let two developers work in parallel with clear handoff
 - `T01.1` Create repo structure (`ios/`, `functions/`, `docs/`) with README and contribution guide.
 - `T01.2` Define branching strategy, PR template, review checklist, and commit conventions.
 - `T01.3` Set up CI for iOS build and Cloud Functions lint/test.
-- `T01.4` Create Firebase projects (`dev`, `staging`, `prod`) and grant team access.
+- `T01.4` Create Firebase projects (`dev`, `prod`) and grant team access.
 - `T01.5` Set up project board states (`Backlog`, `In Progress`, `Review`, `QA`, `Done`) and map task IDs.
 
 ### [ ] T02. Architecture, Contracts, and Data Model Freeze
@@ -140,7 +140,7 @@ This plan is sequenced to let two developers work in parallel with clear handoff
 
 **Depends on:** `[T11]`
 
-- `T12.1` Execute staging UAT against acceptance criteria.
+- `T12.1` Execute UAT in `dev` against acceptance criteria.
 - `T12.2` Fix launch-blocking defects and rerun regression suite.
 - `T12.3` Finalize App Store metadata and policy wording for alcohol context.
 - `T12.4` Create incident response and rollback runbooks.
