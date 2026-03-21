@@ -1,0 +1,52 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function uid() {
+      return request.auth.uid;
+    }
+
+    function membershipIdFor(communityId, profileId) {
+      return communityId + "_" + profileId;
+    }
+
+    function isCommunityMember(communityId) {
+      return signedIn() &&
+        firestore.exists(/databases/(default)/documents/memberships/$(membershipIdFor(communityId, uid())));
+    }
+
+    function validImageUpload(maxMb) {
+      return request.resource != null &&
+        request.resource.contentType.matches('image/.*') &&
+        request.resource.size < maxMb * 1024 * 1024;
+    }
+
+    // Profile photos: signed-in users can read, owner can write/delete.
+    match /profilePhotos/{profileId}/{fileName} {
+      allow read: if signedIn();
+      allow create, update, delete: if signedIn() &&
+        uid() == profileId &&
+        (request.method == 'delete' || validImageUpload(10));
+    }
+
+    // Game photos: only community members can read.
+    // Create/update/delete restricted to uploader via createdByProfileId metadata.
+    match /gamePhotos/{communityId}/{gameLogId}/{fileName} {
+      allow read: if isCommunityMember(communityId);
+      allow create: if isCommunityMember(communityId) &&
+        validImageUpload(15) &&
+        request.resource.metadata.createdByProfileId == uid();
+      allow update, delete: if isCommunityMember(communityId) &&
+        resource.metadata.createdByProfileId == uid() &&
+        (request.method == 'delete' || validImageUpload(15));
+    }
+
+    // Deny everything else by default.
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
