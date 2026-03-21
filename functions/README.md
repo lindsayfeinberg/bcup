@@ -7,7 +7,7 @@ This guide explains how to develop, test, and deploy Firebase Cloud Functions fo
 - Node.js 20.x
 - npm 10+
 - Firebase CLI (`npm i -g firebase-tools`)
-- Access to Firebase projects (`dev`, `staging`, `prod`)
+- Access to Firebase projects (`dev`, `prod`)
 
 Verify:
 
@@ -79,7 +79,7 @@ Use Firebase Functions config/params for non-secret runtime values.
 If using `.env` files (2nd gen functions):
 
 - `.env` for local defaults
-- `.env.dev`, `.env.staging`, `.env.prod` for environment-specific values
+- `.env.dev`, `.env.prod` for environment-specific values
 
 Never commit real secrets. Use Secret Manager for production secrets.
 
@@ -146,9 +146,8 @@ firebase deploy --only functions:<functionName>
 Safer promotion flow:
 
 1. Merge to `main`
-2. Deploy to `staging`
-3. Run smoke tests
-4. Deploy to `prod`
+2. Deploy to `dev` and run smoke tests
+3. Deploy to `prod`
 
 ## 7) Implementation conventions
 
