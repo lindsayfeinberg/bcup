@@ -11,6 +11,8 @@
 		6DA7BF832F6F047B00E50DBB /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = 6DA7BF822F6F047B00E50DBB /* FirebaseCore */; };
 		6DA7BF8E2F6F0A0200E50DBB /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 6DA7BF8D2F6F0A0200E50DBB /* GoogleSignIn */; };
 		6DA7BF902F6F0A0200E50DBB /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 6DA7BF8F2F6F0A0200E50DBB /* GoogleSignInSwift */; };
+		7A6A8E9B4C1D2E3F00112233 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 7A6A8E9B4C1D2E3F00112232 /* FirebaseFirestore */; };
+		7B6B9F0C5D3E4F5A00112231 /* FirebaseStorage in Frameworks */ = {isa = PBXBuildFile; productRef = 7B6B9F0C5D3E4F5A00112230 /* FirebaseStorage */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -74,6 +76,8 @@
 			files = (
 				6DA7BF832F6F047B00E50DBB /* FirebaseCore in Frameworks */,
 				6DA7BF812F6F047B00E50DBB /* FirebaseAuth in Frameworks */,
+				7A6A8E9B4C1D2E3F00112233 /* FirebaseFirestore in Frameworks */,
+				7B6B9F0C5D3E4F5A00112231 /* FirebaseStorage in Frameworks */,
 				6DA7BF8E2F6F0A0200E50DBB /* GoogleSignIn in Frameworks */,
 				6DA7BF902F6F0A0200E50DBB /* GoogleSignInSwift in Frameworks */,
 			);
@@ -138,6 +142,8 @@
 			packageProductDependencies = (
 				6DA7BF802F6F047B00E50DBB /* FirebaseAuth */,
 				6DA7BF822F6F047B00E50DBB /* FirebaseCore */,
+				7A6A8E9B4C1D2E3F00112232 /* FirebaseFirestore */,
+				7B6B9F0C5D3E4F5A00112230 /* FirebaseStorage */,
 				6DA7BF8D2F6F0A0200E50DBB /* GoogleSignIn */,
 				6DA7BF8F2F6F0A0200E50DBB /* GoogleSignInSwift */,
 			);
@@ -673,6 +679,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 6DA7BF8C2F6F0A0200E50DBB /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
 			productName = GoogleSignInSwift;
+		};
+		7A6A8E9B4C1D2E3F00112232 /* FirebaseFirestore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 6DA7BF7F2F6F047B00E50DBB /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseFirestore;
+		};
+		7B6B9F0C5D3E4F5A00112230 /* FirebaseStorage */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 6DA7BF7F2F6F047B00E50DBB /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseStorage;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
