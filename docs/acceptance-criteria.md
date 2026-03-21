@@ -67,7 +67,7 @@ This document defines V1 acceptance criteria per feature and the minimum testing
 
 ### A) Data and API contract tests
 
-- [ ] Firestore documents conform to `docs/data-contracts.md` required fields, types, and defaults.
+- [ ] Firestore documents conform to `docs/architecture/data-contracts.md` required fields, types, and defaults.
 - [ ] API request/response/error shapes conform to `docs/architecture/api-contracts.md`.
 - [ ] Enum values are validated and rejected when invalid.
 
