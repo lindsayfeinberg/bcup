@@ -51,8 +51,9 @@ service cloud.firestore {
       ]);
     }
 
+    // Callable-created communities include memberCount; older docs may omit it until backfilled.
     function hasCommunityKeys() {
-      return keysOnly([
+      return request.resource.data.keys().hasOnly([
         "id",
         "name",
         "createdByProfileId",
@@ -60,19 +61,21 @@ service cloud.firestore {
         "inviteLink",
         "createdAt",
         "updatedAt"
-      ]);
-    }
-
-    function hasMembershipKeys() {
-      return keysOnly([
+      ]) || request.resource.data.keys().hasOnly([
         "id",
-        "communityId",
-        "profileId",
-        "joinedAt",
-        "communityOdds",
+        "name",
+        "createdByProfileId",
+        "inviteCode",
+        "inviteLink",
+        "memberCount",
         "createdAt",
         "updatedAt"
       ]);
+    }
+
+    function communityMemberCountPreserved() {
+      return (!resource.data.keys().hasAny(["memberCount"]) && !request.resource.data.keys().hasAny(["memberCount"])) ||
+        request.resource.data.memberCount == resource.data.memberCount;
     }
 
     function hasGameLogKeys() {
@@ -128,19 +131,20 @@ service cloud.firestore {
     match /communities/{communityId} {
       allow read: if isCommunityMember(communityId);
 
-      allow create: if signedIn() &&
-        hasCommunityKeys() &&
-        request.resource.data.id == communityId &&
-        request.resource.data.createdByProfileId == uid();
+      // Created only by Cloud Functions (Admin SDK) so joins can enforce caps atomically.
+      allow create: if false;
 
-      // Allow updates only by creator and existing members.
+      // Creator may edit display name; memberCount changes only via Admin (e.g. join callable).
       allow update: if signedIn() &&
         hasCommunityKeys() &&
         isCommunityMember(communityId) &&
         resource.data.createdByProfileId == uid() &&
         request.resource.data.id == resource.data.id &&
         request.resource.data.createdByProfileId == resource.data.createdByProfileId &&
-        request.resource.data.createdAt == resource.data.createdAt;
+        request.resource.data.createdAt == resource.data.createdAt &&
+        request.resource.data.inviteCode == resource.data.inviteCode &&
+        request.resource.data.inviteLink == resource.data.inviteLink &&
+        communityMemberCountPreserved();
 
       allow delete: if false;
     }
@@ -149,17 +153,8 @@ service cloud.firestore {
       // User can read only their own membership docs.
       allow read: if signedIn() && isCommunityMember(resource.data.communityId);
 
-      // Only allow a user to create their own membership document.
-      // Community existence check prevents orphan memberships.
-      allow create: if signedIn() &&
-        hasMembershipKeys() &&
-        request.resource.data.id == membershipId &&
-        request.resource.data.profileId == uid() &&
-        request.resource.data.id == membershipIdFor(
-          request.resource.data.communityId,
-          request.resource.data.profileId
-        ) &&
-        exists(/databases/$(database)/documents/communities/$(request.resource.data.communityId));
+      // Membership rows are created only by Cloud Functions (Admin SDK).
+      allow create: if false;
 
       // Client cannot mutate membership once created (server can via Admin SDK).
       allow update, delete: if false;

@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct ContentView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject var router: AppRouter
     @EnvironmentObject var sessionManager: AppSessionManager
 
@@ -26,6 +27,12 @@ struct ContentView: View {
         }
         .onChange(of: router.route) { _, newValue in
             AppDebugLog.log("ContentView: route changed → \(String(describing: newValue))")
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            guard newPhase == .active else { return }
+            Task {
+                await sessionManager.refreshOnSceneBecameActive()
+            }
         }
     }
 }

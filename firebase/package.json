@@ -2,9 +2,9 @@
   "name": "bcup-firebase-local",
   "private": true,
   "scripts": {
-    "emu:start": "firebase emulators:start --project bitchcup-dev",
-    "emu:start:only": "firebase emulators:start --project bitchcup-dev --only auth,firestore,storage",
-    "emu:export": "firebase emulators:export ./emulator-data",
-    "emu:start:import": "firebase emulators:start --project bitchcup-dev --import ./emulator-data --export-on-exit"
+    "emu:start": "firebase --config ../firebase.json emulators:start --project bitchcup-dev",
+    "emu:start:only": "firebase --config ../firebase.json emulators:start --project bitchcup-dev --only auth,firestore,storage",
+    "emu:export": "firebase --config ../firebase.json emulators:export ./emulator-data",
+    "emu:start:import": "firebase --config ../firebase.json emulators:start --project bitchcup-dev --import ./emulator-data --export-on-exit"
   }
 }

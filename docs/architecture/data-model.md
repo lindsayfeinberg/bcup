@@ -64,7 +64,7 @@ brackets/{bracketId}
   - communityId: UUID
   - participantProfileIds: array<UUID> (auto all members)
   - seedMethod: enum (COMMUNITY_ODDS, MANUAL, RANDOM)
-  - rounds: array (structured rounds/matches)
+  - rounds: array (structured rounds/matches; each match can use winnerProfileIds/loserProfileIds arrays for team/2v2 outcomes — see data-contracts)
   - status: enum (DRAFT, ACTIVE, COMPLETE)
   - createdAt: timestamp
   - updatedAt: timestamp

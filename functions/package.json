@@ -6,11 +6,11 @@
     "typecheck": "tsc --noEmit",
     "test": "echo \"No functions tests yet\"",
     "build:watch": "tsc --watch",
-    "serve": "npm run build && firebase --config ../firebase/firebase.json emulators:start --only functions",
-    "shell": "npm run build && firebase --config ../firebase/firebase.json functions:shell",
+    "serve": "npm run build && firebase --config ../firebase.json emulators:start --only functions",
+    "shell": "npm run build && firebase --config ../firebase.json functions:shell",
     "start": "npm run shell",
-    "deploy": "firebase --config ../firebase/firebase.json deploy --only functions",
-    "logs": "firebase --config ../firebase/firebase.json functions:log"
+    "deploy": "firebase --config ../firebase.json deploy --only functions",
+    "logs": "firebase --config ../firebase.json functions:log"
   },
   "engines": {
     "node": "20"

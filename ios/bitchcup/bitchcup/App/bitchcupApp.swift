@@ -1,8 +1,6 @@
 import SwiftUI
-import FirebaseAuth
 import FirebaseCore
 import FirebaseFirestore
-import FirebaseStorage
 import GoogleSignIn
 
 class AppDelegate: NSObject, UIApplicationDelegate {
@@ -17,21 +15,17 @@ class AppDelegate: NSObject, UIApplicationDelegate {
             AppDebugLog.log("Firebase configured — projectID=\(app.options.projectID ?? "?") bundleID=\(app.options.bundleID)")
         }
 
-        #if DEBUG
-        Auth.auth().useEmulator(withHost: "127.0.0.1", port: 9099)
-        AppDebugLog.log("Auth emulator: 127.0.0.1:9099")
+        AppFirestore.logRuntimeFingerprint()
 
-        let db = Firestore.firestore()
-        let settings = db.settings
-        settings.host = "127.0.0.1:8080"
-        settings.isSSLEnabled = false
-        settings.cacheSettings = MemoryCacheSettings()
-        db.settings = settings
-        AppDebugLog.log("Firestore emulator: 127.0.0.1:8080 (SSL off, memory cache)")
+        AppFirestore.db().enableNetwork { error in
+            if let error {
+                AppDebugLog.log("Firestore enableNetwork failed: \(error.localizedDescription)")
+            } else {
+                AppDebugLog.log("Firestore enableNetwork: OK")
+            }
+        }
 
-        Storage.storage().useEmulator(withHost: "127.0.0.1", port: 9199)
-        AppDebugLog.log("Storage emulator: 127.0.0.1:9199")
-        #endif
+        // Auth, Firestore, and Storage use Firebase cloud endpoints from GoogleService-Info.plist.
 
         if let clientID = FirebaseApp.app()?.options.clientID {
             GIDSignIn.sharedInstance.configuration = GIDConfiguration(clientID: clientID)
