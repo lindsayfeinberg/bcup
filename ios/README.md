@@ -54,13 +54,25 @@ If package resolution fails in terminal, use Xcode:
 
 ## 4) Firebase configuration
 
-This app uses Firebase Auth/Firestore/Storage/Functions.
+This app uses Firebase Auth/Firestore/Storage/Analytics (and Cloud Functions when wired server-side). **Debug and Release builds talk to Firebase in the cloud** using `GoogleService-Info.plist` — the iOS app does **not** point Auth/Firestore/Storage at local emulators by default. To use emulators again, re-add `useEmulator` / Firestore settings in `AppDelegate` (see `bitchcupApp.swift`).
 
 1. Download `GoogleService-Info.plist` for the iOS app from Firebase Console.
 2. Add it to the app target in Xcode (`ios/bcup/Resources/` is the recommended location).
 3. Ensure the file is included in the `bcup` target's "Copy Bundle Resources".
 
 Do not commit secrets or environment-specific credentials.
+
+If you see **permission_denied** on `profiles/{uid}` in the app, the Firestore **rules in the cloud** must match this repo. From the repo root:
+
+```bash
+firebase deploy --only firestore:rules
+```
+
+The default Firebase project for CLI is `bitchcup-dev` (`.firebaserc` at the repo root). The iOS `GoogleService-Info.plist` must be for that same project.
+
+**Firestore database ID:** Rules and indexes deploy to the database named in `firebase.json` → `firestore.database`. The iOS app uses the same ID via `AppFirestore.databaseId` (currently **`(default)`** — the Standard database in Console, *not* a separate Enterprise database named `default`). On launch, Xcode logs a line like `Firestore fingerprint — projectID=… databaseId=(default) host=…`.
+
+**Analytics (T05.6):** The app includes **Firebase Analytics** and logs onboarding funnel events from `OnboardingAnalytics.swift` (`screen_view`, `login`, and custom `onb_*` events). Verify in Firebase Console → Analytics → DebugView when running with **-FIRAnalyticsDebugEnabled** (see Firebase docs).
 
 ## 5) Run locally
 

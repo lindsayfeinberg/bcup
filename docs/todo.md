@@ -64,12 +64,12 @@ This plan is sequenced to let two developers work in parallel with clear handoff
 
 **Depends on:** `[T03, T04]`
 
-- `T05.1` Integrate Google Sign-In using Firebase Auth.
-- `T05.2` Implement first-login 21+ confirmation step.
-- `T05.3` Build profile setup for display name and profile photo upload.
-- `T05.4` Persist onboarding state and route returning users directly to home feed.
-- `T05.5` Add guardrails for incomplete onboarding states.
-- `T05.6` Add analytics events for onboarding funnel steps.
+- [x] `T05.1` Integrate Google Sign-In using Firebase Auth.
+- [x] `T05.2` Implement first-login 21+ confirmation step.
+- [x] `T05.3` Build profile setup for display name and profile photo upload.
+- [x] `T05.4` Persist onboarding state and route returning users directly to home feed.
+- [x] `T05.5` Add guardrails for incomplete onboarding states.
+- [x] `T05.6` Add analytics events for onboarding funnel steps.
 
 ### [ ] T06. Communities (Create, Invite-Only Join, Membership)
 

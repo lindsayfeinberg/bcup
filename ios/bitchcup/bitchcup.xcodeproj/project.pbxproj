@@ -6,6 +6,16 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		6DA7BF812F6F047B00E50DBB /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 6DA7BF802F6F047B00E50DBB /* FirebaseAuth */; };
+		6DA7BF832F6F047B00E50DBB /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = 6DA7BF822F6F047B00E50DBB /* FirebaseCore */; };
+		6DA7BF8E2F6F0A0200E50DBB /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 6DA7BF8D2F6F0A0200E50DBB /* GoogleSignIn */; };
+		6DA7BF902F6F0A0200E50DBB /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 6DA7BF8F2F6F0A0200E50DBB /* GoogleSignInSwift */; };
+		7A6A8E9B4C1D2E3F00112233 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 7A6A8E9B4C1D2E3F00112232 /* FirebaseFirestore */; };
+		7B6B9F0C5D3E4F5A00112231 /* FirebaseStorage in Frameworks */ = {isa = PBXBuildFile; productRef = 7B6B9F0C5D3E4F5A00112230 /* FirebaseStorage */; };
+		8FA7BF912F6F047B00E50DBB /* FirebaseAnalytics in Frameworks */ = {isa = PBXBuildFile; productRef = 8FA7BF902F6F047B00E50DBB /* FirebaseAnalytics */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		E25B4D062F6EEF090072C53A /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -29,9 +39,22 @@
 		E25B4D0F2F6EEF090072C53A /* bitchcupUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = bitchcupUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		6DA7BF922F6F0AD700E50DBB /* Exceptions for "bitchcup" folder in "bitchcup" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = E25B4CF32F6EEF060072C53A /* bitchcup */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		E25B4CF62F6EEF060072C53A /* bitchcup */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				6DA7BF922F6F0AD700E50DBB /* Exceptions for "bitchcup" folder in "bitchcup" target */,
+			);
 			path = bitchcup;
 			sourceTree = "<group>";
 		};
@@ -52,6 +75,13 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				6DA7BF832F6F047B00E50DBB /* FirebaseCore in Frameworks */,
+				6DA7BF812F6F047B00E50DBB /* FirebaseAuth in Frameworks */,
+				7A6A8E9B4C1D2E3F00112233 /* FirebaseFirestore in Frameworks */,
+				7B6B9F0C5D3E4F5A00112231 /* FirebaseStorage in Frameworks */,
+				8FA7BF912F6F047B00E50DBB /* FirebaseAnalytics in Frameworks */,
+				6DA7BF8E2F6F0A0200E50DBB /* GoogleSignIn in Frameworks */,
+				6DA7BF902F6F0A0200E50DBB /* GoogleSignInSwift in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -112,6 +142,13 @@
 			);
 			name = bitchcup;
 			packageProductDependencies = (
+				6DA7BF802F6F047B00E50DBB /* FirebaseAuth */,
+				6DA7BF822F6F047B00E50DBB /* FirebaseCore */,
+				7A6A8E9B4C1D2E3F00112232 /* FirebaseFirestore */,
+				7B6B9F0C5D3E4F5A00112230 /* FirebaseStorage */,
+				8FA7BF902F6F047B00E50DBB /* FirebaseAnalytics */,
+				6DA7BF8D2F6F0A0200E50DBB /* GoogleSignIn */,
+				6DA7BF8F2F6F0A0200E50DBB /* GoogleSignInSwift */,
 			);
 			productName = bitchcup;
 			productReference = E25B4CF42F6EEF060072C53A /* bitchcup.app */;
@@ -195,6 +232,10 @@
 			);
 			mainGroup = E25B4CEB2F6EEF060072C53A;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				6DA7BF7F2F6F047B00E50DBB /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
+				6DA7BF8C2F6F0A0200E50DBB /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = E25B4CF52F6EEF060072C53A /* Products */;
 			projectDirPath = "";
@@ -389,6 +430,10 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = "";
+				CODE_SIGN_IDENTITY = "-";
+				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "Apple Development";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
+				"CODE_SIGN_IDENTITY[sdk=xros*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "";
@@ -396,6 +441,8 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = bitchcup/Info.plist;
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "bcup needs access to your photo library to set your profile picture.";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -411,8 +458,9 @@
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 15.2;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.lindsay.bitchcup.bitchcup;
+				PRODUCT_BUNDLE_IDENTIFIER = "-com.lindsay.bitchcup.bitchcup";
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -428,13 +476,19 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = "";
+				CODE_SIGN_IDENTITY = "-";
+				"CODE_SIGN_IDENTITY[sdk=*]" = "-";
+				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "Apple Development";
+				"CODE_SIGN_IDENTITY[sdk=xros*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "";
-				DEVELOPMENT_TEAM = 9JAR6G5RP6;
+				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = bitchcup/Info.plist;
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "bcup needs access to your photo library to set your profile picture.";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -450,8 +504,9 @@
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 15.2;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.lindsay.bitchcup.bitchcup;
+				PRODUCT_BUNDLE_IDENTIFIER = com.mayamarkus.bcup.dev;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -591,6 +646,63 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		6DA7BF7F2F6F047B00E50DBB /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 12.11.0;
+			};
+		};
+		6DA7BF8C2F6F0A0200E50DBB /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/google/GoogleSignIn-iOS";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 9.1.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		6DA7BF802F6F047B00E50DBB /* FirebaseAuth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 6DA7BF7F2F6F047B00E50DBB /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAuth;
+		};
+		6DA7BF822F6F047B00E50DBB /* FirebaseCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 6DA7BF7F2F6F047B00E50DBB /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseCore;
+		};
+		6DA7BF8D2F6F0A0200E50DBB /* GoogleSignIn */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 6DA7BF8C2F6F0A0200E50DBB /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
+			productName = GoogleSignIn;
+		};
+		6DA7BF8F2F6F0A0200E50DBB /* GoogleSignInSwift */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 6DA7BF8C2F6F0A0200E50DBB /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
+			productName = GoogleSignInSwift;
+		};
+		7A6A8E9B4C1D2E3F00112232 /* FirebaseFirestore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 6DA7BF7F2F6F047B00E50DBB /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseFirestore;
+		};
+		7B6B9F0C5D3E4F5A00112230 /* FirebaseStorage */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 6DA7BF7F2F6F047B00E50DBB /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseStorage;
+		};
+		8FA7BF902F6F047B00E50DBB /* FirebaseAnalytics */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 6DA7BF7F2F6F047B00E50DBB /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAnalytics;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = E25B4CEC2F6EEF060072C53A /* Project object */;
 }

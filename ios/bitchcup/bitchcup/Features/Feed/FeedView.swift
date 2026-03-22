@@ -1,42 +1,78 @@
 import SwiftUI
 
 struct FeedView: View {
-    @State private var showCommunities = false
+    @EnvironmentObject private var sessionManager: AppSessionManager
+    @EnvironmentObject private var container: DependencyContainer
+
+    @State private var showCommunitiesFlow = false
+    @State private var showCommunitiesList = false
     @State private var showGameLog = false
     @State private var showProfile = false
+
+    @State private var isLoading = false
+    @State private var hasError = false
+    @State private var isEmpty = true
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                // Top bar
                 HStack {
                     Text("BitchCUP")
                         .font(.title.bold())
                     Spacer()
-                    Button {
-                        showProfile = true
+                    Menu {
+                        Button {
+                            showProfile = true
+                        } label: {
+                            Label("View profile", systemImage: "person")
+                        }
+                        Button {
+                            showCommunitiesList = true
+                        } label: {
+                            Label("View communities", systemImage: "person.3")
+                        }
+                        Divider()
+                        Button(role: .destructive) {
+                            sessionManager.signOut()
+                        } label: {
+                            Label("Log out", systemImage: "rectangle.portrait.and.arrow.right")
+                        }
                     } label: {
-                        Circle()
-                            .frame(width: 40, height: 40)
-                            .foregroundColor(.gray)
+                        Image(systemName: "person.circle.fill")
+                            .font(.title2)
+                            .foregroundStyle(.primary)
                     }
+                    .accessibilityLabel("Account menu")
                 }
                 .padding(.horizontal)
                 .padding(.vertical, 8)
 
-                // Feed
-                ScrollView {
-                    VStack {
-                        Text("Feed placeholder - scrollable photos here")
-                            .padding()
-                        Spacer()
+                if isLoading {
+                    LoadingView(message: "Loading feed...")
+                } else if hasError {
+                    ErrorView(message: "Could not load feed.") {
+                        // TODO: retry fetch in T08
+                    }
+                } else if isEmpty {
+                    EmptyStateView(
+                        title: "No games yet",
+                        message: "Log a game or join a community to see activity here.",
+                        actionLabel: "Log a Game"
+                    ) {
+                        showGameLog = true
+                    }
+                } else {
+                    ScrollView {
+                        VStack {
+                            Text("Feed placeholder - scrollable photos here")
+                                .padding()
+                        }
                     }
                 }
 
-                // Bottom nav
                 HStack {
                     Button("Your Communities") {
-                        showCommunities = true
+                        showCommunitiesFlow = true
                     }
                     .frame(maxWidth: .infinity)
                     .padding()
@@ -55,14 +91,21 @@ struct FeedView: View {
                 .padding(.horizontal)
                 .padding(.bottom)
             }
-            .navigationDestination(isPresented: $showCommunities) {
-                CommunitiesView()
+            .fullScreenCover(isPresented: $showCommunitiesFlow) {
+                CommunitiesFlowStack()
+                    .environmentObject(container)
+            }
+            .navigationDestination(isPresented: $showCommunitiesList) {
+                CommunitiesListView()
             }
             .navigationDestination(isPresented: $showGameLog) {
                 GameLogView()
             }
             .navigationDestination(isPresented: $showProfile) {
                 ProfileView()
+            }
+            .task {
+                await sessionManager.ensureOnboardingCompleteOrRouteToOnboarding()
             }
         }
     }
