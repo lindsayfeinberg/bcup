@@ -103,7 +103,7 @@
 }
 ```
 
-**Errors:** `UNAUTHENTICATED`, `NOT_FOUND`, `ALREADY_EXISTS`
+**Errors:** `UNAUTHENTICATED`, `NOT_FOUND`, `ALREADY_EXISTS`, `FAILED_PRECONDITION` (community already at the 350-member cap)
 
 ---
 
@@ -294,7 +294,7 @@
 ### `updateMatchResult`
 - **Trigger:** HTTPS callable
 - **Auth:** Must be authenticated and a member of the bracket's community
-- **Validation:** `winnerId` must be one of the two participants in the match
+- **Validation:** Same spirit as `gameLogs`: `winnerProfileIds` and `loserProfileIds` must each have length ≥ 1; both must be subsets of that match’s `participantProfileIds`; no profile in both winner and loser lists; supports **2v2** (two winners, two losers) when the match lists four participants.
 
 **Request:**
 ```json
@@ -303,7 +303,8 @@
   "data": {
     "bracketId": "bracket_xyz",
     "matchId": "match_1",
-    "winnerId": "uid_1"
+    "winnerProfileIds": ["uid_1", "uid_2"],
+    "loserProfileIds": ["uid_3", "uid_4"]
   }
 }
 ```

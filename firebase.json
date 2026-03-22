@@ -1,11 +1,11 @@
 {
   "firestore": {
-    "database": "default",
-    "rules": "firestore.rules",
-    "indexes": "firestore.indexes.json"
+    "database": "(default)",
+    "rules": "firebase/firestore.rules",
+    "indexes": "firebase/firestore.indexes.json"
   },
   "storage": {
-    "rules": "storage.rules"
+    "rules": "firebase/storage.rules"
   },
   "emulators": {
     "auth": {
@@ -24,6 +24,6 @@
     "singleProjectMode": true
   },
   "functions": {
-    "source": "../functions"
+    "source": "functions"
   }
 }

@@ -66,6 +66,7 @@ Canonical valid sample:
 | `createdByProfileId` | string | yes | no | none | server | yes | Profile that created community. |
 | `inviteCode` | string | yes | no | none | server | no | Must be unique across communities. |
 | `inviteLink` | string | yes | no | none | server | no | Derived from current invite code. |
+| `memberCount` | number | yes | no | none | server | no | Current member count; increments on join (max 350). Omitted on legacy docs until backfilled. |
 | `createdAt` | timestamp | yes | no | server timestamp | server | yes | Global rule. |
 | `updatedAt` | timestamp | yes | no | server timestamp | server | no | Global rule. |
 
@@ -78,6 +79,7 @@ Canonical valid sample:
   "createdByProfileId": "uid_abc123",
   "inviteCode": "ABC123",
   "inviteLink": "https://bcup.app/join/ABC123",
+  "memberCount": 12,
   "createdAt": "SERVER_TIMESTAMP",
   "updatedAt": "SERVER_TIMESTAMP"
 }
@@ -196,6 +198,21 @@ Canonical valid sample:
   "updatedAt": "SERVER_TIMESTAMP"
 }
 ```
+
+### Bracket `rounds` — match objects (2v2-friendly)
+
+Each element of `rounds` is product-defined; typically a **round** contains **matches**. For each **match**, align with `gameLogs` where outcomes are attributed:
+
+| Field (per match) | Type | Notes |
+|---|---|---|
+| `matchId` | string | Stable id within the bracket. |
+| `participantProfileIds` | array<string> | Everyone in the match (e.g. four ids for 2v2). |
+| `winnerProfileIds` | array<string> | Min length 1; e.g. two ids for a winning team. |
+| `loserProfileIds` | array<string> | Min length 1; e.g. two ids for a losing team. |
+
+**Invariants (same as `gameLogs`):** `winnerProfileIds` and `loserProfileIds` are subsets of `participantProfileIds`; sets are disjoint; no duplicate ids within each array.
+
+Firestore security rules only enforce **top-level** bracket keys (`hasBracketKeys`); **nested** match validation should be enforced in **Cloud Functions** (or the client) when implementing `updateMatchResult`.
 
 ---
 

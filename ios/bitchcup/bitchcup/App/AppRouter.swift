@@ -6,6 +6,11 @@ enum AppRoute {
     case home
 }
 
+/// High-level session for root UI (see `AppSessionManager`).
+/// - `loading`: Initial `restoreSession()` in progress; avoid showing main chrome.
+/// - `unauthenticated`: No Firebase user **or** user is signed in but onboarding is not finished
+///   (`profiles/{uid}.onboardingCompleteAt` missing). Prefer `needsOnboarding` to distinguish.
+/// - `authenticated`: Signed in and Firestore profile has `onboardingCompleteAt`.
 enum SessionState {
     case loading
     case unauthenticated

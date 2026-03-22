@@ -1,11 +1,14 @@
 import SwiftUI
 
 struct FeedView: View {
-    @State private var showCommunities = false
+    @EnvironmentObject private var sessionManager: AppSessionManager
+    @EnvironmentObject private var container: DependencyContainer
+
+    @State private var showCommunitiesFlow = false
+    @State private var showCommunitiesList = false
     @State private var showGameLog = false
     @State private var showProfile = false
 
-    // TODO: replace with real state from view model in T08
     @State private var isLoading = false
     @State private var hasError = false
     @State private var isEmpty = true
@@ -13,23 +16,37 @@ struct FeedView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                // Top bar
                 HStack {
                     Text("BitchCUP")
                         .font(.title.bold())
                     Spacer()
-                    Button {
-                        showProfile = true
+                    Menu {
+                        Button {
+                            showProfile = true
+                        } label: {
+                            Label("View profile", systemImage: "person")
+                        }
+                        Button {
+                            showCommunitiesList = true
+                        } label: {
+                            Label("View communities", systemImage: "person.3")
+                        }
+                        Divider()
+                        Button(role: .destructive) {
+                            sessionManager.signOut()
+                        } label: {
+                            Label("Log out", systemImage: "rectangle.portrait.and.arrow.right")
+                        }
                     } label: {
-                        Circle()
-                            .frame(width: 40, height: 40)
-                            .foregroundColor(.gray)
+                        Image(systemName: "person.circle.fill")
+                            .font(.title2)
+                            .foregroundStyle(.primary)
                     }
+                    .accessibilityLabel("Account menu")
                 }
                 .padding(.horizontal)
                 .padding(.vertical, 8)
 
-                // Feed content
                 if isLoading {
                     LoadingView(message: "Loading feed...")
                 } else if hasError {
@@ -53,10 +70,9 @@ struct FeedView: View {
                     }
                 }
 
-                // Bottom nav
                 HStack {
                     Button("Your Communities") {
-                        showCommunities = true
+                        showCommunitiesFlow = true
                     }
                     .frame(maxWidth: .infinity)
                     .padding()
@@ -75,14 +91,21 @@ struct FeedView: View {
                 .padding(.horizontal)
                 .padding(.bottom)
             }
-            .navigationDestination(isPresented: $showCommunities) {
-                CommunitiesView()
+            .fullScreenCover(isPresented: $showCommunitiesFlow) {
+                CommunitiesFlowStack()
+                    .environmentObject(container)
+            }
+            .navigationDestination(isPresented: $showCommunitiesList) {
+                CommunitiesListView()
             }
             .navigationDestination(isPresented: $showGameLog) {
                 GameLogView()
             }
             .navigationDestination(isPresented: $showProfile) {
                 ProfileView()
+            }
+            .task {
+                await sessionManager.ensureOnboardingCompleteOrRouteToOnboarding()
             }
         }
     }

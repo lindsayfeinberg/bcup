@@ -2,7 +2,7 @@ import FirebaseAuth
 import PhotosUI
 import SwiftUI
 
-/// T05.1–T05.4: Google Sign-In, 21+ gate, profile setup, Firestore persistence → home feed.
+/// T05.1–T05.4: Google Sign-In, 21+ gate, profile setup, Firestore persistence → home feed. T05.6: `OnboardingAnalytics`.
 struct OnboardingView: View {
     @EnvironmentObject private var sessionManager: AppSessionManager
     @EnvironmentObject private var container: DependencyContainer
@@ -33,6 +33,12 @@ struct OnboardingView: View {
                 }
             }
         }
+        .onAppear {
+            OnboardingAnalytics.logOnboardingScreen(phase)
+        }
+        .onChange(of: phase) { _, newPhase in
+            OnboardingAnalytics.logOnboardingScreen(newPhase)
+        }
         .task {
             await syncPhaseFromFirestore()
         }
@@ -50,6 +56,7 @@ struct OnboardingView: View {
             Button {
                 Task {
                     AppDebugLog.log("OnboardingView: Continue with Google tapped")
+                    OnboardingAnalytics.logSignInButtonTapped()
                     await signInWithGoogle()
                 }
             } label: {
@@ -108,8 +115,8 @@ struct OnboardingView: View {
                 }
             }
         } catch {
-            localError = error.localizedDescription
-            AppDebugLog.log("OnboardingView.syncPhase: error \(error.localizedDescription)")
+            localError = FirestoreErrorMapper.userFacingMessage(for: error)
+            AppDebugLog.log("OnboardingView.syncPhase: error \(FirestoreErrorMapper.developerDebugLine(for: error))")
         }
     }
 
@@ -120,10 +127,12 @@ struct OnboardingView: View {
         do {
             try await container.userService.createProfileAfterAgeConfirmation(userId: uid)
             AppDebugLog.log("OnboardingView: age confirmation profile created")
+            OnboardingAnalytics.logAgeConfirmed()
             phase = .profileSetup
         } catch {
-            localError = error.localizedDescription
-            AppDebugLog.log("OnboardingView.confirmAge: \(error.localizedDescription)")
+            localError = FirestoreErrorMapper.userFacingMessageForFirebaseServices(for: error)
+            AppDebugLog.log("OnboardingView.confirmAge: \(FirestoreErrorMapper.developerDebugLine(for: error))")
+            OnboardingAnalytics.logAgeConfirmFailed()
         }
         isBusy = false
     }
@@ -152,10 +161,14 @@ struct OnboardingView: View {
                 displayName: name,
                 profilePhotoUrl: photoUrl
             )
+            let photoAdded = selectedPhotoItem != nil
             await sessionManager.refreshAfterProfileSaved()
+            OnboardingAnalytics.logProfileSubmitted(photoAdded: photoAdded)
+            OnboardingAnalytics.logOnboardingFunnelComplete()
         } catch {
-            localError = error.localizedDescription
-            AppDebugLog.log("OnboardingView.submitProfile: \(error.localizedDescription)")
+            localError = FirestoreErrorMapper.userFacingMessageForFirebaseServices(for: error)
+            AppDebugLog.log("OnboardingView.submitProfile: \(FirestoreErrorMapper.developerDebugLine(for: error))")
+            OnboardingAnalytics.logProfileSubmitFailed()
         }
         isBusy = false
     }
