@@ -32,7 +32,8 @@ protocol UserServiceProtocol {
 }
 
 protocol CommunityServiceProtocol {
-    func fetchCommunities() async throws
+    func fetchCommunities() async throws -> [(communityId: String, name: String)]
+    func fetchMembers(communityId: String) async throws -> [(profileId: String, displayName: String)]
     func createCommunity(name: String) async throws -> (communityId: String, inviteCode: String, inviteLink: String)
     func joinCommunity(inviteCode: String) async throws -> String
 }
@@ -219,7 +220,40 @@ final class CommunityService: CommunityServiceProtocol {
     /// Matches `createCommunity` / `joinCommunity` in Cloud Functions (`functions/src/communities.ts`).
     private static let functionsRegion = "us-central1"
 
-    func fetchCommunities() async throws {}
+    func fetchCommunities() async throws -> [(communityId: String, name: String)] {
+        guard let userId = Auth.auth().currentUser?.uid else { return [] }
+        let db = AppFirestore.db()
+        let memberships = try await db
+            .collection("memberships")
+            .whereField("profileId", isEqualTo: userId)
+            .getDocuments()
+
+        var communities: [(communityId: String, name: String)] = []
+        for doc in memberships.documents {
+            guard let communityId = doc.data()["communityId"] as? String else { continue }
+            let communityDoc = try await db.collection("communities").document(communityId).getDocument()
+            if let name = communityDoc.data()?["name"] as? String {
+                communities.append((communityId: communityId, name: name))
+            }
+        }
+        return communities
+    }
+    func fetchMembers(communityId: String) async throws -> [(profileId: String, displayName: String)] {
+        let db = AppFirestore.db()
+        let memberships = try await db
+            .collection("memberships")
+            .whereField("communityId", isEqualTo: communityId)
+            .getDocuments()
+
+        var members: [(profileId: String, displayName: String)] = []
+        for doc in memberships.documents {
+            guard let profileId = doc.data()["profileId"] as? String else { continue }
+            let profileDoc = try await db.collection("profiles").document(profileId).getDocument()
+            let displayName = profileDoc.data()?["displayName"] as? String ?? "Unknown"
+            members.append((profileId: profileId, displayName: displayName))
+        }
+        return members
+    }
 
     func createCommunity(name: String) async throws -> (communityId: String, inviteCode: String, inviteLink: String) {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)

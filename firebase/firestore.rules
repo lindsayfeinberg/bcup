@@ -151,7 +151,9 @@ service cloud.firestore {
 
     match /memberships/{membershipId} {
       // User can read only their own membership docs.
-      allow read: if signedIn() && isCommunityMember(resource.data.communityId);
+      allow read: if signedIn() && (
+        resource.data.profileId == uid() || isCommunityMember(resource.data.communityId)
+      );
 
       // Membership rows are created only by Cloud Functions (Admin SDK).
       allow create: if false;
