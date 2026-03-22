@@ -4,6 +4,7 @@ import Foundation
 enum CommunityRoute: Hashable {
     case create
     case join
+    case list
     case invite(communityId: String, inviteCode: String, inviteLink: String)
     case detail(communityId: String)
 }

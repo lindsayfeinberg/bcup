@@ -33,6 +33,10 @@ struct CommunitiesFlowStack: View {
 
                     case .detail(let communityId):
                         CommunityDetailView(communityId: communityId)
+                    
+                    case .list:
+                        CommunitiesListView()
+                            .environmentObject(container)
                     }
                 }
                 .toolbar {

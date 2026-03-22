@@ -33,6 +33,15 @@ struct CommunitiesEntryView: View {
                         .padding(.vertical, 12)
                 }
                 .buttonStyle(.bordered)
+                
+                Button {
+                    path.append(CommunityRoute.list)
+                } label: {
+                    Text("View communities")
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                }
+                .buttonStyle(.bordered)
             }
             .padding(.horizontal)
 
