@@ -54,6 +54,43 @@ protocol GameLogServiceProtocol {
     func deleteGameLog(gameLogId: String) async throws
 }
 
+// MARK: - Feed
+
+struct FeedRow: Identifiable {
+    let gameLogId: String
+    let communityId: String
+    let communityName: String?
+    let gameType: String
+    let winnerProfileIds: [String]
+    let loserProfileIds: [String]
+    let winnerNames: [String]
+    let loserNames: [String]
+    let photoUrls: [String]
+    let createdAt: Date
+    var id: String { gameLogId }
+
+    var primaryPhotoUrl: URL? {
+        photoUrls.first.flatMap { URL(string: $0) }
+    }
+
+    var winnersText: String {
+        winnerNames.isEmpty
+            ? winnerProfileIds.enumerated().map { "Winner \($0.offset + 1)" }.joined(separator: ", ")
+            : winnerNames.joined(separator: ", ")
+    }
+
+    var losersText: String {
+        loserNames.isEmpty
+            ? loserProfileIds.enumerated().map { "Loser \($0.offset + 1)" }.joined(separator: ", ")
+            : loserNames.joined(separator: ", ")
+    }
+}
+
+protocol FeedServiceProtocol {
+    /// Returns recent logs scoped to the signed-in user's communities.
+    func fetchFeed() async throws -> [FeedRow]
+}
+
 // MARK: - Container
 
 @MainActor
@@ -62,24 +99,29 @@ final class DependencyContainer: ObservableObject {
     let userService: UserServiceProtocol
     let communityService: CommunityServiceProtocol
     let gameLogService: GameLogServiceProtocol
+    let feedService: FeedServiceProtocol
 
     init() {
         self.authService = GoogleAuthService()
         self.userService = UserService()
         self.communityService = CommunityService()
-        self.gameLogService = GameLogService()
+        let gls = GameLogService()
+        self.gameLogService = gls
+        self.feedService = gls
     }
 
     init(
         authService: AuthServiceProtocol,
         userService: UserServiceProtocol,
         communityService: CommunityServiceProtocol,
-        gameLogService: GameLogServiceProtocol
+        gameLogService: GameLogServiceProtocol,
+        feedService: FeedServiceProtocol
     ) {
         self.authService = authService
         self.userService = userService
         self.communityService = communityService
         self.gameLogService = gameLogService
+        self.feedService = feedService
     }
 }
 
@@ -616,5 +658,108 @@ final class GameLogService: GameLogServiceProtocol {
             )
         }
         return error
+    }
+}
+extension GameLogService: FeedServiceProtocol {
+    private static let feedPageSize = 50
+    private static let whereInChunkSize = 10   // Firestore whereIn hard limit
+
+    /// Loads `communities/{id}.name` for feed labels (parallel reads).
+    private static func fetchCommunityNamesMap(db: Firestore, communityIds: [String]) async throws -> [String: String] {
+        let unique = Array(Set(communityIds))
+        guard !unique.isEmpty else { return [:] }
+        var map: [String: String] = [:]
+        try await withThrowingTaskGroup(of: (String, String?).self) { group in
+            for id in unique {
+                group.addTask {
+                    let snap = try await db.collection("communities").document(id).getDocument()
+                    let name = snap.data()?["name"] as? String
+                    return (id, name)
+                }
+            }
+            for try await (id, name) in group {
+                if let name, !name.isEmpty {
+                    map[id] = name
+                }
+            }
+        }
+        return map
+    }
+
+    func fetchFeed() async throws -> [FeedRow] {
+        guard let userId = Auth.auth().currentUser?.uid else {
+            AppDebugLog.log("FeedService.fetchFeed: no signed-in user — returning empty")
+            return []
+        }
+
+        // 1. Resolve community IDs from memberships
+        let db = AppFirestore.db()
+        let membershipDocs = try await db
+            .collection("memberships")
+            .whereField("profileId", isEqualTo: userId)
+            .getDocuments()
+
+        let communityIds: [String] = membershipDocs.documents.compactMap {
+            $0.data()["communityId"] as? String
+        }
+
+        AppDebugLog.log("FeedService.fetchFeed: memberships=\(communityIds.count) communityIds=\(communityIds)")
+
+        guard !communityIds.isEmpty else {
+            AppDebugLog.log("FeedService.fetchFeed: user has no communities — returning empty")
+            return []
+        }
+
+        let communityNameById = try await Self.fetchCommunityNamesMap(db: db, communityIds: communityIds)
+        AppDebugLog.log("FeedService.fetchFeed: community names resolved=\(communityNameById.count)/\(Set(communityIds).count)")
+
+        // 2. Chunk community IDs to respect Firestore whereIn limit of 10
+        let chunks = stride(from: 0, to: communityIds.count, by: Self.whereInChunkSize).map {
+            Array(communityIds[$0 ..< min($0 + Self.whereInChunkSize, communityIds.count)])
+        }
+
+        // 3. Query each chunk and collect rows
+        var allRows: [FeedRow] = []
+        for chunk in chunks {
+            let snapshot = try await db
+                .collection("gameLogs")
+                .whereField("communityId", in: chunk)
+                .order(by: "createdAt", descending: true)
+                .limit(to: Self.feedPageSize)
+                .getDocuments()
+
+            let rows: [FeedRow] = snapshot.documents.compactMap { doc in
+                let d = doc.data()
+                guard
+                    let communityId = d["communityId"] as? String,
+                    let gameType = d["gameType"] as? String,
+                    let createdAtTs = d["createdAt"] as? Timestamp
+                else { return nil }
+
+                let winnerIds = d["winnerProfileIds"] as? [String] ?? []
+                let loserIds = d["loserProfileIds"] as? [String] ?? []
+                let participantNames = d["participantDisplayNames"] as? [String: String] ?? [:]
+
+                return FeedRow(
+                    gameLogId: doc.documentID,
+                    communityId: communityId,
+                    communityName: communityNameById[communityId],
+                    gameType: gameType,
+                    winnerProfileIds: winnerIds,
+                    loserProfileIds: loserIds,
+                    winnerNames: winnerIds.compactMap { participantNames[$0] },
+                    loserNames: loserIds.compactMap { participantNames[$0] },
+                    photoUrls: d["photoUrls"] as? [String] ?? [],
+                    createdAt: createdAtTs.dateValue()
+                )
+            }
+            allRows.append(contentsOf: rows)
+        }
+
+        // 4. Merge-sort across chunks by createdAt desc, then trim to page size
+        allRows.sort { $0.createdAt > $1.createdAt }
+        let result = Array(allRows.prefix(Self.feedPageSize))
+        AppDebugLog.log("FeedService.fetchFeed: logs returned=\(result.count)")
+        return result
     }
 }
