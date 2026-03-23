@@ -99,7 +99,7 @@ struct FeedView: View {
                 CommunitiesListView()
             }
             .navigationDestination(isPresented: $showGameLog) {
-                GameLogView()
+                GameLogCaptureEntryView()
             }
             .navigationDestination(isPresented: $showProfile) {
                 ProfileView()

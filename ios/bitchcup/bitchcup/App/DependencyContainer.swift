@@ -41,6 +41,17 @@ protocol CommunityServiceProtocol {
 
 protocol GameLogServiceProtocol {
     func fetchLogs(communityId: String) async throws
+    func canCurrentUserEditDelete(createdByProfileId: String) -> Bool
+    func uploadGamePhoto(
+        communityId: String,
+        gameLogId: String,
+        side: String,
+        data: Data,
+        contentType: String
+    ) async throws -> String
+    func createGameLog(payload: GameLogCreatePayload) async throws
+    func updateGameLog(payload: GameLogUpdatePayload) async throws
+    func deleteGameLog(gameLogId: String) async throws
 }
 
 // MARK: - Container
@@ -76,6 +87,35 @@ struct CommunityJoinPreview {
     let communityId: String
     let name: String
     let memberCount: Int
+}
+
+struct GameLogCreatePayload {
+    let gameLogId: String
+    let communityId: String
+    let gameType: String
+    let createdByProfileId: String
+    let participantProfileIds: [String]
+    let winnerProfileIds: [String]
+    let loserProfileIds: [String]
+    let photoUrls: [String]
+    let notes: String?
+    let pongStats: [String: Any]?
+    let beerBallStats: [String: Any]?
+    let battlePongStats: [String: Any]?
+    let baseballStats: [String: Any]?
+}
+
+struct GameLogUpdatePayload {
+    let gameLogId: String
+    let participantProfileIds: [String]
+    let winnerProfileIds: [String]
+    let loserProfileIds: [String]
+    let photoUrls: [String]
+    let notes: String?
+    let pongStats: [String: Any]?
+    let beerBallStats: [String: Any]?
+    let battlePongStats: [String: Any]?
+    let baseballStats: [String: Any]?
 }
 
 // MARK: - Default Service Implementations
@@ -453,4 +493,128 @@ final class CommunityService: CommunityServiceProtocol {
 
 final class GameLogService: GameLogServiceProtocol {
     func fetchLogs(communityId: String) async throws {}
+
+    func canCurrentUserEditDelete(createdByProfileId: String) -> Bool {
+        Auth.auth().currentUser?.uid == createdByProfileId
+    }
+
+    func uploadGamePhoto(
+        communityId: String,
+        gameLogId: String,
+        side: String,
+        data: Data,
+        contentType: String
+    ) async throws -> String {
+        guard let uid = Auth.auth().currentUser?.uid else {
+            throw NSError(
+                domain: "GameLogService",
+                code: 401,
+                userInfo: [NSLocalizedDescriptionKey: "Sign in again, then try submitting."]
+            )
+        }
+        let filename = "\(side)_\(UUID().uuidString).jpg"
+        let path = "gamePhotos/\(communityId)/\(gameLogId)/\(filename)"
+        let ref = Storage.storage().reference().child(path)
+        let metadata = StorageMetadata()
+        metadata.contentType = contentType
+        metadata.customMetadata = ["createdByProfileId": uid]
+        _ = try await ref.putDataAsync(data, metadata: metadata)
+        let url = try await ref.downloadURL()
+        return url.absoluteString
+    }
+
+    func createGameLog(payload: GameLogCreatePayload) async throws {
+        let now = Timestamp(date: Date())
+        var data: [String: Any] = [
+            "id": payload.gameLogId,
+            "communityId": payload.communityId,
+            "gameType": payload.gameType,
+            "createdByProfileId": payload.createdByProfileId,
+            "participantProfileIds": payload.participantProfileIds,
+            "winnerProfileIds": payload.winnerProfileIds,
+            "loserProfileIds": payload.loserProfileIds,
+            "photoUrls": payload.photoUrls,
+            "notes": payload.notes ?? NSNull(),
+            "createdAt": now,
+            "updatedAt": now
+        ]
+        if let pongStats = payload.pongStats {
+            data["pongStats"] = pongStats
+        } else {
+            data["pongStats"] = NSNull()
+        }
+        if let beerBallStats = payload.beerBallStats {
+            data["beerBallStats"] = beerBallStats
+        }
+        if let battlePongStats = payload.battlePongStats {
+            data["battlePongStats"] = battlePongStats
+        }
+        if let baseballStats = payload.baseballStats {
+            data["baseballStats"] = baseballStats
+        }
+        try await AppFirestore.db()
+            .collection("gameLogs")
+            .document(payload.gameLogId)
+            .setData(data)
+    }
+
+    func updateGameLog(payload: GameLogUpdatePayload) async throws {
+        let now = Timestamp(date: Date())
+        var data: [String: Any] = [
+            "participantProfileIds": payload.participantProfileIds,
+            "winnerProfileIds": payload.winnerProfileIds,
+            "loserProfileIds": payload.loserProfileIds,
+            "photoUrls": payload.photoUrls,
+            "notes": payload.notes ?? NSNull(),
+            "pongStats": payload.pongStats ?? NSNull(),
+            "updatedAt": now
+        ]
+        if let beerBallStats = payload.beerBallStats {
+            data["beerBallStats"] = beerBallStats
+        } else {
+            data["beerBallStats"] = NSNull()
+        }
+        if let battlePongStats = payload.battlePongStats {
+            data["battlePongStats"] = battlePongStats
+        } else {
+            data["battlePongStats"] = NSNull()
+        }
+        if let baseballStats = payload.baseballStats {
+            data["baseballStats"] = baseballStats
+        } else {
+            data["baseballStats"] = NSNull()
+        }
+        do {
+            try await AppFirestore.db()
+                .collection("gameLogs")
+                .document(payload.gameLogId)
+                .updateData(data)
+        } catch {
+            throw Self.mapGameLogWriteError(error)
+        }
+    }
+
+    func deleteGameLog(gameLogId: String) async throws {
+        do {
+            try await AppFirestore.db()
+                .collection("gameLogs")
+                .document(gameLogId)
+                .delete()
+        } catch {
+            throw Self.mapGameLogWriteError(error)
+        }
+    }
+
+    private static func mapGameLogWriteError(_ error: Error) -> Error {
+        let ns = error as NSError
+        if ns.domain == FirestoreErrorDomain,
+           ns.code == FirestoreErrorCode.permissionDenied.rawValue {
+            return NSError(
+                domain: "GameLogService",
+                code: ns.code,
+                userInfo: [NSLocalizedDescriptionKey: "Only the creator can edit or delete this log."]
+            )
+        }
+        return error
+    }
 }

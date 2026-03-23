@@ -117,7 +117,14 @@
   - Both must be subsets of `participantProfileIds`
   - No profile can appear in both winners and losers
   - `photoUrls` min length 1
-  - `pongStats` required only when `gameType` is `PONG`
+  - `pongStats` required only when `gameType` is `PONG`, with:
+    - `cupMode` in `{6, 10}`
+    - sum of `playerCupsHit` equal to `cupMode`
+    - optional `lastCupByProfileId` in participants
+  - Optional placeholders:
+    - `beerBallStats.newCanCountByProfileId`, optional `beerBallStats.firstFinishedByProfileId`
+    - `battlePongStats.playerCupsHit`
+    - `baseballStats.hitsByProfileId`
 
 **Request:**
 ```json
@@ -132,8 +139,12 @@
     "photoUrls": ["https://storage.firebase.com/photo1.jpg"],
     "notes": null,
     "pongStats": {
+      "cupMode": 10,
       "playerCupsHit": { "uid_1": 10, "uid_2": 6 }
-    }
+    },
+    "beerBallStats": null,
+    "battlePongStats": null,
+    "baseballStats": null
   }
 }
 ```

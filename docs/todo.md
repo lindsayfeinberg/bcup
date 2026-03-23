@@ -25,10 +25,10 @@ This plan is sequenced to let two developers work in parallel with clear handoff
 **Depends on:** `[T01]`
 
 **Reference docs:**
+
 - `docs/architecture/data-model.md`
 - `docs/architecture/data-contracts.md`
 - `docs/architecture/api-contracts.md`
-
 - `T02.1` Finalize Firestore collection/document shapes for `profiles`, `communities`, `memberships`, `gameLogs`, and `brackets`.
 - `T02.2` Define enums/constants for game types and seeding methods (`COMMUNITY_ODDS`, `MANUAL`, `RANDOM`).
 - `T02.3` Define Cloud Functions API contracts (request/response/error format).
@@ -64,12 +64,12 @@ This plan is sequenced to let two developers work in parallel with clear handoff
 
 **Depends on:** `[T03, T04]`
 
-- [x] `T05.1` Integrate Google Sign-In using Firebase Auth.
-- [x] `T05.2` Implement first-login 21+ confirmation step.
-- [x] `T05.3` Build profile setup for display name and profile photo upload.
-- [x] `T05.4` Persist onboarding state and route returning users directly to home feed.
-- [x] `T05.5` Add guardrails for incomplete onboarding states.
-- [x] `T05.6` Add analytics events for onboarding funnel steps.
+- `T05.1` Integrate Google Sign-In using Firebase Auth.
+- `T05.2` Implement first-login 21+ confirmation step.
+- `T05.3` Build profile setup for display name and profile photo upload.
+- `T05.4` Persist onboarding state and route returning users directly to home feed.
+- `T05.5` Add guardrails for incomplete onboarding states.
+- `T05.6` Add analytics events for onboarding funnel steps.
 
 ### [ ] T06. Communities (Create, Invite-Only Join, Membership)
 
@@ -91,8 +91,7 @@ This plan is sequenced to let two developers work in parallel with clear handoff
   - `T07.2.a` Winners/losers must be selected from participants
   - `T07.2.b` Same profile cannot be in both winners and losers
 - `T07.3` Enforce at least one photo before submit.
-- `T07.4` Build Pong cups-hit input UI per player.
-- `T07.5` Add basic stat placeholders for Beer Ball, Battle Pong, and Baseball.
+- `T07.5` Add basic stat placeholders for Pong, Beer Ball, Battle Pong, and Baseball.
 - `T07.6` Implement creator-only edit/delete enforcement.
 - `T07.7` Add retry and validation UX for submission failures.
 
