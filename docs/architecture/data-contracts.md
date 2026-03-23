@@ -96,6 +96,8 @@ Recommended ID format: `{communityId}_{profileId}` for uniqueness.
 | `id` | string | yes | no | none | server | yes | Must equal `membershipId`. |
 | `communityId` | string | yes | no | none | server | yes | Must reference existing community. |
 | `profileId` | string | yes | no | none | server | yes | Must reference existing profile. |
+| `displayName` | string | no | no | `""` | server | no | Denormalized roster field for community member lists (read-only from client). |
+| `profilePhotoUrl` | string | no | yes | `null` | server | no | Denormalized roster field (read-only from client). |
 | `joinedAt` | timestamp | yes | no | server timestamp | server | yes | Set once when membership is created. |
 | `communityOdds` | number | no | no | `0` | server | no | Derived field; scoped to community+profile. |
 | `createdAt` | timestamp | yes | no | server timestamp | server | yes | Global rule. |
@@ -108,6 +110,8 @@ Canonical valid sample:
   "id": "community_001_uid_abc123",
   "communityId": "community_001",
   "profileId": "uid_abc123",
+  "displayName": "Maya",
+  "profilePhotoUrl": null,
   "joinedAt": "SERVER_TIMESTAMP",
   "communityOdds": 0,
   "createdAt": "SERVER_TIMESTAMP",

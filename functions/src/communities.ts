@@ -73,6 +73,12 @@ export const createCommunity = onCall({region}, async (request) => {
   }
 
   const uid = request.auth.uid;
+  // Denormalize roster display fields onto the membership doc so the client
+  // doesn't need to read other users' `profiles/*` (which is intentionally locked down by rules).
+  const profileSnap = await db.collection("profiles").doc(uid).get();
+  const displayName = (profileSnap.data()?.displayName as string | undefined) ?? "";
+  const profilePhotoUrl = (profileSnap.data()?.profilePhotoUrl as string | undefined) ?? null;
+
   const communityRef = db.collection("communities").doc();
   const communityId = communityRef.id;
   const inviteCode = await generateUniqueInviteCode();
@@ -97,6 +103,8 @@ export const createCommunity = onCall({region}, async (request) => {
         id: membershipId,
         communityId,
         profileId: uid,
+        displayName,
+        profilePhotoUrl,
         joinedAt: now,
         communityOdds: 0,
         createdAt: now,
@@ -122,6 +130,12 @@ export const joinCommunity = onCall({region}, async (request) => {
   }
 
   const uid = request.auth.uid;
+  // Denormalize roster display fields onto the membership doc so the client
+  // doesn't need to read other users' `profiles/*` (which is intentionally locked down by rules).
+  const profileSnap = await db.collection("profiles").doc(uid).get();
+  const displayName = (profileSnap.data()?.displayName as string | undefined) ?? "";
+  const profilePhotoUrl = (profileSnap.data()?.profilePhotoUrl as string | undefined) ?? null;
+
   const communities = await db.collection("communities")
     .where("inviteCode", "==", inviteCode)
     .limit(1)
@@ -160,6 +174,8 @@ export const joinCommunity = onCall({region}, async (request) => {
         id: membershipId,
         communityId,
         profileId: uid,
+        displayName,
+        profilePhotoUrl,
         joinedAt: now,
         communityOdds: 0,
         createdAt: now,
@@ -175,4 +191,46 @@ export const joinCommunity = onCall({region}, async (request) => {
   }
 
   return newEnvelope({communityId});
+});
+
+export const previewJoinCommunity = onCall({region}, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Sign in required");
+  }
+
+  const raw = request.data?.inviteCode;
+  const inviteCode = typeof raw === "string" ? raw.trim().toUpperCase() : "";
+  if (!inviteCode) {
+    throw new HttpsError("invalid-argument", "inviteCode is required");
+  }
+
+  const communities = await db.collection("communities")
+    .where("inviteCode", "==", inviteCode)
+    .limit(1)
+    .get();
+
+  if (communities.empty) {
+    throw new HttpsError("not-found", "Invalid invite code");
+  }
+
+  const communityRef = communities.docs[0].ref;
+  const communityId = communityRef.id;
+  const data = communities.docs[0].data();
+
+  const name = typeof data.name === "string" ? data.name : "Community";
+  let memberCount = typeof data.memberCount === "number" ? data.memberCount : 0;
+
+  // Older docs might omit memberCount. Fallback to counting memberships if needed.
+  if (typeof data.memberCount !== "number") {
+    const membershipsSnap = await db.collection("memberships")
+      .where("communityId", "==", communityId)
+      .get();
+    memberCount = membershipsSnap.size;
+  }
+
+  if (memberCount >= MAX_COMMUNITY_MEMBERS) {
+    throw new HttpsError("failed-precondition", "Community is full");
+  }
+
+  return newEnvelope({communityId, name, memberCount});
 });

@@ -36,6 +36,7 @@ protocol CommunityServiceProtocol {
     func fetchMembers(communityId: String) async throws -> [(profileId: String, displayName: String)]
     func createCommunity(name: String) async throws -> (communityId: String, inviteCode: String, inviteLink: String)
     func joinCommunity(inviteCode: String) async throws -> String
+    func previewJoinCommunity(inviteCode: String) async throws -> CommunityJoinPreview
 }
 
 protocol GameLogServiceProtocol {
@@ -69,6 +70,12 @@ final class DependencyContainer: ObservableObject {
         self.communityService = communityService
         self.gameLogService = gameLogService
     }
+}
+
+struct CommunityJoinPreview {
+    let communityId: String
+    let name: String
+    let memberCount: Int
 }
 
 // MARK: - Default Service Implementations
@@ -239,6 +246,7 @@ final class CommunityService: CommunityServiceProtocol {
         return communities
     }
     func fetchMembers(communityId: String) async throws -> [(profileId: String, displayName: String)] {
+        guard let currentUserId = Auth.auth().currentUser?.uid else { return [] }
         let db = AppFirestore.db()
         let memberships = try await db
             .collection("memberships")
@@ -248,9 +256,22 @@ final class CommunityService: CommunityServiceProtocol {
         var members: [(profileId: String, displayName: String)] = []
         for doc in memberships.documents {
             guard let profileId = doc.data()["profileId"] as? String else { continue }
-            let profileDoc = try await db.collection("profiles").document(profileId).getDocument()
-            let displayName = profileDoc.data()?["displayName"] as? String ?? "Unknown"
-            members.append((profileId: profileId, displayName: displayName))
+            // Prefer denormalized roster fields from memberships to avoid reading other users' `profiles/*`.
+            let membershipData = doc.data()
+            let displayNameFromMembership = membershipData["displayName"] as? String
+            if let displayNameFromMembership {
+                members.append((profileId: profileId, displayName: displayNameFromMembership))
+                continue
+            }
+
+            // Legacy fallback: only read your own profile (allowed by rules).
+            if profileId == currentUserId {
+                let profileDoc = try await db.collection("profiles").document(profileId).getDocument()
+                let displayName = profileDoc.data()?["displayName"] as? String ?? ""
+                members.append((profileId: profileId, displayName: displayName))
+            } else {
+                members.append((profileId: profileId, displayName: ""))
+            }
         }
         return members
     }
@@ -284,6 +305,36 @@ final class CommunityService: CommunityServiceProtocol {
                 throw CommunityServiceError.invalidResponse
             }
             return communityId
+        } catch {
+            throw Self.mapCallableError(error)
+        }
+    }
+
+    func previewJoinCommunity(inviteCode: String) async throws -> CommunityJoinPreview {
+        let trimmed = inviteCode.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        guard !trimmed.isEmpty else { throw CommunityServiceError.emptyInviteCode }
+        do {
+            let result = try await Self.postCallable(
+                functionName: "previewJoinCommunity",
+                payload: ["inviteCode": trimmed]
+            )
+            let data = try Self.unwrapEnvelope(result)
+            guard let communityId = data["communityId"] as? String,
+                  let name = data["name"] as? String
+            else {
+                throw CommunityServiceError.invalidResponse
+            }
+
+            let memberCount: Int
+            if let i = data["memberCount"] as? Int {
+                memberCount = i
+            } else if let d = data["memberCount"] as? Double {
+                memberCount = Int(d)
+            } else {
+                throw CommunityServiceError.invalidResponse
+            }
+
+            return CommunityJoinPreview(communityId: communityId, name: name, memberCount: memberCount)
         } catch {
             throw Self.mapCallableError(error)
         }
