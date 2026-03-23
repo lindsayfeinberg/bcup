@@ -41,9 +41,14 @@ struct CommunitiesFlowStack: View {
                 }
                 .toolbar {
                     ToolbarItem(placement: .navigationBarLeading) {
-                        Button("Close") {
+                        Button {
                             dismiss()
+                        } label: {
+                            Text("Close")
+                                .font(.custom("NeueHaasDisplay-Mediu", size: 18))
+                                .foregroundStyle(Color(red: 41.0 / 255.0, green: 0.0 / 255.0, blue: 3.0 / 255.0))
                         }
+                        .buttonStyle(.plain)
                     }
                 }
         }

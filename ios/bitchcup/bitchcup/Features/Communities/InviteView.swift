@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct InviteView: View {
+    @Environment(\.dismiss) private var dismiss
     let communityId: String
     let inviteCode: String
     let inviteLink: String
@@ -12,16 +13,18 @@ struct InviteView: View {
     var body: some View {
         VStack(spacing: 24) {
             Text("League Created!")
-                .font(.title.bold())
+                .font(.custom("NeueHaasDisplay-Bold", size: 48))
+                .padding(.bottom, 12)
 
             VStack(spacing: 8) {
                 Text("Invite Code")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .font(.custom("NeueHaasDisplay-Light", size: 18))
+                    .foregroundColor(.black)
                 Text(inviteCode)
-                    .font(.system(size: 36, weight: .bold, design: .monospaced))
+                    .font(.custom("NeueHaasDisplay-Bold", size: 36))
+                    .foregroundColor(.white)
                     .padding()
-                    .background(Color(.systemGray6))
+                    .background(Color(red: 207.0 / 255.0, green: 106.0 / 255.0, blue: 84.0 / 255.0))
                     .cornerRadius(12)
             }
 
@@ -33,9 +36,11 @@ struct InviteView: View {
                 }
             } label: {
                 Label(copied ? "Copied!" : "Copy Code", systemImage: "doc.on.doc")
+                    .font(.custom("NeueHaasDisplay-Mediu", size: 24))
                     .frame(maxWidth: .infinity)
                     .padding()
-                    .background(Color(.systemGray5))
+                    .background(Color(red: 180.0 / 255.0, green: 61.0 / 255.0, blue: 37.0 / 255.0))
+                    .foregroundColor(.white)
                     .cornerRadius(12)
             }
 
@@ -43,9 +48,10 @@ struct InviteView: View {
                 showShareSheet = true
             } label: {
                 Label("Share Invite Link", systemImage: "square.and.arrow.up")
+                    .font(.custom("NeueHaasDisplay-Mediu", size: 24))
                     .frame(maxWidth: .infinity)
                     .padding()
-                    .background(.blue)
+                    .background(Color(red: 180.0 / 255.0, green: 61.0 / 255.0, blue: 37.0 / 255.0))
                     .foregroundColor(.white)
                     .cornerRadius(12)
             }
@@ -55,13 +61,26 @@ struct InviteView: View {
             Button("Go to League") {
                 onDone()
             }
+            .font(.custom("NeueHaasDisplay-Bold", size: 28))
             .frame(maxWidth: .infinity)
             .padding()
-            .background(.black)
-            .foregroundColor(.white)
-            .cornerRadius(12)
+            .foregroundColor(.black)
+            .buttonStyle(.plain)
         }
         .padding()
+        .navigationBarBackButtonHidden(true)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button {
+                    dismiss()
+                } label: {
+                    Text("Back")
+                        .font(.custom("NeueHaasDisplay-Mediu", size: 18))
+                        .foregroundStyle(Color(red: 41.0 / 255.0, green: 0.0 / 255.0, blue: 3.0 / 255.0))
+                }
+                .buttonStyle(.plain)
+            }
+        }
         .sheet(isPresented: $showShareSheet) {
             ShareSheet(items: [inviteLink])
         }
