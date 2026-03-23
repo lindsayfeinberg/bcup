@@ -36,10 +36,59 @@ protocol CommunityServiceProtocol {
     func fetchMembers(communityId: String) async throws -> [(profileId: String, displayName: String)]
     func createCommunity(name: String) async throws -> (communityId: String, inviteCode: String, inviteLink: String)
     func joinCommunity(inviteCode: String) async throws -> String
+    func previewJoinCommunity(inviteCode: String) async throws -> CommunityJoinPreview
 }
 
 protocol GameLogServiceProtocol {
     func fetchLogs(communityId: String) async throws
+    func canCurrentUserEditDelete(createdByProfileId: String) -> Bool
+    func uploadGamePhoto(
+        communityId: String,
+        gameLogId: String,
+        side: String,
+        data: Data,
+        contentType: String
+    ) async throws -> String
+    func createGameLog(payload: GameLogCreatePayload) async throws
+    func updateGameLog(payload: GameLogUpdatePayload) async throws
+    func deleteGameLog(gameLogId: String) async throws
+}
+
+// MARK: - Feed
+
+struct FeedRow: Identifiable {
+    let gameLogId: String
+    let communityId: String
+    let communityName: String?
+    let gameType: String
+    let winnerProfileIds: [String]
+    let loserProfileIds: [String]
+    let winnerNames: [String]
+    let loserNames: [String]
+    let photoUrls: [String]
+    let createdAt: Date
+    var id: String { gameLogId }
+
+    var primaryPhotoUrl: URL? {
+        photoUrls.first.flatMap { URL(string: $0) }
+    }
+
+    var winnersText: String {
+        winnerNames.isEmpty
+            ? winnerProfileIds.enumerated().map { "Winner \($0.offset + 1)" }.joined(separator: ", ")
+            : winnerNames.joined(separator: ", ")
+    }
+
+    var losersText: String {
+        loserNames.isEmpty
+            ? loserProfileIds.enumerated().map { "Loser \($0.offset + 1)" }.joined(separator: ", ")
+            : loserNames.joined(separator: ", ")
+    }
+}
+
+protocol FeedServiceProtocol {
+    /// Returns recent logs scoped to the signed-in user's communities.
+    func fetchFeed() async throws -> [FeedRow]
 }
 
 // MARK: - Container
@@ -50,25 +99,65 @@ final class DependencyContainer: ObservableObject {
     let userService: UserServiceProtocol
     let communityService: CommunityServiceProtocol
     let gameLogService: GameLogServiceProtocol
+    let feedService: FeedServiceProtocol
 
     init() {
         self.authService = GoogleAuthService()
         self.userService = UserService()
         self.communityService = CommunityService()
-        self.gameLogService = GameLogService()
+        let gls = GameLogService()
+        self.gameLogService = gls
+        self.feedService = gls
     }
 
     init(
         authService: AuthServiceProtocol,
         userService: UserServiceProtocol,
         communityService: CommunityServiceProtocol,
-        gameLogService: GameLogServiceProtocol
+        gameLogService: GameLogServiceProtocol,
+        feedService: FeedServiceProtocol
     ) {
         self.authService = authService
         self.userService = userService
         self.communityService = communityService
         self.gameLogService = gameLogService
+        self.feedService = feedService
     }
+}
+
+struct CommunityJoinPreview {
+    let communityId: String
+    let name: String
+    let memberCount: Int
+}
+
+struct GameLogCreatePayload {
+    let gameLogId: String
+    let communityId: String
+    let gameType: String
+    let createdByProfileId: String
+    let participantProfileIds: [String]
+    let winnerProfileIds: [String]
+    let loserProfileIds: [String]
+    let photoUrls: [String]
+    let notes: String?
+    let pongStats: [String: Any]?
+    let beerBallStats: [String: Any]?
+    let battlePongStats: [String: Any]?
+    let baseballStats: [String: Any]?
+}
+
+struct GameLogUpdatePayload {
+    let gameLogId: String
+    let participantProfileIds: [String]
+    let winnerProfileIds: [String]
+    let loserProfileIds: [String]
+    let photoUrls: [String]
+    let notes: String?
+    let pongStats: [String: Any]?
+    let beerBallStats: [String: Any]?
+    let battlePongStats: [String: Any]?
+    let baseballStats: [String: Any]?
 }
 
 // MARK: - Default Service Implementations
@@ -207,7 +296,7 @@ enum CommunityServiceError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .emptyName:
-            return "Enter a community name."
+            return "Enter a league name."
         case .emptyInviteCode:
             return "Enter an invite code."
         case .invalidResponse:
@@ -239,6 +328,7 @@ final class CommunityService: CommunityServiceProtocol {
         return communities
     }
     func fetchMembers(communityId: String) async throws -> [(profileId: String, displayName: String)] {
+        guard let currentUserId = Auth.auth().currentUser?.uid else { return [] }
         let db = AppFirestore.db()
         let memberships = try await db
             .collection("memberships")
@@ -248,9 +338,22 @@ final class CommunityService: CommunityServiceProtocol {
         var members: [(profileId: String, displayName: String)] = []
         for doc in memberships.documents {
             guard let profileId = doc.data()["profileId"] as? String else { continue }
-            let profileDoc = try await db.collection("profiles").document(profileId).getDocument()
-            let displayName = profileDoc.data()?["displayName"] as? String ?? "Unknown"
-            members.append((profileId: profileId, displayName: displayName))
+            // Prefer denormalized roster fields from memberships to avoid reading other users' `profiles/*`.
+            let membershipData = doc.data()
+            let displayNameFromMembership = membershipData["displayName"] as? String
+            if let displayNameFromMembership {
+                members.append((profileId: profileId, displayName: displayNameFromMembership))
+                continue
+            }
+
+            // Legacy fallback: only read your own profile (allowed by rules).
+            if profileId == currentUserId {
+                let profileDoc = try await db.collection("profiles").document(profileId).getDocument()
+                let displayName = profileDoc.data()?["displayName"] as? String ?? ""
+                members.append((profileId: profileId, displayName: displayName))
+            } else {
+                members.append((profileId: profileId, displayName: ""))
+            }
         }
         return members
     }
@@ -284,6 +387,36 @@ final class CommunityService: CommunityServiceProtocol {
                 throw CommunityServiceError.invalidResponse
             }
             return communityId
+        } catch {
+            throw Self.mapCallableError(error)
+        }
+    }
+
+    func previewJoinCommunity(inviteCode: String) async throws -> CommunityJoinPreview {
+        let trimmed = inviteCode.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        guard !trimmed.isEmpty else { throw CommunityServiceError.emptyInviteCode }
+        do {
+            let result = try await Self.postCallable(
+                functionName: "previewJoinCommunity",
+                payload: ["inviteCode": trimmed]
+            )
+            let data = try Self.unwrapEnvelope(result)
+            guard let communityId = data["communityId"] as? String,
+                  let name = data["name"] as? String
+            else {
+                throw CommunityServiceError.invalidResponse
+            }
+
+            let memberCount: Int
+            if let i = data["memberCount"] as? Int {
+                memberCount = i
+            } else if let d = data["memberCount"] as? Double {
+                memberCount = Int(d)
+            } else {
+                throw CommunityServiceError.invalidResponse
+            }
+
+            return CommunityJoinPreview(communityId: communityId, name: name, memberCount: memberCount)
         } catch {
             throw Self.mapCallableError(error)
         }
@@ -351,7 +484,7 @@ final class CommunityService: CommunityServiceProtocol {
             return NSError(
                 domain: domain,
                 code: 400,
-                userInfo: [NSLocalizedDescriptionKey: "This community is full (max 350 members)."]
+                userInfo: [NSLocalizedDescriptionKey: "This league is full (max 350 members)."]
             )
         case "NOT_FOUND":
             return NSError(
@@ -363,7 +496,7 @@ final class CommunityService: CommunityServiceProtocol {
             return NSError(
                 domain: domain,
                 code: 409,
-                userInfo: [NSLocalizedDescriptionKey: "You are already in this community."]
+                userInfo: [NSLocalizedDescriptionKey: "You are already in this league."]
             )
         case "INVALID_ARGUMENT":
             return NSError(
@@ -402,4 +535,231 @@ final class CommunityService: CommunityServiceProtocol {
 
 final class GameLogService: GameLogServiceProtocol {
     func fetchLogs(communityId: String) async throws {}
+
+    func canCurrentUserEditDelete(createdByProfileId: String) -> Bool {
+        Auth.auth().currentUser?.uid == createdByProfileId
+    }
+
+    func uploadGamePhoto(
+        communityId: String,
+        gameLogId: String,
+        side: String,
+        data: Data,
+        contentType: String
+    ) async throws -> String {
+        guard let uid = Auth.auth().currentUser?.uid else {
+            throw NSError(
+                domain: "GameLogService",
+                code: 401,
+                userInfo: [NSLocalizedDescriptionKey: "Sign in again, then try submitting."]
+            )
+        }
+        let filename = "\(side)_\(UUID().uuidString).jpg"
+        let path = "gamePhotos/\(communityId)/\(gameLogId)/\(filename)"
+        let ref = Storage.storage().reference().child(path)
+        let metadata = StorageMetadata()
+        metadata.contentType = contentType
+        metadata.customMetadata = ["createdByProfileId": uid]
+        _ = try await ref.putDataAsync(data, metadata: metadata)
+        let url = try await ref.downloadURL()
+        return url.absoluteString
+    }
+
+    func createGameLog(payload: GameLogCreatePayload) async throws {
+        let now = Timestamp(date: Date())
+        var data: [String: Any] = [
+            "id": payload.gameLogId,
+            "communityId": payload.communityId,
+            "gameType": payload.gameType,
+            "createdByProfileId": payload.createdByProfileId,
+            "participantProfileIds": payload.participantProfileIds,
+            "winnerProfileIds": payload.winnerProfileIds,
+            "loserProfileIds": payload.loserProfileIds,
+            "photoUrls": payload.photoUrls,
+            "notes": payload.notes ?? NSNull(),
+            "createdAt": now,
+            "updatedAt": now
+        ]
+        if let pongStats = payload.pongStats {
+            data["pongStats"] = pongStats
+        } else {
+            data["pongStats"] = NSNull()
+        }
+        if let beerBallStats = payload.beerBallStats {
+            data["beerBallStats"] = beerBallStats
+        }
+        if let battlePongStats = payload.battlePongStats {
+            data["battlePongStats"] = battlePongStats
+        }
+        if let baseballStats = payload.baseballStats {
+            data["baseballStats"] = baseballStats
+        }
+        try await AppFirestore.db()
+            .collection("gameLogs")
+            .document(payload.gameLogId)
+            .setData(data)
+    }
+
+    func updateGameLog(payload: GameLogUpdatePayload) async throws {
+        let now = Timestamp(date: Date())
+        var data: [String: Any] = [
+            "participantProfileIds": payload.participantProfileIds,
+            "winnerProfileIds": payload.winnerProfileIds,
+            "loserProfileIds": payload.loserProfileIds,
+            "photoUrls": payload.photoUrls,
+            "notes": payload.notes ?? NSNull(),
+            "pongStats": payload.pongStats ?? NSNull(),
+            "updatedAt": now
+        ]
+        if let beerBallStats = payload.beerBallStats {
+            data["beerBallStats"] = beerBallStats
+        } else {
+            data["beerBallStats"] = NSNull()
+        }
+        if let battlePongStats = payload.battlePongStats {
+            data["battlePongStats"] = battlePongStats
+        } else {
+            data["battlePongStats"] = NSNull()
+        }
+        if let baseballStats = payload.baseballStats {
+            data["baseballStats"] = baseballStats
+        } else {
+            data["baseballStats"] = NSNull()
+        }
+        do {
+            try await AppFirestore.db()
+                .collection("gameLogs")
+                .document(payload.gameLogId)
+                .updateData(data)
+        } catch {
+            throw Self.mapGameLogWriteError(error)
+        }
+    }
+
+    func deleteGameLog(gameLogId: String) async throws {
+        do {
+            try await AppFirestore.db()
+                .collection("gameLogs")
+                .document(gameLogId)
+                .delete()
+        } catch {
+            throw Self.mapGameLogWriteError(error)
+        }
+    }
+
+    private static func mapGameLogWriteError(_ error: Error) -> Error {
+        let ns = error as NSError
+        if ns.domain == FirestoreErrorDomain,
+           ns.code == FirestoreErrorCode.permissionDenied.rawValue {
+            return NSError(
+                domain: "GameLogService",
+                code: ns.code,
+                userInfo: [NSLocalizedDescriptionKey: "Only the creator can edit or delete this log."]
+            )
+        }
+        return error
+    }
+}
+extension GameLogService: FeedServiceProtocol {
+    private static let feedPageSize = 50
+    private static let whereInChunkSize = 10   // Firestore whereIn hard limit
+
+    /// Loads `communities/{id}.name` for feed labels (parallel reads).
+    private static func fetchCommunityNamesMap(db: Firestore, communityIds: [String]) async throws -> [String: String] {
+        let unique = Array(Set(communityIds))
+        guard !unique.isEmpty else { return [:] }
+        var map: [String: String] = [:]
+        try await withThrowingTaskGroup(of: (String, String?).self) { group in
+            for id in unique {
+                group.addTask {
+                    let snap = try await db.collection("communities").document(id).getDocument()
+                    let name = snap.data()?["name"] as? String
+                    return (id, name)
+                }
+            }
+            for try await (id, name) in group {
+                if let name, !name.isEmpty {
+                    map[id] = name
+                }
+            }
+        }
+        return map
+    }
+
+    func fetchFeed() async throws -> [FeedRow] {
+        guard let userId = Auth.auth().currentUser?.uid else {
+            AppDebugLog.log("FeedService.fetchFeed: no signed-in user — returning empty")
+            return []
+        }
+
+        // 1. Resolve community IDs from memberships
+        let db = AppFirestore.db()
+        let membershipDocs = try await db
+            .collection("memberships")
+            .whereField("profileId", isEqualTo: userId)
+            .getDocuments()
+
+        let communityIds: [String] = membershipDocs.documents.compactMap {
+            $0.data()["communityId"] as? String
+        }
+
+        AppDebugLog.log("FeedService.fetchFeed: memberships=\(communityIds.count) communityIds=\(communityIds)")
+
+        guard !communityIds.isEmpty else {
+            AppDebugLog.log("FeedService.fetchFeed: user has no communities — returning empty")
+            return []
+        }
+
+        let communityNameById = try await Self.fetchCommunityNamesMap(db: db, communityIds: communityIds)
+        AppDebugLog.log("FeedService.fetchFeed: community names resolved=\(communityNameById.count)/\(Set(communityIds).count)")
+
+        // 2. Chunk community IDs to respect Firestore whereIn limit of 10
+        let chunks = stride(from: 0, to: communityIds.count, by: Self.whereInChunkSize).map {
+            Array(communityIds[$0 ..< min($0 + Self.whereInChunkSize, communityIds.count)])
+        }
+
+        // 3. Query each chunk and collect rows
+        var allRows: [FeedRow] = []
+        for chunk in chunks {
+            let snapshot = try await db
+                .collection("gameLogs")
+                .whereField("communityId", in: chunk)
+                .order(by: "createdAt", descending: true)
+                .limit(to: Self.feedPageSize)
+                .getDocuments()
+
+            let rows: [FeedRow] = snapshot.documents.compactMap { doc in
+                let d = doc.data()
+                guard
+                    let communityId = d["communityId"] as? String,
+                    let gameType = d["gameType"] as? String,
+                    let createdAtTs = d["createdAt"] as? Timestamp
+                else { return nil }
+
+                let winnerIds = d["winnerProfileIds"] as? [String] ?? []
+                let loserIds = d["loserProfileIds"] as? [String] ?? []
+                let participantNames = d["participantDisplayNames"] as? [String: String] ?? [:]
+
+                return FeedRow(
+                    gameLogId: doc.documentID,
+                    communityId: communityId,
+                    communityName: communityNameById[communityId],
+                    gameType: gameType,
+                    winnerProfileIds: winnerIds,
+                    loserProfileIds: loserIds,
+                    winnerNames: winnerIds.compactMap { participantNames[$0] },
+                    loserNames: loserIds.compactMap { participantNames[$0] },
+                    photoUrls: d["photoUrls"] as? [String] ?? [],
+                    createdAt: createdAtTs.dateValue()
+                )
+            }
+            allRows.append(contentsOf: rows)
+        }
+
+        // 4. Merge-sort across chunks by createdAt desc, then trim to page size
+        allRows.sort { $0.createdAt > $1.createdAt }
+        let result = Array(allRows.prefix(Self.feedPageSize))
+        AppDebugLog.log("FeedService.fetchFeed: logs returned=\(result.count)")
+        return result
+    }
 }

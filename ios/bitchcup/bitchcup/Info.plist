@@ -18,5 +18,14 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>UIAppFonts</key>
+	<array>
+		<string>NeueHaasDisplayBold.ttf</string>
+		<string>NeueHaasDisplayLight.ttf</string>
+		<string>NeueHaasDisplayLightItalic.ttf</string>
+		<string>NeueHaasDisplayMediu.ttf</string>
+		<string>NeueHaasDisplayRoman.ttf</string>
+		<string>NeueHaasDisplayRomanItalic.ttf</string>
+	</array>
 </dict>
 </plist>

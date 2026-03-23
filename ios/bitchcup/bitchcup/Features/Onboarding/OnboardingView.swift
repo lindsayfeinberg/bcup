@@ -13,6 +13,12 @@ struct OnboardingView: View {
     @State private var displayName = ""
     @State private var selectedPhotoItem: PhotosPickerItem?
 
+    private let signInTitleFont = Font.custom("NeueHaasDisplay-Bold", size: 48)
+    private let signInButtonFont = Font.custom("NeueHaasDisplay-Mediu", size: 30)
+    private let signInErrorFont = Font.custom("NeueHaasDisplay-Light", size: 13)
+    private let brandTextColor = Color(red: 112.0 / 255.0, green: 28.0 / 255.0, blue: 21.0 / 255.0)
+    private let surfaceColor = Color(red: 254.0 / 255.0, green: 254.0 / 255.0, blue: 254.0 / 255.0)
+
     var body: some View {
         Group {
             switch phase {
@@ -48,39 +54,57 @@ struct OnboardingView: View {
     }
 
     private var signInStep: some View {
-        VStack(spacing: 20) {
-            Text("Welcome to bcup")
-                .font(.title2)
-                .fontWeight(.semibold)
+        ZStack {
+            Image("signin_background")
+                .resizable()
+                .scaledToFill()
+                .ignoresSafeArea()
 
-            Button {
-                Task {
-                    AppDebugLog.log("OnboardingView: Continue with Google tapped")
-                    OnboardingAnalytics.logSignInButtonTapped()
-                    await signInWithGoogle()
-                }
-            } label: {
-                HStack {
-                    if isBusy {
-                        ProgressView()
-                            .progressViewStyle(.circular)
-                    }
-                    Text(isBusy ? "Signing in..." : "Continue with Google")
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(isBusy)
-
-            if let errorMessage = sessionManager.errorMessage {
-                Text(errorMessage)
-                    .font(.footnote)
-                    .foregroundStyle(.red)
+            VStack(spacing: 16) {
+                Text("Welcome to bcup")
+                    .font(signInTitleFont)
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity, alignment: .center)
                     .multilineTextAlignment(.center)
+                    .padding(.top, 28)
+
+                Spacer()
+
+                if let errorMessage = sessionManager.errorMessage {
+                    Text(errorMessage)
+                        .font(signInErrorFont)
+                        .foregroundStyle(.white)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 12)
+                }
+
+                Button {
+                    Task {
+                        AppDebugLog.log("OnboardingView: Continue with Google tapped")
+                        OnboardingAnalytics.logSignInButtonTapped()
+                        await signInWithGoogle()
+                    }
+                } label: {
+                    HStack(spacing: 8) {
+                        if isBusy {
+                            ProgressView()
+                                .progressViewStyle(.circular)
+                                .tint(brandTextColor)
+                        }
+                        Text(isBusy ? "Signing in..." : "Sign in with Google")
+                            .font(signInButtonFont)
+                            .foregroundStyle(brandTextColor)
+                    }
+                    .padding(.horizontal, 28)
+                    .padding(.vertical, 14)
+                    .background(surfaceColor)
+                    .clipShape(Capsule())
+                }
+                .disabled(isBusy)
+                .padding(.bottom, 24)
             }
+            .padding(.horizontal, 20)
         }
-        .padding()
     }
 
     @MainActor

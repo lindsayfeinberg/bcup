@@ -11,7 +11,7 @@ struct InviteView: View {
 
     var body: some View {
         VStack(spacing: 24) {
-            Text("Community Created!")
+            Text("League Created!")
                 .font(.title.bold())
 
             VStack(spacing: 8) {
@@ -52,7 +52,7 @@ struct InviteView: View {
 
             Spacer()
 
-            Button("Go to Community") {
+            Button("Go to League") {
                 onDone()
             }
             .frame(maxWidth: .infinity)

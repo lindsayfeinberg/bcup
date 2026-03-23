@@ -4,6 +4,8 @@ struct JoinCommunityFlowView: View {
     @EnvironmentObject private var container: DependencyContainer
     @State private var inviteCode = ""
     @State private var isWorking = false
+    @State private var showJoinConfirmation = false
+    @State private var pendingPreview: CommunityJoinPreview?
     @State private var errorMessage: String?
     let onSuccess: (String) -> Void
 
@@ -13,21 +15,22 @@ struct JoinCommunityFlowView: View {
                 TextField("Invite code", text: $inviteCode)
                     .textInputAutocapitalization(.characters)
             } footer: {
-                Text("Communities are limited to 350 members. If the community is full, you cannot join.")
+                Text("Leagues are limited to 350 members. If the league is full, you cannot join.")
             }
 
             Section {
-                Button("Join community") {
+                Button("Join league") {
                     Task {
                         isWorking = true
                         errorMessage = nil
-                        defer { isWorking = false }
                         do {
-                            let id = try await container.communityService.joinCommunity(inviteCode: inviteCode)
-                            onSuccess(id)
+                            let preview = try await container.communityService.previewJoinCommunity(inviteCode: inviteCode)
+                            pendingPreview = preview
+                            showJoinConfirmation = true
                         } catch {
                             errorMessage = error.localizedDescription
                         }
+                        isWorking = false
                     }
                 }
                 .disabled(isWorking || inviteCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -42,6 +45,34 @@ struct JoinCommunityFlowView: View {
             Button("OK", role: .cancel) { errorMessage = nil }
         } message: {
             Text(errorMessage ?? "")
+        }
+        .confirmationDialog(
+            "Join league",
+            isPresented: $showJoinConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Join") {
+                Task {
+                    isWorking = true
+                    errorMessage = nil
+                    do {
+                        let id = try await container.communityService.joinCommunity(inviteCode: inviteCode)
+                        showJoinConfirmation = false
+                        onSuccess(id)
+                    } catch {
+                        errorMessage = error.localizedDescription
+                        showJoinConfirmation = false
+                    }
+                    isWorking = false
+                }
+            }
+            Button("Cancel", role: .cancel) {
+                showJoinConfirmation = false
+            }
+        } message: {
+            let name = pendingPreview?.name ?? "this"
+            let count = pendingPreview?.memberCount ?? 0
+            return Text("Do you want to join \(name) league with \(count) members?")
         }
     }
 }

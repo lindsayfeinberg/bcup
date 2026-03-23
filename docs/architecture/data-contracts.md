@@ -96,6 +96,8 @@ Recommended ID format: `{communityId}_{profileId}` for uniqueness.
 | `id` | string | yes | no | none | server | yes | Must equal `membershipId`. |
 | `communityId` | string | yes | no | none | server | yes | Must reference existing community. |
 | `profileId` | string | yes | no | none | server | yes | Must reference existing profile. |
+| `displayName` | string | no | no | `""` | server | no | Denormalized roster field for community member lists (read-only from client). |
+| `profilePhotoUrl` | string | no | yes | `null` | server | no | Denormalized roster field (read-only from client). |
 | `joinedAt` | timestamp | yes | no | server timestamp | server | yes | Set once when membership is created. |
 | `communityOdds` | number | no | no | `0` | server | no | Derived field; scoped to community+profile. |
 | `createdAt` | timestamp | yes | no | server timestamp | server | yes | Global rule. |
@@ -108,6 +110,8 @@ Canonical valid sample:
   "id": "community_001_uid_abc123",
   "communityId": "community_001",
   "profileId": "uid_abc123",
+  "displayName": "Maya",
+  "profilePhotoUrl": null,
   "joinedAt": "SERVER_TIMESTAMP",
   "communityOdds": 0,
   "createdAt": "SERVER_TIMESTAMP",
@@ -130,8 +134,17 @@ Canonical valid sample:
 | `loserProfileIds` | array<string> | yes | no | none | client | no | Min length 1. |
 | `photoUrls` | array<string> | yes | no | none | client | no | Min length 1. |
 | `notes` | string | no | yes | `null` | client | no | Optional free-text note. |
-| `pongStats` | object | no | yes | `null` | client | no | Required for `PONG` only if product decides strict mode. |
-| `pongStats.playerCupsHit` | map<string, number> | no | yes | `null` | client | no | Map of profileId to integer cups hit. |
+| `pongStats` | object | no | yes | `null` | client | no | Required for strict `PONG` validation in UI. |
+| `pongStats.cupMode` | number | no | no | none | client | no | Must be `6` or `10`. |
+| `pongStats.playerCupsHit` | map<string, number> | no | yes | `null` | client | no | Map of profileId to integer cups hit. Sum must equal `cupMode`. |
+| `pongStats.lastCupByProfileId` | string | no | yes | `null` | client | no | Must be one of `participantProfileIds` when present. |
+| `beerBallStats` | object | no | yes | `null` | client | no | Optional placeholder stats for `BEER_BALL`. |
+| `beerBallStats.newCanCountByProfileId` | map<string, number> | no | yes | `null` | client | no | Integer >= 0 for each participant. |
+| `beerBallStats.firstFinishedByProfileId` | string | no | yes | `null` | client | no | Must be one of `participantProfileIds` when present. |
+| `battlePongStats` | object | no | yes | `null` | client | no | Optional placeholder stats for `BATTLE_PONG`. |
+| `battlePongStats.playerCupsHit` | map<string, number> | no | yes | `null` | client | no | Integer >= 0 for each participant. |
+| `baseballStats` | object | no | yes | `null` | client | no | Optional placeholder stats for `BASEBALL`. |
+| `baseballStats.hitsByProfileId` | map<string, number> | no | yes | `null` | client | no | Integer >= 0 for each participant. |
 | `createdAt` | timestamp | yes | no | server timestamp | server | yes | Global rule. |
 | `updatedAt` | timestamp | yes | no | server timestamp | server | no | Global rule. |
 
@@ -149,11 +162,16 @@ Canonical valid sample:
   "photoUrls": ["https://storage.googleapis.com/bcup/logs/gameLog_001/photo1.jpg"],
   "notes": "Close game.",
   "pongStats": {
+    "cupMode": 10,
     "playerCupsHit": {
       "uid_abc123": 8,
       "uid_def456": 5
-    }
+    },
+    "lastCupByProfileId": "uid_abc123"
   },
+  "beerBallStats": null,
+  "battlePongStats": null,
+  "baseballStats": null,
   "createdAt": "SERVER_TIMESTAMP",
   "updatedAt": "SERVER_TIMESTAMP"
 }
@@ -168,6 +186,9 @@ Canonical valid sample:
 - `loserProfileIds` is a subset of `participantProfileIds`
 - No overlap between winners and losers
 - No duplicates in `participantProfileIds`, `winnerProfileIds`, or `loserProfileIds`
+- `pongStats.cupMode` is either `6` or `10` when `gameType == PONG`
+- Sum of `pongStats.playerCupsHit` equals `pongStats.cupMode` when `gameType == PONG`
+- `pongStats.lastCupByProfileId` must be in `participantProfileIds` when present
 
 ---
 

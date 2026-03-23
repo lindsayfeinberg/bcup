@@ -90,6 +90,9 @@ service cloud.firestore {
         "photoUrls",
         "notes",
         "pongStats",
+        "beerBallStats",
+        "battlePongStats",
+        "baseballStats",
         "createdAt",
         "updatedAt"
       ]);

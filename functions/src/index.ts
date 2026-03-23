@@ -1,9 +1,9 @@
 import {onRequest} from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
 
-import {createCommunity, joinCommunity} from "./communities.js";
+import {createCommunity, joinCommunity, previewJoinCommunity} from "./communities.js";
 
-export {createCommunity, joinCommunity};
+export {createCommunity, joinCommunity, previewJoinCommunity};
 
 export const healthcheck = onRequest((request, response) => {
   logger.info("Functions healthcheck hit", {method: request.method});
