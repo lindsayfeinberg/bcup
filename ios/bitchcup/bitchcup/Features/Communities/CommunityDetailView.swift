@@ -12,7 +12,7 @@ struct CommunityDetailView: View {
     var body: some View {
         Group {
             if isLoading {
-                LoadingView(message: "Loading community...")
+                LoadingView(message: "Loading league...")
             } else if let error = errorMessage {
                 ErrorView(message: error) {
                     Task { await load() }
@@ -66,7 +66,7 @@ struct CommunityDetailView: View {
                 }
             }
         }
-        .navigationTitle(communityName.isEmpty ? "Community" : communityName)
+        .navigationTitle(communityName.isEmpty ? "League" : communityName)
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
     }
@@ -77,7 +77,7 @@ struct CommunityDetailView: View {
         do {
             let db = AppFirestore.db()
             let communityDoc = try await db.collection("communities").document(communityId).getDocument()
-            communityName = communityDoc.data()?["name"] as? String ?? "Community"
+            communityName = communityDoc.data()?["name"] as? String ?? "League"
             members = try await container.communityService.fetchMembers(communityId: communityId)
         } catch {
             errorMessage = error.localizedDescription

@@ -54,6 +54,12 @@ class AppDelegate: NSObject, UIApplicationDelegate {
             AppDebugLog.log("Google Sign-In: no clientID (check GoogleService-Info.plist)")
         }
 
+        // Global base background color for UIKit-backed containers used by SwiftUI.
+        let appBackground = UIColor(red: 254.0 / 255.0, green: 254.0 / 255.0, blue: 254.0 / 255.0, alpha: 1.0)
+        UITableView.appearance().backgroundColor = appBackground
+        UICollectionView.appearance().backgroundColor = appBackground
+        UIScrollView.appearance().backgroundColor = appBackground
+
         #if DEBUG
         logRegisteredFonts(matching: "NeueHaas")
         #endif
@@ -85,15 +91,20 @@ struct bitchcupApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
-                .environmentObject(router)
-                .environmentObject(container)
-                .environmentObject(sessionManager)
-                .task {
-                    AppDebugLog.log("WindowGroup.task: calling restoreSession()")
-                    await sessionManager.restoreSession()
-                    AppDebugLog.log("WindowGroup.task: restoreSession() finished — sessionState=\(String(describing: sessionManager.sessionState)) route=\(String(describing: router.route))")
-                }
+            ZStack {
+                Color(red: 254.0 / 255.0, green: 254.0 / 255.0, blue: 254.0 / 255.0)
+                    .ignoresSafeArea()
+                ContentView()
+            }
+            .font(.custom("NeueHaasDisplay-Roman", size: 16))
+            .environmentObject(router)
+            .environmentObject(container)
+            .environmentObject(sessionManager)
+            .task {
+                AppDebugLog.log("WindowGroup.task: calling restoreSession()")
+                await sessionManager.restoreSession()
+                AppDebugLog.log("WindowGroup.task: restoreSession() finished — sessionState=\(String(describing: sessionManager.sessionState)) route=\(String(describing: router.route))")
+            }
         }
     }
 }

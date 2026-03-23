@@ -63,15 +63,15 @@ struct NewGameLogFormView: View {
     var body: some View {
         Group {
             if isLoading {
-                LoadingView(message: "Loading communities...")
+                LoadingView(message: "Loading leagues...")
             } else if let errorMessage {
                 ErrorView(message: errorMessage) {
                     Task { await load() }
                 }
             } else if communities.isEmpty {
                 EmptyStateView(
-                    title: "No communities yet",
-                    message: "Create or join a community to log a game.",
+                    title: "No leagues yet",
+                    message: "Create or join a league to log a game.",
                     actionLabel: nil
                 )
             } else {
@@ -107,8 +107,8 @@ struct NewGameLogFormView: View {
                         }
                     }
 
-                    Section("Choose community") {
-                        Picker("Community", selection: $selectedCommunityId) {
+                    Section("Choose league") {
+                        Picker("League", selection: $selectedCommunityId) {
                             ForEach(communities, id: \.communityId) { community in
                                 Text(community.name).tag(community.communityId)
                             }
@@ -269,7 +269,7 @@ struct NewGameLogFormView: View {
             let hasEnoughMembers = members.count >= (2 * teamSize)
             if let outcome, let myUserId = currentUserId {
                 if !hasEnoughMembers {
-                    Text("Community doesn’t have enough members for a team of size \(teamSize).")
+                    Text("League doesn’t have enough members for a team of size \(teamSize).")
                         .foregroundStyle(.red)
                 }
 
@@ -310,7 +310,7 @@ struct NewGameLogFormView: View {
                 }
             }
         } else {
-            Text("No members found for this community.")
+            Text("No members found for this league.")
                 .foregroundStyle(.secondary)
         }
     }

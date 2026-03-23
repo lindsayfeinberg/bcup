@@ -15,11 +15,11 @@ struct JoinCommunityFlowView: View {
                 TextField("Invite code", text: $inviteCode)
                     .textInputAutocapitalization(.characters)
             } footer: {
-                Text("Communities are limited to 350 members. If the community is full, you cannot join.")
+                Text("Leagues are limited to 350 members. If the league is full, you cannot join.")
             }
 
             Section {
-                Button("Join community") {
+                Button("Join league") {
                     Task {
                         isWorking = true
                         errorMessage = nil
@@ -47,7 +47,7 @@ struct JoinCommunityFlowView: View {
             Text(errorMessage ?? "")
         }
         .confirmationDialog(
-            "Join community",
+            "Join league",
             isPresented: $showJoinConfirmation,
             titleVisibility: .visible
         ) {
@@ -72,7 +72,7 @@ struct JoinCommunityFlowView: View {
         } message: {
             let name = pendingPreview?.name ?? "this"
             let count = pendingPreview?.memberCount ?? 0
-            return Text("Do you want to join \(name) community with \(count) members?")
+            return Text("Do you want to join \(name) league with \(count) members?")
         }
     }
 }

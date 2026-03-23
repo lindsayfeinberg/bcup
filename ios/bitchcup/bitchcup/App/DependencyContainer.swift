@@ -254,7 +254,7 @@ enum CommunityServiceError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .emptyName:
-            return "Enter a community name."
+            return "Enter a league name."
         case .emptyInviteCode:
             return "Enter an invite code."
         case .invalidResponse:
@@ -442,7 +442,7 @@ final class CommunityService: CommunityServiceProtocol {
             return NSError(
                 domain: domain,
                 code: 400,
-                userInfo: [NSLocalizedDescriptionKey: "This community is full (max 350 members)."]
+                userInfo: [NSLocalizedDescriptionKey: "This league is full (max 350 members)."]
             )
         case "NOT_FOUND":
             return NSError(
@@ -454,7 +454,7 @@ final class CommunityService: CommunityServiceProtocol {
             return NSError(
                 domain: domain,
                 code: 409,
-                userInfo: [NSLocalizedDescriptionKey: "You are already in this community."]
+                userInfo: [NSLocalizedDescriptionKey: "You are already in this league."]
             )
         case "INVALID_ARGUMENT":
             return NSError(

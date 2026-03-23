@@ -22,13 +22,13 @@ struct CreateCommunityFlowView: View {
         } else {
             Form {
                 Section {
-                    TextField("Community name", text: $name)
+                    TextField("League name", text: $name)
                 } footer: {
-                    Text("Creates the community on the server and adds you as the first member.")
+                    Text("Creates the league on the server and adds you as the first member.")
                 }
 
                 Section {
-                    Button("Create community") {
+                    Button("Create league") {
                         guard !isWorking else { return }
                         Task {
                             isWorking = true

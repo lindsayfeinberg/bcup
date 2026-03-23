@@ -12,13 +12,14 @@ struct FeedView: View {
     @State private var isLoading = false
     @State private var hasError = false
     @State private var isEmpty = true
+    private let headerFont = Font.custom("NeueHaasDisplay-Bold", size: 34)
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
                 HStack {
                     Text("BitchCUP")
-                        .font(.title.bold())
+                        .font(headerFont)
                     Spacer()
                     Menu {
                         Button {
@@ -29,7 +30,7 @@ struct FeedView: View {
                         Button {
                             showCommunitiesList = true
                         } label: {
-                            Label("View communities", systemImage: "person.3")
+                            Label("View leagues", systemImage: "person.3")
                         }
                         Divider()
                         Button(role: .destructive) {
@@ -56,7 +57,7 @@ struct FeedView: View {
                 } else if isEmpty {
                     EmptyStateView(
                         title: "No games yet",
-                        message: "Log a game or join a community to see activity here.",
+                        message: "Log a game or join a league to see activity here.",
                         actionLabel: "Log a Game"
                     ) {
                         showGameLog = true
@@ -71,7 +72,7 @@ struct FeedView: View {
                 }
 
                 HStack {
-                    Button("Your Communities") {
+                    Button("Create/Join a League") {
                         showCommunitiesFlow = true
                     }
                     .frame(maxWidth: .infinity)

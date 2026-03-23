@@ -9,15 +9,15 @@ struct CommunitiesListView: View {
     var body: some View {
         Group {
             if isLoading {
-                LoadingView(message: "Loading communities...")
+                LoadingView(message: "Loading leagues...")
             } else if let error = errorMessage {
                 ErrorView(message: error) {
                     Task { await load() }
                 }
             } else if communities.isEmpty {
                 EmptyStateView(
-                    title: "No communities yet",
-                    message: "Create or join a community to get started.",
+                    title: "No leagues yet",
+                    message: "Create or join a league to get started.",
                     actionLabel: nil
                 )
             } else {
@@ -28,7 +28,7 @@ struct CommunitiesListView: View {
                 }
             }
         }
-        .navigationTitle("Your Communities")
+        .navigationTitle("Your Leagues")
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
     }
