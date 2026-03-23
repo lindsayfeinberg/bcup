@@ -4,6 +4,26 @@ import FirebaseFirestore
 import GoogleSignIn
 
 class AppDelegate: NSObject, UIApplicationDelegate {
+    #if DEBUG
+    private func logRegisteredFonts(matching prefix: String) {
+        var matches: [String] = []
+        for family in UIFont.familyNames {
+            for fontName in UIFont.fontNames(forFamilyName: family) where fontName.hasPrefix(prefix) {
+                matches.append(fontName)
+            }
+        }
+        let sorted = matches.sorted()
+        if sorted.isEmpty {
+            AppDebugLog.log("Font check: no registered fonts found with prefix '\(prefix)'")
+        } else {
+            AppDebugLog.log("Font check: found \(sorted.count) fonts with prefix '\(prefix)'")
+            for fontName in sorted {
+                AppDebugLog.log("Font check: \(fontName)")
+            }
+        }
+    }
+    #endif
+
     func application(
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
@@ -33,6 +53,10 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         } else {
             AppDebugLog.log("Google Sign-In: no clientID (check GoogleService-Info.plist)")
         }
+
+        #if DEBUG
+        logRegisteredFonts(matching: "NeueHaas")
+        #endif
         return true
     }
 }
