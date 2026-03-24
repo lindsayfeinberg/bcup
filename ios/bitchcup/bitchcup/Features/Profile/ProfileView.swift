@@ -9,6 +9,7 @@ struct ProfileView: View {
     @State private var errorMessage: String?
     @State private var historyRows: [ProfileHistoryRow] = []
     @State private var stats = ProfileAggregateStats.empty
+    @State private var overallOdds: Double = 0.0
     @State private var historyCursor: HomeFeedPageCursor?
     @State private var hasMoreHistory = false
     @State private var isLoadingMoreHistory = false
@@ -132,6 +133,9 @@ struct ProfileView: View {
                 statTile(title: "Win Rate", value: stats.winRateText)
                 statTile(title: "Leagues", value: "\(stats.uniqueLeagues)")
             }
+            HStack(spacing: 10) {
+                statTile(title: "Overall Odds", value: Self.oddsFormatter.string(from: NSNumber(value: overallOdds)) ?? "0.000")
+            }
 
             HStack(spacing: 10) {
                 statTile(title: "MVPs", value: "\(stats.mvps)")
@@ -200,6 +204,7 @@ struct ProfileView: View {
     private func loadProfile() async {
         isLoading = true
         errorMessage = nil
+        overallOdds = 0.0
         historyRows = []
         historyCursor = nil
         hasMoreHistory = false
@@ -220,6 +225,7 @@ struct ProfileView: View {
             let resolvedName = profile?.displayName?.trimmingCharacters(in: .whitespacesAndNewlines)
             displayName = (resolvedName?.isEmpty == false) ? resolvedName! : "Profile"
             profilePhotoUrl = profile?.profilePhotoUrl.flatMap(URL.init(string:))
+            overallOdds = profile?.overallOdds ?? 0.0
 
             let relevantRows = allRows.filter {
                 $0.winnerProfileIds.contains(userId) || $0.loserProfileIds.contains(userId)
@@ -348,6 +354,13 @@ struct ProfileView: View {
             loadMoreHistoryErrorMessage = error.localizedDescription
         }
     }
+    private static let oddsFormatter: NumberFormatter = {
+        let f = NumberFormatter()
+        f.minimumFractionDigits = 3
+        f.maximumFractionDigits = 3
+        f.numberStyle = .decimal
+        return f
+    }()
 }
 
 private struct ProfileAggregateStats {

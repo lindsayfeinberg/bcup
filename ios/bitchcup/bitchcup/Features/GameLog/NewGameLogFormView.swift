@@ -43,7 +43,7 @@ struct NewGameLogFormView: View {
     @State private var selectedGameType: GameType = .pong
 
     // Members used for winners/losers and stat entry.
-    @State private var members: [(profileId: String, displayName: String)] = []
+    @State private var members: [CommunityMemberRosterRow] = []
     @State private var isMembersLoading = false
     @State private var membersErrorMessage: String?
 
@@ -538,7 +538,7 @@ struct NewGameLogFormView: View {
         selectedCount: Int,
         query: Binding<String>,
         isOpen: Binding<Bool>,
-        participants: [(profileId: String, displayName: String)],
+        participants: [CommunityMemberRosterRow],
         onOpposite: Set<String>,
         onCurrent: Set<String>,
         oppositeLabel: String,
@@ -888,7 +888,7 @@ struct NewGameLogFormView: View {
         Array(selectedWinnerProfileIds.union(selectedLoserProfileIds)).sorted()
     }
 
-    private var selectedParticipants: [(profileId: String, displayName: String)] {
+    private var selectedParticipants: [CommunityMemberRosterRow] {
         members.filter { participantProfileIds.contains($0.profileId) }
     }
 

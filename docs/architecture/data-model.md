@@ -10,6 +10,7 @@ profiles/{userId}
   - displayName: string
   - profilePhotoUrl: string | null
   - overallOdds: decimal (computed)
+  - overallGamesPlayed: integer (computed)
   - ageConfirmed21PlusAt: timestamp | null
   - onboardingCompleteAt: timestamp | null
   - createdAt: timestamp
@@ -34,6 +35,7 @@ memberships/{communityId}_{profileId}
   - communityId: UUID
   - profileId: UUID
   - communityOdds: decimal (computed, cached)
+  - communityGamesPlayed: integer (computed, cached)
   - joinedAt: timestamp
 ```
 

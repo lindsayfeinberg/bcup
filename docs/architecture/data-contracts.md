@@ -34,6 +34,7 @@ This document freezes Firestore field-level contracts for V1.
 | `displayName` | string | yes | no | `""` | client | no | Can be required in onboarding UX before completion. |
 | `profilePhotoUrl` | string | no | yes | `null` | client | no | Firebase Storage URL expected. |
 | `overallOdds` | number | yes | no | `0` | server | no | Derived field from game outcomes. |
+| `overallGamesPlayed` | number | yes | no | `0` | server | no | Count of eligible game logs across all communities. Used for tie-breaking in step 2 of odds-based seeding when sparse (T09.5). |
 | `ageConfirmed21PlusAt` | timestamp | no | yes | `null` | client | no | Set on one-time age confirmation step. |
 | `onboardingCompleteAt` | timestamp | no | yes | `null` | client | no | Set when required onboarding fields are complete. |
 | `createdAt` | timestamp | yes | no | server timestamp | server | yes | Global rule. |
@@ -48,6 +49,7 @@ Canonical valid sample:
   "displayName": "Maya",
   "profilePhotoUrl": null,
   "overallOdds": 0,
+  "overallGamesPlayed": 0,
   "ageConfirmed21PlusAt": null,
   "onboardingCompleteAt": null,
   "createdAt": "SERVER_TIMESTAMP",
@@ -100,6 +102,7 @@ Recommended ID format: `{communityId}_{profileId}` for uniqueness.
 | `profilePhotoUrl` | string | no | yes | `null` | server | no | Denormalized roster field (read-only from client). |
 | `joinedAt` | timestamp | yes | no | server timestamp | server | yes | Set once when membership is created. |
 | `communityOdds` | number | no | no | `0` | server | no | Derived field; scoped to community+profile. |
+| `communityGamesPlayed` | number | no | no | `0` | server | no | Count of eligible in-community game logs for this profile. Used to detect sparse data for odds-based seeding fallback (T09.4). |
 | `createdAt` | timestamp | yes | no | server timestamp | server | yes | Global rule. |
 | `updatedAt` | timestamp | yes | no | server timestamp | server | no | Global rule. |
 
@@ -114,6 +117,7 @@ Canonical valid sample:
   "profilePhotoUrl": null,
   "joinedAt": "SERVER_TIMESTAMP",
   "communityOdds": 0,
+  "communityGamesPlayed": 0,
   "createdAt": "SERVER_TIMESTAMP",
   "updatedAt": "SERVER_TIMESTAMP"
 }
@@ -266,7 +270,9 @@ Firestore security rules only enforce **top-level** bracket keys (`hasBracketKey
 ## Derived fields ownership
 
 - `profiles.overallOdds`: computed by Cloud Functions on game log create/update/delete.
+- `profiles.overallGamesPlayed`: computed by Cloud Functions alongside `overallOdds` on game log create/update/delete.
 - `memberships.communityOdds`: computed by Cloud Functions on game log create/update/delete.
+- `memberships.communityGamesPlayed`: computed by Cloud Functions alongside `communityOdds` on game log create/update/delete. Used to detect sparse community data for odds-based seeding fallback (T09.4).
 
 Clients should treat derived fields as read-only.
 
@@ -275,6 +281,7 @@ Clients should treat derived fields as read-only.
 - `memberships`: `profileId ASC, joinedAt DESC`
 - `memberships`: `communityId ASC, joinedAt ASC`
 - `gameLogs`: `communityId ASC, createdAt DESC`
+- `gameLogs`: `participantProfileIds CONTAINS, communityId ASC`
 - `gameLogs`: `createdByProfileId ASC, createdAt DESC`
 - `brackets`: `communityId ASC, createdAt DESC`
 - `communities`: `inviteCode ASC` (lookup by invite code)
