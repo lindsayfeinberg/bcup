@@ -498,7 +498,7 @@ struct NewGameLogFormView: View {
     @ViewBuilder
     private func opponentSectionHeaderPills(
         selectedProfileIds: Set<String>,
-        members: [(profileId: String, displayName: String)]
+        members: [CommunityMemberRosterRow]
     ) -> some View {
         let selectedParticipants = members
             .filter { selectedProfileIds.contains($0.profileId) }
