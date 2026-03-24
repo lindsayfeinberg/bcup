@@ -105,7 +105,7 @@ struct CommunityDetailView: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             } else {
-                LazyVStack(spacing: 12) {
+                LazyVStack(spacing: 24) {
                     ForEach(feedRows) { row in
                         FeedCardView(row: row, showCommunityLabel: false)
                             .onAppear {

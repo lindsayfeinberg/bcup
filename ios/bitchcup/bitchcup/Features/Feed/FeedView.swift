@@ -64,6 +64,36 @@ struct FeedView: View {
         return filterOptions.first { $0.communityId == selectedCommunityId }?.displayName ?? selectedCommunityId
     }
 
+    @ViewBuilder
+    private var feedBottomActions: some View {
+        HStack(spacing: 0) {
+            Button {
+                showCommunitiesFlow = true
+            } label: {
+                Text("Leagues")
+                    .font(.custom("NeueHaasDisplay-Mediu", size: 20))
+                    .frame(width: 150)
+                    .padding(.vertical, 10)
+            }
+            .buttonStyle(FeedPrimaryActionButtonStyle())
+
+            Spacer(minLength: 28)
+
+            Button {
+                showGameLog = true
+            } label: {
+                Text("Log Game")
+                    .font(.custom("NeueHaasDisplay-Mediu", size: 20))
+                    .frame(width: 150)
+                    .padding(.vertical, 10)
+            }
+            .buttonStyle(FeedPrimaryActionButtonStyle())
+        }
+        .padding(.horizontal, 8)
+        .padding(.bottom)
+        .background(Color.clear)
+    }
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
@@ -101,125 +131,106 @@ struct FeedView: View {
                 .background(Color(.systemBackground).opacity(0.92))
 
                 // MARK: Body
-                switch feedState {
-                case .loading:
-                    LoadingView(message: "Loading feed...")
+                Group {
+                    switch feedState {
+                    case .loading:
+                        LoadingView(message: "Loading feed...")
 
-                case .error(let message):
-                    ErrorView(message: message) {
-                        Task { await loadInitialFeed() }
-                    }
+                    case .error(let message):
+                        ErrorView(message: message) {
+                            Task { await loadInitialFeed() }
+                        }
 
-                case .empty:
-                    VStack(spacing: 10) {
-                        Spacer()
-                        Text("No games yet")
-                            .font(.custom("NeueHaasDisplay-Bold", size: 32))
-                            .multilineTextAlignment(.center)
-                        Text("Log a game or join a league to see activity.")
-                            .font(.custom("NeueHaasDisplay-Light", size: 18))
-                            .foregroundStyle(.black)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 20)
-                        Spacer()
-                    }
-                    .offset(y: -22)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    case .empty:
+                        VStack(spacing: 10) {
+                            Spacer()
+                            Text("No games yet")
+                                .font(.custom("NeueHaasDisplay-Bold", size: 32))
+                                .multilineTextAlignment(.center)
+                            Text("Log a game or join a league to see activity.")
+                                .font(.custom("NeueHaasDisplay-Light", size: 18))
+                                .foregroundStyle(.black)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, 20)
+                            Spacer()
+                        }
+                        .offset(y: -22)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                case .content:
-                    VStack(spacing: 0) {
+                    case .content:
+                        VStack(spacing: 0) {
 
-                        // MARK: Filter bar
-                        if filterOptions.count > 1 {
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 8) {
-                                    FilterChip(
-                                        label: "All leagues",
-                                        isSelected: selectedCommunityId == nil
-                                    ) {
-                                        selectedCommunityId = nil
-                                    }
-                                    ForEach(filterOptions) { option in
+                            // MARK: Filter bar
+                            if filterOptions.count > 1 {
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 8) {
                                         FilterChip(
-                                            label: option.displayName,
-                                            isSelected: selectedCommunityId == option.communityId
+                                            label: "All leagues",
+                                            isSelected: selectedCommunityId == nil
                                         ) {
-                                            selectedCommunityId = option.communityId
+                                            selectedCommunityId = nil
+                                        }
+                                        ForEach(filterOptions) { option in
+                                            FilterChip(
+                                                label: option.displayName,
+                                                isSelected: selectedCommunityId == option.communityId
+                                            ) {
+                                                selectedCommunityId = option.communityId
+                                            }
                                         }
                                     }
+                                    .padding(.horizontal)
+                                    .padding(.vertical, 8)
                                 }
-                                .padding(.horizontal)
-                                .padding(.vertical, 8)
+                                .scrollContentBackground(.hidden)
+                                .accessibilityLabel("Feed filter")
                             }
-                            .accessibilityLabel("Feed filter")
-                        }
 
-                        // MARK: Feed list or filtered empty state
-                        if filteredRows.isEmpty {
-                            Spacer()
-                            VStack(spacing: 8) {
-                                Image(systemName: "tray")
-                                    .font(.largeTitle)
-                                    .foregroundStyle(.secondary)
-                                Text("No games in this league yet.")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.top, 60)
-                            Spacer()
-                        } else {
-                            ScrollView {
-                                LazyVStack(spacing: 12) {
-                                    ForEach(Array(filteredRows.enumerated()), id: \.element.id) { index, row in
-                                        FeedCardView(row: row)
-                                            .onAppear {
-                                                Task {
-                                                    await loadMoreFeedIfNeeded(currentRow: row)
-                                                    await prefetchUpcomingCards(from: index, rows: filteredRows)
+                            // MARK: Feed list or filtered empty state
+                            if filteredRows.isEmpty {
+                                Spacer()
+                                VStack(spacing: 8) {
+                                    Image(systemName: "tray")
+                                        .font(.largeTitle)
+                                        .foregroundStyle(.secondary)
+                                    Text("No games in this league yet.")
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(.top, 60)
+                                Spacer()
+                            } else {
+                                ScrollView {
+                                    LazyVStack(spacing: 24) {
+                                        ForEach(Array(filteredRows.enumerated()), id: \.element.id) { index, row in
+                                            FeedCardView(row: row)
+                                                .onAppear {
+                                                    Task {
+                                                        await loadMoreFeedIfNeeded(currentRow: row)
+                                                        await prefetchUpcomingCards(from: index, rows: filteredRows)
+                                                    }
                                                 }
-                                            }
-                                    }
+                                        }
 
-                                    feedFooter
+                                        feedFooter
+                                    }
+                                    .padding(.horizontal)
+                                    .padding(.top, 8)
+                                    .padding(.bottom, 16)
                                 }
-                                .padding(.horizontal)
-                                .padding(.top, 8)
-                                .padding(.bottom, 16)
-                            }
-                            .refreshable {
-                                await refreshFeed()
+                                .scrollContentBackground(.hidden)
+                                .refreshable {
+                                    await refreshFeed()
+                                }
                             }
                         }
                     }
                 }
-
-                // MARK: Bottom actions
-                HStack(spacing: 0) {
-                    Button {
-                        showCommunitiesFlow = true
-                    } label: {
-                        Text("Leagues")
-                            .font(.custom("NeueHaasDisplay-Mediu", size: 20))
-                            .frame(width: 150)
-                            .padding(.vertical, 10)
-                    }
-                    .buttonStyle(FeedPrimaryActionButtonStyle())
-                    
-                    Spacer(minLength: 28)
-
-                    Button {
-                        showGameLog = true
-                    } label: {
-                        Text("Log Game")
-                            .font(.custom("NeueHaasDisplay-Mediu", size: 20))
-                            .frame(width: 150)
-                            .padding(.vertical, 10)
-                    }
-                    .buttonStyle(FeedPrimaryActionButtonStyle())
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    feedBottomActions
                 }
-                .padding(.horizontal, 8)
-                .padding(.bottom)
             }
             .background {
                 if case .empty = feedState {
@@ -410,7 +421,7 @@ extension FeedView {
     private func prefetchUpcomingCards(from currentIndex: Int, rows: [FeedRow]) async {
         guard currentIndex < rows.count - 1 else { return }
         let lookaheadCardCount = 4
-        let photosPerCard = 2
+        let photosPerCard = 1
         let nextRows = rows.dropFirst(currentIndex + 1).prefix(lookaheadCardCount)
 
         var urlsToPrefetch: [URL] = []

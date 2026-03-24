@@ -3,7 +3,27 @@ import FirebaseAuth
 import FirebaseFirestore
 import UIKit
 
+/// Brand reds for the game log form. `formLightRed` is a softer tint than join-flow coral for headers and chips.
+private enum GameLogBrandColor {
+    static let red = Color(red: 180.0 / 255.0, green: 61.0 / 255.0, blue: 37.0 / 255.0)
+    /// Section headers above widgets, in-widget coral labels, league picker accents, opponent chip text/stroke/fill tint.
+    static let formLightRed = Color(red: 232.0 / 255.0, green: 162.0 / 255.0, blue: 145.0 / 255.0)
+}
+
 struct NewGameLogFormView: View {
+    /// `FeedCardView` photo section height; form preview uses the same layout at a smaller scale.
+    private static let feedCardPhotoHeight: CGFloat = 500
+    private static var gameLogPhotoPreviewHeight: CGFloat { feedCardPhotoHeight * 0.6 }
+
+    /// Teammate/opponent picker list; previously a fixed 260pt — that remains the cap when many people are available.
+    private static let participantPickerListMaxHeight: CGFloat = 260
+    private static let participantPickerListRowStride: CGFloat = 52
+    private static let participantPickerListMinHeight: CGFloat = 52
+
+    /// Background behind the form.
+    private static let formBackgroundSoftRed = GameLogBrandColor.red
+    private static let widgetOutlineColor = GameLogBrandColor.red
+
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var container: DependencyContainer
     @State private var frontPhotoData: Data?
@@ -60,6 +80,11 @@ struct NewGameLogFormView: View {
     @State private var showOpenSettingsAction = false
     @State private var submitAfterCapture = false
 
+    private var widgetOutlineBackground: some View {
+        RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .fill(Color.white)
+    }
+
     var body: some View {
         Group {
             if isLoading {
@@ -76,141 +101,231 @@ struct NewGameLogFormView: View {
                 )
             } else {
                 Form {
-                    Section("Game Photos") {
-                        HStack(spacing: 12) {
-                            photoPreview(data: frontPhotoData, title: "Front")
-                            photoPreview(data: backPhotoData, title: "Back")
-                        }
+                    Section {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Game Photos")
+                                .font(AppFont.title)
+                                .foregroundStyle(GameLogBrandColor.red)
+                                .frame(maxWidth: .infinity)
+                                .multilineTextAlignment(.center)
 
-                        Button(frontPhotoData == nil && backPhotoData == nil ? "Capture both cameras" : "Retake both photos") {
-                            showDualCapture = true
-                        }
-                        .buttonStyle(.borderedProminent)
+                            concatenatedPhotoStrip(front: frontPhotoData, back: backPhotoData)
 
-                        Text("Camera only — dual capture when your device supports it.")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
+                            HStack {
+                                Spacer()
+                                if frontPhotoData == nil && backPhotoData == nil {
+                                    Button {
+                                        showDualCapture = true
+                                    } label: {
+                                        Text("Capture both cameras")
+                                            .font(AppFont.buttonProminent)
+                                    }
+                                    .buttonStyle(.borderedProminent)
+                                } else {
+                                    Button {
+                                        showDualCapture = true
+                                    } label: {
+                                        Text("Retake")
+                                            .font(AppFont.buttonProminent)
+                                    }
+                                    .buttonStyle(BrandPrimaryButtonStyle())
+                                }
+                                Spacer()
+                            }
+                        }
                     }
+                    .listRowBackground(widgetOutlineBackground)
 
-                    Section("Choose league") {
-                        Picker("League", selection: $selectedCommunityId) {
+                    Section {
+                        Picker(selection: $selectedCommunityId) {
                             ForEach(communities, id: \.communityId) { community in
-                                Text(community.name).tag(community.communityId)
+                                Text(community.name)
+                                    .font(AppFont.body)
+                                    .foregroundStyle(GameLogBrandColor.formLightRed)
+                                    .tag(community.communityId)
                             }
+                        } label: {
+                            Text("League")
+                                .font(AppFont.headline)
                         }
+                    } header: {
+                        Text("Choose league")
+                            .font(AppFont.sectionHeader)
+                            .foregroundStyle(GameLogBrandColor.formLightRed)
                     }
+                    .listRowBackground(widgetOutlineBackground)
 
-                    Section("Choose game type") {
-                        Picker("Game type", selection: $selectedGameType) {
+                    Section {
+                        Picker(selection: $selectedGameType) {
                             ForEach(GameType.allCases) { type in
-                                Text(type.displayName).tag(type)
+                                Text(type.displayName)
+                                    .font(AppFont.body)
+                                    .tag(type)
                             }
+                        } label: {
+                            Text("Game type")
+                                .font(AppFont.headline)
                         }
+                        .font(AppFont.body)
                         .pickerStyle(.segmented)
+                    } header: {
+                        Text("Choose game type")
+                            .font(AppFont.sectionHeader)
+                            .foregroundStyle(GameLogBrandColor.formLightRed)
                     }
+                    .listRowBackground(widgetOutlineBackground)
 
-                    Section("Outcome") {
+                    Section {
                         HStack(spacing: 12) {
                             Button {
                                 outcome = .won
                                 lockUserIntoOutcome()
                             } label: {
-                                Text("I won").frame(maxWidth: .infinity)
+                                Text("I won")
+                                    .font(AppFont.buttonProminent)
+                                    .frame(maxWidth: .infinity)
                             }
-                            .buttonStyle(.borderedProminent)
-                            .tint(outcome == .won ? .blue : .gray)
+                            .foregroundStyle(outcome == .won ? .white : GameLogBrandColor.red)
+                            .padding(.vertical, 10)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .fill(outcome == .won ? GameLogBrandColor.red : .white)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .stroke(GameLogBrandColor.red, lineWidth: 2)
+                            )
+                            .buttonStyle(.plain)
 
                             Button {
                                 outcome = .lost
                                 lockUserIntoOutcome()
                             } label: {
-                                Text("I lost").frame(maxWidth: .infinity)
+                                Text("I lost")
+                                    .font(AppFont.buttonProminent)
+                                    .frame(maxWidth: .infinity)
                             }
-                            .buttonStyle(.borderedProminent)
-                            .tint(outcome == .lost ? .blue : .gray)
+                            .foregroundStyle(outcome == .lost ? .white : GameLogBrandColor.red)
+                            .padding(.vertical, 10)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .fill(outcome == .lost ? GameLogBrandColor.red : .white)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .stroke(GameLogBrandColor.red, lineWidth: 2)
+                            )
+                            .buttonStyle(.plain)
                         }
+                    } header: {
+                        Text("Outcome")
+                            .font(AppFont.sectionHeader)
+                            .foregroundStyle(GameLogBrandColor.formLightRed)
                     }
+                    .listRowBackground(widgetOutlineBackground)
 
                     Section {
                         let range = teamSizeRange(for: selectedGameType)
                         Stepper(value: $teamSize, in: range, step: 1) {
-                            Text("Team size: \(teamSize)")
+                            Text("\(teamSize)")
+                                .font(AppFont.headline)
                         }
+                    } header: {
+                        Text("Team size")
+                            .font(AppFont.sectionHeader)
+                            .foregroundStyle(GameLogBrandColor.formLightRed)
                     }
+                    .listRowBackground(widgetOutlineBackground)
 
-                    Section {
-                        fillSlotsContent
-                    }
+                    fillSlotsFormSections
 
                     Section {
                         statsSectionContent
                     }
-
-                    Section("Awards (Optional)") {
-                        if participantProfileIds.isEmpty {
-                            Text("Select winners and losers to choose MVP/LVP.")
-                                .foregroundStyle(.secondary)
-                        } else {
-                            Picker("MVP", selection: $selectedMVPProfileId) {
-                                Text("None").tag("")
-                                ForEach(selectedParticipants, id: \.profileId) { participant in
-                                    Text(displayName(for: participant.profileId)).tag(participant.profileId)
-                                }
-                            }
-                            Picker("LVP", selection: $selectedLVPProfileId) {
-                                Text("None").tag("")
-                                ForEach(selectedParticipants, id: \.profileId) { participant in
-                                    Text(displayName(for: participant.profileId)).tag(participant.profileId)
-                                }
-                            }
-                        }
-                    }
+                    .listRowBackground(widgetOutlineBackground)
 
                     Section {
-                        if let outcome {
-                            let isMySideWinners = (outcome == .won)
-                            let teammateSet = isMySideWinners ? selectedWinnerProfileIds : selectedLoserProfileIds
-                            let opponentSet = isMySideWinners ? selectedLoserProfileIds : selectedWinnerProfileIds
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text("Teammates: \(teammateSet.count)/\(teamSize), Opponents: \(opponentSet.count)/\(teamSize)")
-                                    .font(.subheadline)
-                                    .bold()
-                                Text("Winners: \(namesList(for: selectedWinnerProfileIds))")
-                                    .font(.subheadline)
-                                    .bold()
-                                Text("Losers: \(namesList(for: selectedLoserProfileIds))")
-                                    .font(.subheadline)
-                                    .bold()
+                        if participantProfileIds.isEmpty {
+                            Text("Select winners and losers to choose MVP/LVP.")
+                                .font(AppFont.subheadline)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Picker(selection: $selectedMVPProfileId) {
+                                    Text("None")
+                                        .font(AppFont.body)
+                                        .tag("")
+                                    ForEach(selectedParticipants, id: \.profileId) { participant in
+                                        Text(displayName(for: participant.profileId))
+                                            .font(AppFont.body)
+                                            .tag(participant.profileId)
+                                    }
+                                } label: {
+                                    Text("MVP   ˗ˏˋ ★ ˎˊ˗")
+                                        .font(AppFont.headline)
+                                }
+                                .font(AppFont.body)
+                                Picker(selection: $selectedLVPProfileId) {
+                                    Text("None")
+                                        .font(AppFont.body)
+                                        .tag("")
+                                    ForEach(selectedParticipants, id: \.profileId) { participant in
+                                        Text(displayName(for: participant.profileId))
+                                            .font(AppFont.body)
+                                            .tag(participant.profileId)
+                                    }
+                                } label: {
+                                    Text("LVP ")
+                                        .font(AppFont.headline)
+                                }
+                                .font(AppFont.body)
                             }
                         }
+                    } header: {
+                        Text("Awards (Optional)")
+                            .font(AppFont.sectionHeader)
+                            .foregroundStyle(GameLogBrandColor.formLightRed)
                     }
+                    .listRowBackground(widgetOutlineBackground)
+
+                    Section {
+                        summaryWidgetContent
+                    } header: {
+                        Text("Summary")
+                            .font(AppFont.sectionHeader)
+                            .foregroundStyle(GameLogBrandColor.formLightRed)
+                    }
+                    .listRowBackground(widgetOutlineBackground)
 
                     Section {
                         if !submitDisableReasons.isEmpty {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("Missing before submit:")
-                                    .font(.footnote)
-                                    .foregroundStyle(.secondary)
+                                    .font(AppFont.subheadlineBold)
+                                    .foregroundStyle(.black)
                                 ForEach(submitDisableReasons, id: \.self) { reason in
                                     Text("• \(reason)")
-                                        .font(.footnote)
-                                        .foregroundStyle(.secondary)
+                                        .font(AppFont.subheadlineBold)
+                                        .foregroundStyle(.black)
                                 }
                             }
                         }
                         if let statsError = currentStatsValidationError {
                             Text(statsError)
                                 .foregroundStyle(.red)
-                                .font(.footnote)
+                                .font(AppFont.footnote)
                         }
                         if let submitErrorMessage {
                             Text(submitErrorMessage)
                                 .foregroundStyle(.red)
-                                .font(.footnote)
+                                .font(AppFont.footnote)
                             if showOpenSettingsAction {
-                                Button("Open Settings") {
+                                Button {
                                     guard let settingsURL = URL(string: UIApplication.openSettingsURLString) else { return }
                                     UIApplication.shared.open(settingsURL)
+                                } label: {
+                                    Text("Open Settings")
+                                        .font(AppFont.button)
                                 }
                                 .buttonStyle(.bordered)
                             }
@@ -219,18 +334,23 @@ struct NewGameLogFormView: View {
                             HStack(spacing: 8) {
                                 ProgressView()
                                 Text("Submitting game log...")
-                                    .font(.footnote)
+                                    .font(AppFont.footnote)
                                     .foregroundStyle(.secondary)
                             }
                         }
-                        Button("Submit Game") {
+                        Button {
                             Task { await handleSubmitTapped() }
+                        } label: {
+                            Text("Submit Game")
+                                .font(AppFont.buttonProminent)
+                                .frame(maxWidth: .infinity)
                         }
+                        .buttonStyle(SubmitGameButtonStyle())
                         .disabled(!canSubmitWithoutPhotos || isSubmitting)
                     }
                 }
-                .navigationTitle("New Game")
-                .navigationBarTitleDisplayMode(.inline)
+                .scrollContentBackground(.hidden)
+                .background(Self.formBackgroundSoftRed)
             }
         }
         .task { await loadIfNeeded() }
@@ -280,30 +400,49 @@ struct NewGameLogFormView: View {
         }
     }
 
+    /// Teammates + opponents; opponents use a `Section` header so the title sits outside the white widget row.
     @ViewBuilder
-    private var fillSlotsContent: some View {
+    private var fillSlotsFormSections: some View {
         if isMembersLoading {
-            LoadingView(message: "Loading members...")
-        } else if let membersErrorMessage {
-            ErrorView(message: membersErrorMessage) {
-                Task { await loadMembers() }
+            Section {
+                LoadingView(message: "Loading members...")
             }
-        } else if !members.isEmpty {
+            .listRowBackground(widgetOutlineBackground)
+        } else if let membersErrorMessage {
+            Section {
+                ErrorView(message: membersErrorMessage) {
+                    Task { await loadMembers() }
+                }
+            }
+            .listRowBackground(widgetOutlineBackground)
+        } else if members.isEmpty {
+            Section {
+                Text("No members found for this league.")
+                    .font(AppFont.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            .listRowBackground(widgetOutlineBackground)
+        } else {
             let hasEnoughMembers = members.count >= (2 * teamSize)
             if let outcome, let myUserId = currentUserId {
-                if !hasEnoughMembers {
-                    Text("League doesn’t have enough members for a team of size \(teamSize).")
-                        .foregroundStyle(.red)
-                }
-
                 let isMySideWinners = (outcome == .won)
                 let teammateSet = isMySideWinners ? selectedWinnerProfileIds : selectedLoserProfileIds
                 let opponentSet = isMySideWinners ? selectedLoserProfileIds : selectedWinnerProfileIds
 
-                VStack(alignment: .leading, spacing: 12) {
-                    if teamSize > 1 {
+                if !hasEnoughMembers {
+                    Section {
+                        Text("League doesn’t have enough members for a team of size \(teamSize).")
+                            .font(AppFont.subheadline)
+                            .foregroundStyle(.red)
+                    }
+                    .listRowBackground(widgetOutlineBackground)
+                }
+
+                if teamSize > 1 {
+                    Section {
                         dropdownBlock(
                             title: "Teammates (\(isMySideWinners ? "Winners" : "Losers"))",
+                            includeTitleAboveButton: true,
                             selectedCount: teammateSet.count,
                             query: $teammateQuery,
                             isOpen: $isTeammateDropdownOpen,
@@ -316,9 +455,14 @@ struct NewGameLogFormView: View {
                             toggleTeammate(profileId: profileId, isSelected: isSelected)
                         }
                     }
+                    .listRowBackground(widgetOutlineBackground)
+                }
 
+                Section {
                     dropdownBlock(
                         title: "Opponents (\(isMySideWinners ? "Losers" : "Winners"))",
+                        includeTitleAboveButton: false,
+                        buttonTitleForeground: GameLogBrandColor.red,
                         selectedCount: opponentSet.count,
                         query: $opponentQuery,
                         isOpen: $isOpponentDropdownOpen,
@@ -330,17 +474,67 @@ struct NewGameLogFormView: View {
                     ) { profileId, isSelected in
                         toggleOpponent(profileId: profileId, isSelected: isSelected)
                     }
+                } header: {
+                    opponentSectionHeaderPills(
+                        selectedProfileIds: opponentSet,
+                        members: members.filter { $0.profileId != myUserId }
+                    )
+                }
+                .listRowBackground(widgetOutlineBackground)
+            }
+        }
+    }
+
+    /// Height of the member list inside teammate/opponent dropdowns scales with how many rows match the search (at least one row’s worth, capped at `participantPickerListMaxHeight`).
+    private func participantPickerListHeight(visibleRowCount: Int) -> CGFloat {
+        let n = max(1, visibleRowCount)
+        return min(
+            Self.participantPickerListMaxHeight,
+            max(Self.participantPickerListMinHeight, CGFloat(n) * Self.participantPickerListRowStride)
+        )
+    }
+
+    /// Selected opponent chips above the white widget; title lives in the dropdown row next to the count.
+    @ViewBuilder
+    private func opponentSectionHeaderPills(
+        selectedProfileIds: Set<String>,
+        members: [(profileId: String, displayName: String)]
+    ) -> some View {
+        let selectedParticipants = members
+            .filter { selectedProfileIds.contains($0.profileId) }
+            .sorted { lhs, rhs in
+                let left = lhs.displayName.isEmpty ? "Unknown" : lhs.displayName
+                let right = rhs.displayName.isEmpty ? "Unknown" : rhs.displayName
+                return left.localizedCaseInsensitiveCompare(right) == .orderedAscending
+            }
+        if !selectedParticipants.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(selectedParticipants, id: \.profileId) { member in
+                        Text(member.displayName.isEmpty ? "Unknown" : member.displayName)
+                            .font(AppFont.footnote)
+                            .foregroundStyle(GameLogBrandColor.formLightRed)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 7)
+                            .background(
+                                Capsule(style: .continuous)
+                                    .fill(GameLogBrandColor.formLightRed.opacity(0.22))
+                            )
+                            .overlay(
+                                Capsule(style: .continuous)
+                                    .strokeBorder(GameLogBrandColor.formLightRed, lineWidth: 1)
+                            )
+                    }
                 }
             }
-        } else {
-            Text("No members found for this league.")
-                .foregroundStyle(.secondary)
         }
     }
 
     @ViewBuilder
     private func dropdownBlock(
         title: String,
+        includeTitleAboveButton: Bool = true,
+        buttonTitleForeground: Color? = nil,
         selectedCount: Int,
         query: Binding<String>,
         isOpen: Binding<Bool>,
@@ -351,70 +545,175 @@ struct NewGameLogFormView: View {
         hasEnoughMembers: Bool,
         onToggle: @escaping (String, Bool) -> Void
     ) -> some View {
-        Button {
-            isOpen.wrappedValue.toggle()
-            if isOpen.wrappedValue { query.wrappedValue = "" }
-        } label: {
-            HStack {
+        VStack(alignment: .leading, spacing: 12) {
+            if !title.isEmpty, includeTitleAboveButton {
                 Text(title)
-                    .font(.headline)
-                Spacer()
-                Text("\(selectedCount)/\(teamSize)")
-                    .foregroundStyle(.secondary)
-                Image(systemName: isOpen.wrappedValue ? "chevron.up" : "chevron.down")
-                    .foregroundStyle(.secondary)
+                    .font(AppFont.sectionHeader)
+                    .foregroundStyle(GameLogBrandColor.formLightRed)
+            }
+
+            Button {
+                isOpen.wrappedValue.toggle()
+                if isOpen.wrappedValue { query.wrappedValue = "" }
+            } label: {
+                HStack {
+                    if !title.isEmpty {
+                        Text(title)
+                            .font(AppFont.headline)
+                            .foregroundStyle(buttonTitleForeground ?? .primary)
+                    }
+                    Spacer()
+                    Text("\(selectedCount)/\(teamSize)")
+                        .font(AppFont.subheadline)
+                        .foregroundStyle(GameLogBrandColor.red)
+                    Image(systemName: isOpen.wrappedValue ? "chevron.up" : "chevron.down")
+                        .foregroundStyle(GameLogBrandColor.red)
+                }
+            }
+            .disabled(!hasEnoughMembers)
+
+            if isOpen.wrappedValue {
+                let filtered = participants.filter { member in
+                    let q = query.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                    guard !q.isEmpty else { return true }
+                    return member.displayName.lowercased().contains(q) || member.profileId.lowercased().contains(q)
+                }
+
+                TextField("Search...", text: query)
+                    .font(AppFont.body)
+                    .textFieldStyle(.roundedBorder)
+
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 8) {
+                        ForEach(filtered, id: \.profileId) { member in
+                            let profileId = member.profileId
+                            let isSelected = onCurrent.contains(profileId)
+                            let onOppositeSide = onOpposite.contains(profileId)
+                            let disablePick = !isSelected && onOppositeSide
+                            let canAdd = isSelected || onCurrent.count < teamSize
+                            let rowDisabled = disablePick || !canAdd
+
+                            Button {
+                                guard !rowDisabled else { return }
+                                onToggle(profileId, isSelected)
+                            } label: {
+                                HStack(spacing: 12) {
+                                    if onOppositeSide {
+                                        Image(systemName: "xmark.circle.fill")
+                                            .foregroundStyle(.red)
+                                    } else {
+                                        if isSelected {
+                                            Image(systemName: "checkmark.circle.fill")
+                                                .symbolRenderingMode(.palette)
+                                                .foregroundStyle(GameLogBrandColor.red, .white)
+                                        } else {
+                                            Image(systemName: "circle")
+                                                .foregroundStyle(.secondary)
+                                        }
+                                    }
+                                    Text(member.displayName.isEmpty ? "Unknown" : member.displayName)
+                                        .font(AppFont.body)
+                                        .foregroundStyle(.primary)
+                                    if onOppositeSide {
+                                        Text(oppositeLabel)
+                                            .font(AppFont.footnote)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(rowDisabled)
+                        }
+                    }
+                }
+                .frame(height: participantPickerListHeight(visibleRowCount: filtered.count))
             }
         }
-        .disabled(!hasEnoughMembers)
+    }
 
-        if isOpen.wrappedValue {
-            let filtered = participants.filter { member in
-                let q = query.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-                guard !q.isEmpty else { return true }
-                return member.displayName.lowercased().contains(q) || member.profileId.lowercased().contains(q)
+    @ViewBuilder
+    private var summaryWidgetContent: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("League: \(selectedLeagueNameForSummary)")
+                .font(AppFont.subheadlineBold)
+            Text("Game: \(selectedGameType.displayName)")
+                .font(AppFont.subheadlineBold)
+            Text("Winners: \(namesList(for: selectedWinnerProfileIds))")
+                .font(AppFont.subheadlineBold)
+            Text("Losers: \(namesList(for: selectedLoserProfileIds))")
+                .font(AppFont.subheadlineBold)
+
+            if !selectedMVPProfileId.isEmpty {
+                Text("MVP: \(displayName(for: selectedMVPProfileId))")
+                    .font(AppFont.subheadlineBold)
+            }
+            if !selectedLVPProfileId.isEmpty {
+                Text("LVP: \(displayName(for: selectedLVPProfileId))")
+                    .font(AppFont.subheadlineBold)
             }
 
-            TextField("Search...", text: query)
-                .textFieldStyle(.roundedBorder)
+            summaryStatsDetailContent
+        }
+        .foregroundStyle(GameLogBrandColor.red)
+    }
 
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 8) {
-                    ForEach(filtered, id: \.profileId) { member in
-                        let profileId = member.profileId
-                        let isSelected = onCurrent.contains(profileId)
-                        let onOppositeSide = onOpposite.contains(profileId)
-                        let disablePick = !isSelected && onOppositeSide
-                        let canAdd = isSelected || onCurrent.count < teamSize
-                        let rowDisabled = disablePick || !canAdd
-
-                        Button {
-                            guard !rowDisabled else { return }
-                            onToggle(profileId, isSelected)
-                        } label: {
-                            HStack(spacing: 12) {
-                                if onOppositeSide {
-                                    Image(systemName: "xmark.circle.fill")
-                                        .foregroundStyle(.red)
-                                } else {
-                                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                                        .foregroundStyle(isSelected ? .blue : .secondary)
-                                }
-                                Text(member.displayName.isEmpty ? "Unknown" : member.displayName)
-                                    .foregroundStyle(.primary)
-                                if onOppositeSide {
-                                    Text(oppositeLabel)
-                                        .font(.footnote)
-                                        .foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                            }
+    @ViewBuilder
+    private var summaryStatsDetailContent: some View {
+        if !participantProfileIds.isEmpty {
+            switch selectedGameType {
+            case .pong:
+                if teamSize > 1 {
+                    Text("Cup game: \(pongCupMode.displayName)")
+                        .font(AppFont.subheadlineBold)
+                    ForEach(participantProfileIds.sorted(), id: \.self) { profileId in
+                        let cups = pongCupsByProfileId[profileId] ?? 0
+                        if cups > 0 {
+                            Text("\(displayName(for: profileId)): \(cups) cups")
+                                .font(AppFont.subheadlineBold)
                         }
-                        .buttonStyle(.plain)
-                        .disabled(rowDisabled)
+                    }
+                    if !pongLastCupByProfileId.isEmpty {
+                        Text("Last cup: \(displayName(for: pongLastCupByProfileId))")
+                            .font(AppFont.subheadlineBold)
+                    }
+                } else if soloWinnerProfileId != nil {
+                    Text("Pong: Solo \(pongCupMode.displayName)")
+                        .font(AppFont.subheadlineBold)
+                    if !pongLastCupByProfileId.isEmpty {
+                        Text("Last cup: \(displayName(for: pongLastCupByProfileId))")
+                            .font(AppFont.subheadlineBold)
+                    }
+                }
+            case .beerBall:
+                ForEach(participantProfileIds.sorted(), id: \.self) { profileId in
+                    let n = beerBallNewCansByProfileId[profileId] ?? 0
+                    if n > 0 {
+                        Text("\(displayName(for: profileId)): \(n) new cans")
+                            .font(AppFont.subheadlineBold)
+                    }
+                }
+                if !beerBallFirstFinishedByProfileId.isEmpty {
+                    Text("Finished first: \(displayName(for: beerBallFirstFinishedByProfileId))")
+                        .font(AppFont.subheadlineBold)
+                }
+            case .battlePong:
+                ForEach(participantProfileIds.sorted(), id: \.self) { profileId in
+                    let n = battlePongCupsByProfileId[profileId] ?? 0
+                    if n > 0 {
+                        Text("\(displayName(for: profileId)): \(n) cups made")
+                            .font(AppFont.subheadlineBold)
+                    }
+                }
+            case .baseball:
+                ForEach(participantProfileIds.sorted(), id: \.self) { profileId in
+                    let n = baseballHitsByProfileId[profileId] ?? 0
+                    if n > 0 {
+                        Text("\(displayName(for: profileId)): \(n) hits")
+                            .font(AppFont.subheadlineBold)
                     }
                 }
             }
-            .frame(height: 260)
         }
     }
 
@@ -422,6 +721,7 @@ struct NewGameLogFormView: View {
     private var statsSectionContent: some View {
         if participantProfileIds.isEmpty {
             Text("Select winners and losers to enter game stats.")
+                .font(AppFont.subheadline)
                 .foregroundStyle(.secondary)
         } else {
             switch selectedGameType {
@@ -445,9 +745,12 @@ struct NewGameLogFormView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Picker("Cup game", selection: $pongCupMode) {
                     ForEach(PongCupMode.allCases) { mode in
-                        Text(mode.displayName).tag(mode)
+                        Text(mode.displayName)
+                            .font(AppFont.body)
+                            .tag(mode)
                     }
                 }
+                .font(AppFont.body)
                 .pickerStyle(.segmented)
 
                 ForEach(selectedParticipants, id: \.profileId) { participant in
@@ -456,19 +759,25 @@ struct NewGameLogFormView: View {
                         in: 0...pongCupMode.rawValue
                     ) {
                         Text("\(displayName(for: participant.profileId)): \(pongCupsByProfileId[participant.profileId] ?? 0) cups")
+                            .font(AppFont.body)
                     }
                 }
 
                 Picker("Last cup by", selection: $pongLastCupByProfileId) {
-                    Text("None").tag("")
+                    Text("None")
+                        .font(AppFont.body)
+                        .tag("")
                     ForEach(Array(selectedWinnerProfileIds).sorted(), id: \.self) { winnerId in
-                        Text(displayName(for: winnerId)).tag(winnerId)
+                        Text(displayName(for: winnerId))
+                            .font(AppFont.body)
+                            .tag(winnerId)
                     }
                 }
+                .font(AppFont.body)
 
                 let total = pongTotalCups
                 Text("Pong total: \(total) / \(pongCupMode.rawValue)")
-                    .font(.footnote)
+                    .font(AppFont.footnote)
                     .foregroundColor(total == pongCupMode.rawValue ? .secondary : .red)
             }
         }
@@ -483,15 +792,21 @@ struct NewGameLogFormView: View {
                     in: 0...99
                 ) {
                     Text("\(displayName(for: participant.profileId)): \(beerBallNewCansByProfileId[participant.profileId] ?? 0) new cans")
+                        .font(AppFont.body)
                 }
             }
 
             Picker("Finished first", selection: $beerBallFirstFinishedByProfileId) {
-                Text("None").tag("")
+                Text("None")
+                    .font(AppFont.body)
+                    .tag("")
                 ForEach(selectedParticipants, id: \.profileId) { participant in
-                    Text(displayName(for: participant.profileId)).tag(participant.profileId)
+                    Text(displayName(for: participant.profileId))
+                        .font(AppFont.body)
+                        .tag(participant.profileId)
                 }
             }
+            .font(AppFont.body)
         }
     }
 
@@ -504,6 +819,7 @@ struct NewGameLogFormView: View {
                     in: 0...99
                 ) {
                     Text("\(displayName(for: participant.profileId)): \(battlePongCupsByProfileId[participant.profileId] ?? 0) cups made")
+                        .font(AppFont.body)
                 }
             }
         }
@@ -518,6 +834,7 @@ struct NewGameLogFormView: View {
                     in: 0...99
                 ) {
                     Text("\(displayName(for: participant.profileId)): \(baseballHitsByProfileId[participant.profileId] ?? 0) hits")
+                        .font(AppFont.body)
                 }
             }
         }
@@ -702,6 +1019,20 @@ struct NewGameLogFormView: View {
             .filter { ids.contains($0.profileId) }
             .map { $0.displayName.isEmpty ? "Unknown" : $0.displayName }
         return names.isEmpty ? "—" : names.joined(separator: ", ")
+    }
+
+    private var selectedLeagueNameForSummary: String {
+        communities.first { $0.communityId == selectedCommunityId }?.name ?? "—"
+    }
+
+    /// Shown in Summary when at least one capture or linked photo exists.
+    private var photosSummaryDetailText: String? {
+        let hasFront = frontPhotoData != nil
+        let hasBack = backPhotoData != nil
+        if hasFront && hasBack { return "Photos: Front and back captured" }
+        if hasFront || hasBack { return "Photos: One side captured" }
+        if !photoUrls.isEmpty { return "Photos: Saved with log" }
+        return nil
     }
 
     private var soloWinnerProfileId: String? {
@@ -940,25 +1271,42 @@ struct NewGameLogFormView: View {
         ["hitsByProfileId": baseballHitsByProfileId]
     }
 
+    /// Full width × fixed height (scaled from feed card photo height); rectangular, no corner radius.
     @ViewBuilder
-    private func photoPreview(data: Data?, title: String) -> some View {
-        VStack(spacing: 6) {
+    private func concatenatedPhotoStrip(front: Data?, back: Data?) -> some View {
+        ZStack {
+            HStack(spacing: 0) {
+                photoStripHalf(data: front)
+                photoStripHalf(data: back)
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: Self.gameLogPhotoPreviewHeight)
+
+            if front == nil && back == nil {
+                Text("No photo")
+                    .font(AppFont.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: Self.gameLogPhotoPreviewHeight)
+    }
+
+    @ViewBuilder
+    private func photoStripHalf(data: Data?) -> some View {
+        Group {
             if let data, let uiImage = UIImage(data: data) {
                 Image(uiImage: uiImage)
                     .resizable()
-                    .scaledToFill()
-                    .frame(width: 120, height: 150)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .scaledToFit()
+                    .frame(minWidth: 0, maxWidth: .infinity)
+                    .frame(maxHeight: .infinity)
             } else {
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(Color(.systemGray5))
-                    .frame(width: 120, height: 150)
-                    .overlay(Text("No photo").foregroundStyle(.secondary))
+                Color(.systemGray5)
             }
-            Text(title)
-                .font(.footnote)
-                .foregroundStyle(.secondary)
         }
+        .frame(maxWidth: .infinity)
+        .frame(maxHeight: .infinity)
     }
 
     private func loadIfNeeded() async {
@@ -995,6 +1343,46 @@ struct NewGameLogFormView: View {
             members = []
         }
         isMembersLoading = false
+    }
+}
+
+/// White fill, red label and border — primary action on the game log form.
+private struct SubmitGameButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(GameLogBrandColor.red)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(Color.white)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(GameLogBrandColor.red, lineWidth: 2)
+            )
+            .opacity(configuration.isPressed ? 0.85 : 1.0)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
+
+/// Same treatment as `FeedPrimaryActionButtonStyle` (feed bottom actions).
+private struct BrandPrimaryButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(.white)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(GameLogBrandColor.red)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(Color.white, lineWidth: 2)
+            )
+            .opacity(configuration.isPressed ? 0.85 : 1.0)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }
 

@@ -10,15 +10,18 @@ struct ErrorView: View {
                 .font(.system(size: 48))
                 .foregroundColor(.red)
             Text("Error")
-                .font(.headline)
+                .font(AppFont.headline)
             Text(message)
-                .font(.subheadline)
+                .font(AppFont.subheadline)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal)
             if let retryAction {
-                Button("Retry", action: retryAction)
-                    .buttonStyle(.borderedProminent)
+                Button(action: retryAction) {
+                    Text("Retry")
+                        .font(AppFont.buttonProminent)
+                }
+                .buttonStyle(.borderedProminent)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

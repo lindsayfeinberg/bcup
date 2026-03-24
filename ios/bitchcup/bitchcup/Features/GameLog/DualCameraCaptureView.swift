@@ -17,6 +17,7 @@ struct DualCameraCaptureView: View {
             Button("Cancel") {
                 onCancel()
             }
+            .foregroundStyle(.white)
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
             .background(.ultraThinMaterial, in: Capsule())

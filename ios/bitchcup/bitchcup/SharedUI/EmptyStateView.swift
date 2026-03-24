@@ -12,15 +12,18 @@ struct EmptyStateView: View {
                 .font(.system(size: 48))
                 .foregroundColor(.secondary)
             Text(title)
-                .font(.headline)
+                .font(AppFont.emptyStateTitle)
             Text(message)
-                .font(.subheadline)
+                .font(AppFont.subheadline)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal)
             if let actionLabel, let action {
-                Button(actionLabel, action: action)
-                    .buttonStyle(.borderedProminent)
+                Button(action: action) {
+                    Text(actionLabel)
+                        .font(AppFont.buttonProminent)
+                }
+                .buttonStyle(.borderedProminent)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

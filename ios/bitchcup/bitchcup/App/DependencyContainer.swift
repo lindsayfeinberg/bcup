@@ -71,6 +71,11 @@ struct FeedRow: Identifiable {
     let loserNames: [String]
     let mvpProfileId: String?
     let lvpProfileId: String?
+    /// Resolved display names for MVP/LVP when set (for back-of-card copy).
+    let mvpDisplayName: String?
+    let lvpDisplayName: String?
+    /// Formatted game-type stats (multi-line), or nil when none stored.
+    let statsSummary: String?
     let photoUrls: [String]
     let createdAt: Date
     var id: String { gameLogId }
@@ -89,6 +94,18 @@ struct FeedRow: Identifiable {
         loserNames.isEmpty
             ? loserProfileIds.joined(separator: ", ")
             : loserNames.joined(separator: ", ")
+    }
+
+    /// Back-of-card rows only: Winners, Losers, MVP, LVP, Stats (empty optional rows are omitted).
+    func backDetailRows() -> [(title: String, value: String)] {
+        let ordered: [(String, String?)] = [
+            ("Winners", winnersText.isEmpty ? nil : winnersText),
+            ("Losers", losersText.isEmpty ? nil : losersText),
+            ("MVP", mvpDisplayName),
+            ("LVP", lvpDisplayName),
+            ("Stats", statsSummary.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 })
+        ]
+        return ordered.compactMap { title, value in value.map { (title, $0) } }
     }
 }
 
@@ -788,6 +805,123 @@ extension GameLogService: FeedServiceProtocol {
         return map
     }
 
+    /// Profile ids needed to resolve names on the feed row (winners, losers, participants, awards, creator, stats).
+    private static func profileIdsReferencedInGameLog(data: [String: Any]) -> [String] {
+        var ids: [String] = []
+        if let w = data["winnerProfileIds"] as? [String] { ids.append(contentsOf: w) }
+        if let l = data["loserProfileIds"] as? [String] { ids.append(contentsOf: l) }
+        if let m = data["mvpProfileId"] as? String, !m.isEmpty { ids.append(m) }
+        if let l = data["lvpProfileId"] as? String, !l.isEmpty { ids.append(l) }
+        appendStatsProfileIds(from: data, into: &ids)
+        return ids
+    }
+
+    private static func appendStatsProfileIds(from data: [String: Any], into ids: inout [String]) {
+        if let pong = data["pongStats"] as? [String: Any] {
+            if let m = pong["playerCupsHit"] as? [String: Any] { ids.append(contentsOf: m.keys) }
+            if let last = pong["lastCupByProfileId"] as? String, !last.isEmpty { ids.append(last) }
+        }
+        if let bb = data["beerBallStats"] as? [String: Any] {
+            if let m = bb["newCanCountByProfileId"] as? [String: Any] { ids.append(contentsOf: m.keys) }
+            if let f = bb["firstFinishedByProfileId"] as? String, !f.isEmpty { ids.append(f) }
+        }
+        if let bp = data["battlePongStats"] as? [String: Any] {
+            if let m = bp["playerCupsHit"] as? [String: Any] { ids.append(contentsOf: m.keys) }
+        }
+        if let b = data["baseballStats"] as? [String: Any] {
+            if let m = b["hitsByProfileId"] as? [String: Any] { ids.append(contentsOf: m.keys) }
+        }
+    }
+
+    private static func stringIntMap(from value: Any?) -> [String: Int] {
+        guard let dict = value as? [String: Any] else { return [:] }
+        var out: [String: Int] = [:]
+        for (k, v) in dict {
+            if let i = v as? Int {
+                out[k] = i
+            } else if let n = v as? NSNumber {
+                out[k] = n.intValue
+            }
+        }
+        return out
+    }
+
+    private static func formatGameLogStats(
+        gameType: String,
+        data: [String: Any],
+        resolveName: (String) -> String
+    ) -> String? {
+        switch gameType {
+        case "PONG":
+            guard let pong = data["pongStats"] as? [String: Any], !pong.isEmpty else { return nil }
+            return formatPongStats(pong, resolveName: resolveName)
+        case "BEER_BALL":
+            guard let bb = data["beerBallStats"] as? [String: Any], !bb.isEmpty else { return nil }
+            return formatBeerBallStats(bb, resolveName: resolveName)
+        case "BATTLE_PONG":
+            guard let bp = data["battlePongStats"] as? [String: Any], !bp.isEmpty else { return nil }
+            return formatBattlePongStats(bp, resolveName: resolveName)
+        case "BASEBALL":
+            guard let b = data["baseballStats"] as? [String: Any], !b.isEmpty else { return nil }
+            return formatBaseballStats(b, resolveName: resolveName)
+        default:
+            return nil
+        }
+    }
+
+    private static func formatPongStats(_ pong: [String: Any], resolveName: (String) -> String) -> String? {
+        var lines: [String] = []
+        if let mode = pong["cupMode"] as? Int {
+            lines.append("Cup mode: \(mode)-cup")
+        } else if let n = pong["cupMode"] as? NSNumber {
+            lines.append("Cup mode: \(n.intValue)-cup")
+        }
+        let cups = stringIntMap(from: pong["playerCupsHit"])
+        if !cups.isEmpty {
+            for id in cups.keys.sorted(by: { resolveName($0) < resolveName($1) }) {
+                lines.append("\(resolveName(id)): \(cups[id] ?? 0) cups")
+            }
+        }
+        if let last = pong["lastCupByProfileId"] as? String, !last.isEmpty {
+            lines.append("Last cup: \(resolveName(last))")
+        }
+        return lines.isEmpty ? nil : lines.joined(separator: "\n")
+    }
+
+    private static func formatBeerBallStats(_ bb: [String: Any], resolveName: (String) -> String) -> String? {
+        var lines: [String] = []
+        let cans = stringIntMap(from: bb["newCanCountByProfileId"])
+        if !cans.isEmpty {
+            for id in cans.keys.sorted(by: { resolveName($0) < resolveName($1) }) {
+                lines.append("\(resolveName(id)): \(cans[id] ?? 0) new cans")
+            }
+        }
+        if let first = bb["firstFinishedByProfileId"] as? String, !first.isEmpty {
+            lines.append("Finished first: \(resolveName(first))")
+        }
+        return lines.isEmpty ? nil : lines.joined(separator: "\n")
+    }
+
+    private static func formatBattlePongStats(_ bp: [String: Any], resolveName: (String) -> String) -> String? {
+        let cups = stringIntMap(from: bp["playerCupsHit"])
+        guard !cups.isEmpty else { return nil }
+        var lines: [String] = []
+        for id in cups.keys.sorted(by: { resolveName($0) < resolveName($1) }) {
+            lines.append("\(resolveName(id)): \(cups[id] ?? 0) cups")
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private static func formatBaseballStats(_ b: [String: Any], resolveName: (String) -> String) -> String? {
+        let hits = stringIntMap(from: b["hitsByProfileId"])
+        guard !hits.isEmpty else { return nil }
+        var lines: [String] = []
+        for id in hits.keys.sorted(by: { resolveName($0) < resolveName($1) }) {
+            lines.append("\(resolveName(id)): \(hits[id] ?? 0) hits")
+        }
+        return lines.joined(separator: "\n")
+    }
+
     /// Maps a `gameLogs` document to `FeedRow` (shared by home feed and community-scoped feed).
     private static func feedRow(
         document: QueryDocumentSnapshot,
@@ -809,6 +943,19 @@ extension GameLogService: FeedServiceProtocol {
         let mvpProfileId = d["mvpProfileId"] as? String
         let lvpProfileId = d["lvpProfileId"] as? String
 
+        let resolveName: (String) -> String = { id in
+            participantNames[id] ?? membershipNames[id] ?? profileDisplayNameById[id] ?? id
+        }
+
+        let mvpDisplayName: String? = mvpProfileId.flatMap { id in
+            id.isEmpty ? nil : resolveName(id)
+        }
+        let lvpDisplayName: String? = lvpProfileId.flatMap { id in
+            id.isEmpty ? nil : resolveName(id)
+        }
+
+        let statsSummary = formatGameLogStats(gameType: gameType, data: d, resolveName: resolveName)
+
         return FeedRow(
             gameLogId: document.documentID,
             communityId: communityId,
@@ -820,6 +967,9 @@ extension GameLogService: FeedServiceProtocol {
             loserNames: loserIds.compactMap { participantNames[$0] ?? membershipNames[$0] ?? profileDisplayNameById[$0] },
             mvpProfileId: mvpProfileId,
             lvpProfileId: lvpProfileId,
+            mvpDisplayName: mvpDisplayName,
+            lvpDisplayName: lvpDisplayName,
+            statsSummary: statsSummary,
             photoUrls: d["photoUrls"] as? [String] ?? [],
             createdAt: createdAtTs.dateValue()
         )
@@ -949,12 +1099,7 @@ extension GameLogService: FeedServiceProtocol {
             }
         }
 
-        let allProfileIds = allDocuments.flatMap { document in
-            let data = document.data()
-            let winners = data["winnerProfileIds"] as? [String] ?? []
-            let losers = data["loserProfileIds"] as? [String] ?? []
-            return winners + losers
-        }
+        let allProfileIds = allDocuments.flatMap { Self.profileIdsReferencedInGameLog(data: $0.data()) }
         let profileDisplayNameById = await Self.fetchProfileDisplayNamesMap(db: db, profileIds: allProfileIds)
 
         for document in allDocuments {
@@ -1020,12 +1165,7 @@ extension GameLogService: FeedServiceProtocol {
         }
 
         let snapshot = try await query.getDocuments()
-        let allProfileIds = snapshot.documents.flatMap { document in
-            let data = document.data()
-            let winners = data["winnerProfileIds"] as? [String] ?? []
-            let losers = data["loserProfileIds"] as? [String] ?? []
-            return winners + losers
-        }
+        let allProfileIds = snapshot.documents.flatMap { Self.profileIdsReferencedInGameLog(data: $0.data()) }
         let profileDisplayNameById = await Self.fetchProfileDisplayNamesMap(db: db, profileIds: allProfileIds)
         let items = snapshot.documents.compactMap { doc in
             Self.feedRow(
