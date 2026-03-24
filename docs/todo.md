@@ -163,3 +163,39 @@ This plan is sequenced to let two developers work in parallel with clear handoff
 - `C03` Start `T10`: seeding UX and backend alignment
 - `C04` Pre `T12`: release readiness signoff
 
+## Add-on Reliability Track (Photo Caching)
+
+### [ ] T13. Feed Photo Caching and Reliability Hardening
+
+**Depends on:** `[T07, T08]`
+
+- `T13.1` Add image-load baseline metrics for feed cards:
+  - `T13.1.a` Track first-load success, first-load failure, retry success, and final failure.
+  - `T13.1.b` Record median time-to-visible image in feed sessions.
+- `T13.2` Implement image CDN/transformation path (Cloudinary/imgix/Firebase Resize Images):
+  - `T13.2.a` Define transformed URL contract for feed thumbnails (for example `w=400,h=400`).
+  - `T13.2.b` Enable automatic modern format delivery (WebP/HEIF where supported).
+  - `T13.2.c` Enable auto-quality tuning based on client/network conditions.
+  - `T13.2.d` Keep original images as source of truth; serve transformed variants in feed/profile/community UIs.
+- `T13.3` Add client-side upload preprocessing on iOS:
+  - `T13.3.a` Downscale photos before upload to a max dimension target (for example 1080px width).
+  - `T13.3.b` Apply JPEG compression target before `putData` (baseline quality ~`0.7`, tune via QA).
+  - `T13.3.c` Validate visual quality and upload speed tradeoff on recent and older iPhone devices.
+- `T13.4` Upgrade client image pipeline and caching strategy:
+  - `T13.4.a` Evaluate and select `Kingfisher` or `SDWebImage` for feed/profile/community images.
+  - `T13.4.b` Configure memory and disk cache limits with eviction policy.
+  - `T13.4.c` Add scroll prefetch for next 5-10 feed cells.
+  - `T13.4.d` Preserve retry behavior for transient failures and explicit `tap to retry` fallback.
+- `T13.5` Apply cost mitigation controls:
+  - `T13.5.a` Set strong `Cache-Control` metadata on Storage objects (game photos and profile photos).
+  - `T13.5.b` Evaluate Firebase Hosting-in-front-of-Storage as CDN layer and document cost impact.
+  - `T13.5.c` Add lifecycle policy for temporary/ephemeral media where product rules allow deletion.
+- `T13.6` Improve perceived speed UX:
+  - `T13.6.a` Add BlurHash or ThumbHash placeholder string to image metadata.
+  - `T13.6.b` Render instant blurred placeholder while full image loads.
+  - `T13.6.c` Add progressive loading path (low-quality preview -> final quality swap).
+- `T13.7` Run validation pass on constrained network:
+  - `T13.7.a` Verify reduced sticky `Photo unavailable` incidents without manual refresh.
+  - `T13.7.b` Compare before/after metrics and summarize bandwidth impact.
+  - `T13.7.c` Report Firebase Storage egress trend change after rollout.
+

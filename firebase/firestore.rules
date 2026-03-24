@@ -87,6 +87,8 @@ service cloud.firestore {
         "participantProfileIds",
         "winnerProfileIds",
         "loserProfileIds",
+        "mvpProfileId",
+        "lvpProfileId",
         "photoUrls",
         "notes",
         "pongStats",
@@ -96,6 +98,19 @@ service cloud.firestore {
         "createdAt",
         "updatedAt"
       ]);
+    }
+
+    // MVP/LVP optional; when set must be a participant and must differ from each other.
+    function gameLogMvpLvpValid(data) {
+      let mvpOk = !data.keys().hasAny(["mvpProfileId"]) ||
+        data.mvpProfileId == null ||
+        (data.mvpProfileId is string && data.participantProfileIds.hasAny([data.mvpProfileId]));
+      let lvpOk = !data.keys().hasAny(["lvpProfileId"]) ||
+        data.lvpProfileId == null ||
+        (data.lvpProfileId is string && data.participantProfileIds.hasAny([data.lvpProfileId]));
+      let notSame = data.mvpProfileId == null || data.lvpProfileId == null ||
+        data.mvpProfileId != data.lvpProfileId;
+      return mvpOk && lvpOk && notSame;
     }
 
     function hasBracketKeys() {
@@ -170,6 +185,7 @@ service cloud.firestore {
 
       allow create: if signedIn() &&
         hasGameLogKeys() &&
+        gameLogMvpLvpValid(request.resource.data) &&
         request.resource.data.id == gameLogId &&
         request.resource.data.createdByProfileId == uid() &&
         isCommunityMember(request.resource.data.communityId) &&
@@ -180,6 +196,7 @@ service cloud.firestore {
       // Only log creator can update/delete.
       allow update: if signedIn() &&
         hasGameLogKeys() &&
+        gameLogMvpLvpValid(request.resource.data) &&
         isCommunityMember(resource.data.communityId) &&
         resource.data.createdByProfileId == uid() &&
         request.resource.data.id == resource.data.id &&

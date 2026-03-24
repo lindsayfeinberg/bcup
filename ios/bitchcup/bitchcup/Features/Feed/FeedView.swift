@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct FeedView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var sessionManager: AppSessionManager
     @EnvironmentObject private var container: DependencyContainer
 
@@ -8,6 +9,7 @@ struct FeedView: View {
     @State private var showCommunitiesList = false
     @State private var showGameLog = false
     @State private var showProfile = false
+    @State private var profilePhotoUrl: URL?
 
     private enum FeedState {
         case loading
@@ -17,6 +19,10 @@ struct FeedView: View {
     }
     @State private var feedState: FeedState = .loading
     @State private var selectedCommunityId: String? = nil  // nil = All leagues
+    @State private var homeFeedCursor: HomeFeedPageCursor?
+    @State private var hasMoreFeed = false
+    @State private var isLoadingMoreFeed = false
+    @State private var loadMoreErrorMessage: String?
 
     private let headerFont = Font.custom("NeueHaasDisplay-Bold", size: 34)
 
@@ -85,9 +91,7 @@ struct FeedView: View {
                             Label("Log out", systemImage: "rectangle.portrait.and.arrow.right")
                         }
                     } label: {
-                        Image(systemName: "person.circle.fill")
-                            .font(.title2)
-                            .foregroundStyle(.primary)
+                        accountMenuAvatar
                     }
                     .accessibilityLabel("Account menu")
                 }
@@ -101,7 +105,7 @@ struct FeedView: View {
 
                 case .error(let message):
                     ErrorView(message: message) {
-                        Task { await loadFeed() }
+                        Task { await loadInitialFeed() }
                     }
 
                 case .empty:
@@ -158,16 +162,24 @@ struct FeedView: View {
                         } else {
                             ScrollView {
                                 LazyVStack(spacing: 12) {
-                                    ForEach(filteredRows) { row in
+                                    ForEach(Array(filteredRows.enumerated()), id: \.element.id) { index, row in
                                         FeedCardView(row: row)
+                                            .onAppear {
+                                                Task {
+                                                    await loadMoreFeedIfNeeded(currentRow: row)
+                                                    await prefetchUpcomingCards(from: index, rows: filteredRows)
+                                                }
+                                            }
                                     }
+
+                                    feedFooter
                                 }
                                 .padding(.horizontal)
                                 .padding(.top, 8)
                                 .padding(.bottom, 16)
                             }
                             .refreshable {
-                                await loadFeed()
+                                await refreshFeed()
                             }
                         }
                     }
@@ -211,11 +223,63 @@ struct FeedView: View {
             .task {
                 await sessionManager.ensureOnboardingCompleteOrRouteToOnboarding()
                 guard case .loading = feedState else { return }
-                await loadFeed()
+                await loadInitialFeed()
+                await loadProfilePhoto()
             }
-            .onAppear {
-                Task { await loadFeed() }
+            .onChange(of: scenePhase) { _, newPhase in
+                guard newPhase == .background else { return }
+                Task {
+                    await ImageLoadTelemetry.shared.flushFeedSessionMedian(reason: "scene_background")
+                }
             }
+            .onDisappear {
+                Task {
+                    await ImageLoadTelemetry.shared.flushFeedSessionMedian(reason: "feed_disappear")
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var accountMenuAvatar: some View {
+        if let profilePhotoUrl {
+            let transformedURL = ImageVariantURLBuilder.variantURL(from: profilePhotoUrl, variant: .avatar)
+            AsyncImage(url: transformedURL) { phase in
+                switch phase {
+                case .empty:
+                    ProgressView()
+                        .frame(width: 28, height: 28)
+                case .success(let image):
+                    image
+                        .resizable()
+                        .scaledToFill()
+                case .failure:
+                    AsyncImage(url: profilePhotoUrl) { fallbackPhase in
+                        switch fallbackPhase {
+                        case .success(let fallbackImage):
+                            fallbackImage
+                                .resizable()
+                                .scaledToFill()
+                        default:
+                            Image(systemName: "person.circle.fill")
+                                .resizable()
+                                .scaledToFit()
+                                .foregroundStyle(.primary)
+                        }
+                    }
+                @unknown default:
+                    Image(systemName: "person.circle.fill")
+                        .resizable()
+                        .scaledToFit()
+                        .foregroundStyle(.primary)
+                }
+            }
+            .frame(width: 28, height: 28)
+            .clipShape(Circle())
+        } else {
+            Image(systemName: "person.circle.fill")
+                .font(.title2)
+                .foregroundStyle(.primary)
         }
     }
 }
@@ -223,19 +287,138 @@ struct FeedView: View {
 // MARK: - Load
 
 extension FeedView {
-    private func loadFeed() async {
+    private func loadInitialFeed() async {
         feedState = .loading
+        homeFeedCursor = nil
+        hasMoreFeed = false
+        loadMoreErrorMessage = nil
         do {
-            let rows = try await container.feedService.fetchFeed()
+            let page = try await container.feedService.fetchFeedPage(cursor: nil, pageSize: 20)
+            let rows = page.items
             // After reload, keep selected filter only if still valid
             if let selected = selectedCommunityId {
                 let stillValid = rows.contains { $0.communityId == selected }
                 if !stillValid { selectedCommunityId = nil }
             }
+            homeFeedCursor = page.nextCursor
+            hasMoreFeed = page.hasMore
             feedState = rows.isEmpty ? .empty : .content(rows)
         } catch {
             feedState = .error(error.localizedDescription)
             AppDebugLog.log("FeedView.loadFeed error: \(error.localizedDescription)")
+        }
+    }
+
+    private func refreshFeed() async {
+        await loadInitialFeed()
+    }
+
+    private func loadMoreFeedIfNeeded(currentRow: FeedRow) async {
+        guard hasMoreFeed, !isLoadingMoreFeed else { return }
+        guard case .content(let rows) = feedState else { return }
+        let visibleRows: [FeedRow]
+        if let selectedCommunityId {
+            visibleRows = rows.filter { $0.communityId == selectedCommunityId }
+        } else {
+            visibleRows = rows
+        }
+        guard loadMoreTriggerRows(rows: visibleRows).contains(currentRow.id) else { return }
+        await loadMoreFeed()
+    }
+
+    private func loadMoreFeed() async {
+        guard hasMoreFeed, !isLoadingMoreFeed else { return }
+        guard case .content(let rows) = feedState else { return }
+
+        isLoadingMoreFeed = true
+        loadMoreErrorMessage = nil
+        defer { isLoadingMoreFeed = false }
+
+        do {
+            let page = try await container.feedService.fetchFeedPage(cursor: homeFeedCursor, pageSize: 20)
+            let merged = dedupedRows(rows + page.items)
+            feedState = .content(merged)
+            homeFeedCursor = page.nextCursor
+            hasMoreFeed = page.hasMore
+        } catch {
+            loadMoreErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func loadMoreTriggerRows(rows: [FeedRow]) -> Set<String> {
+        guard !rows.isEmpty else { return [] }
+        return Set(rows.suffix(3).map(\.id))
+    }
+
+    private func dedupedRows(_ rows: [FeedRow]) -> [FeedRow] {
+        let unique = Dictionary(grouping: rows, by: \.gameLogId).compactMap { $0.value.first }
+        return unique.sorted { lhs, rhs in
+            if lhs.createdAt == rhs.createdAt { return lhs.gameLogId > rhs.gameLogId }
+            return lhs.createdAt > rhs.createdAt
+        }
+    }
+
+    private func prefetchUpcomingCards(from currentIndex: Int, rows: [FeedRow]) async {
+        guard currentIndex < rows.count - 1 else { return }
+        let lookaheadCardCount = 4
+        let photosPerCard = 2
+        let nextRows = rows.dropFirst(currentIndex + 1).prefix(lookaheadCardCount)
+
+        var urlsToPrefetch: [URL] = []
+        for row in nextRows {
+            let rawURLs = row.photoUrls.compactMap(URL.init(string:)).prefix(photosPerCard)
+            for originalURL in rawURLs {
+                if ImageDeliveryConfig.isTransformedDeliveryEnabled {
+                    urlsToPrefetch.append(ImageVariantURLBuilder.variantURL(from: originalURL, variant: .feedThumb))
+                } else {
+                    urlsToPrefetch.append(originalURL)
+                }
+            }
+        }
+        await ImagePrefetcher.shared.prefetch(urls: urlsToPrefetch, limit: lookaheadCardCount * photosPerCard)
+    }
+
+    private func loadProfilePhoto() async {
+        guard let userId = container.authService.currentUserId else {
+            profilePhotoUrl = nil
+            return
+        }
+        do {
+            let profile = try await container.userService.fetchProfile(userId: userId)
+            profilePhotoUrl = profile?.profilePhotoUrl.flatMap(URL.init(string:))
+        } catch {
+            profilePhotoUrl = nil
+        }
+    }
+}
+
+private extension FeedView {
+    @ViewBuilder
+    var feedFooter: some View {
+        if isLoadingMoreFeed {
+            ProgressView("Loading more...")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.vertical, 12)
+        } else if let loadMoreErrorMessage {
+            VStack(spacing: 8) {
+                Text(loadMoreErrorMessage)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                Button("Retry loading more") {
+                    Task { await loadMoreFeed() }
+                }
+                .buttonStyle(.bordered)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+        } else if !hasMoreFeed, !filteredRows.isEmpty {
+            Text("You're all caught up.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
         }
     }
 }
@@ -260,165 +443,5 @@ private struct FilterChip: View {
         }
         .accessibilityLabel("Filter by \(label)")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
-    }
-}
-
-// MARK: - Feed Card
-
-private struct FeedCardView: View {
-    let row: FeedRow
-
-    private static let dateFormatter: RelativeDateTimeFormatter = {
-        let f = RelativeDateTimeFormatter()
-        f.unitsStyle = .full
-        return f
-    }()
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-
-            // Photo preview
-            photoSection
-
-            // Card content
-            VStack(alignment: .leading, spacing: 10) {
-
-                // Game type + timestamp
-                HStack(alignment: .firstTextBaseline) {
-                    Text(gameTypeDisplay)
-                        .font(.headline)
-                        .accessibilityLabel("Game type: \(gameTypeDisplay)")
-                    Spacer()
-                    Text(Self.dateFormatter.localizedString(for: row.createdAt, relativeTo: Date()))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .accessibilityLabel("Posted \(Self.dateFormatter.localizedString(for: row.createdAt, relativeTo: Date()))")
-                }
-
-                Divider()
-
-                // Winners
-                HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: "trophy.fill")
-                        .foregroundStyle(.yellow)
-                        .frame(width: 18)
-                        .accessibilityHidden(true)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Winners")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Text(row.winnersText)
-                            .font(.subheadline)
-                            .lineLimit(2)
-                            .accessibilityLabel("Winners: \(row.winnersText)")
-                    }
-                }
-
-                // Losers
-                HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: "figure.walk")
-                        .foregroundStyle(.secondary)
-                        .frame(width: 18)
-                        .accessibilityHidden(true)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Losers")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Text(row.losersText)
-                            .font(.subheadline)
-                            .lineLimit(2)
-                            .accessibilityLabel("Losers: \(row.losersText)")
-                    }
-                }
-
-                // League
-                HStack(spacing: 4) {
-                    Image(systemName: "person.3")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .accessibilityHidden(true)
-                    Text(row.communityName ?? row.communityId)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .accessibilityLabel("League: \(row.communityName ?? row.communityId)")
-                }
-            }
-            .padding(12)
-        }
-        .background(Color(.systemGray6))
-        .clipShape(RoundedRectangle(cornerRadius: 14))
-        .accessibilityElement(children: .contain)
-    }
-
-    // MARK: Photo section
-
-    @ViewBuilder
-    private var photoSection: some View {
-        let urls = row.photoUrls.compactMap { URL(string: $0) }
-        if !urls.isEmpty {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 2) {
-                    ForEach(urls, id: \.absoluteString) { url in
-                        AsyncImage(url: url) { phase in
-                            switch phase {
-                            case .empty:
-                                Color(.systemGray5)
-                                    .frame(width: UIScreen.main.bounds.width - 32, height: 500)
-                                    .overlay(ProgressView())
-                            case .success(let image):
-                                image
-                                    .resizable()
-                                    .scaledToFit()
-                                    .frame(width: UIScreen.main.bounds.width - 32, height: 500)
-                                    .accessibilityLabel("Game photo")
-                            case .failure:
-                                photoPlaceholder(isLoading: false)
-                                    .frame(width: UIScreen.main.bounds.width - 32, height: 500)
-                            @unknown default:
-                                photoPlaceholder(isLoading: false)
-                                    .frame(width: UIScreen.main.bounds.width - 32, height: 500)
-                            }
-                        }
-                    }
-                }
-            }
-            .frame(height: 500)
-            .clipShape(UnevenRoundedRectangle(
-                topLeadingRadius: 14,
-                bottomLeadingRadius: 0,
-                bottomTrailingRadius: 0,
-                topTrailingRadius: 14
-            ))
-        }
-    }
-
-    @ViewBuilder
-    private func photoPlaceholder(isLoading: Bool) -> some View {
-        ZStack {
-            Color(.systemGray5)
-            if isLoading {
-                ProgressView()
-            } else {
-                VStack(spacing: 6) {
-                    Image(systemName: "photo")
-                        .font(.largeTitle)
-                        .foregroundStyle(.tertiary)
-                    Text("Photo unavailable")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                }
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .frame(height: 500)
-        .accessibilityLabel(isLoading ? "Loading photo" : "Photo unavailable")
-    }
-
-    private var gameTypeDisplay: String {
-        row.gameType
-            .replacingOccurrences(of: "_", with: " ")
-            .capitalized
     }
 }

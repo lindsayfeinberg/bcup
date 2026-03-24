@@ -8,7 +8,7 @@ struct NewGameLogFormView: View {
     @EnvironmentObject private var container: DependencyContainer
     @State private var frontPhotoData: Data?
     @State private var backPhotoData: Data?
-    @State private var activeRetakeRequest: CaptureRequest?
+    @State private var showDualCapture = false
 
     init(frontPhotoData: Data? = nil, backPhotoData: Data? = nil) {
         _frontPhotoData = State(initialValue: frontPhotoData)
@@ -40,6 +40,8 @@ struct NewGameLogFormView: View {
     @State private var teamSize: Int = 1
     @State private var selectedWinnerProfileIds: Set<String> = []
     @State private var selectedLoserProfileIds: Set<String> = []
+    @State private var selectedMVPProfileId: String = ""
+    @State private var selectedLVPProfileId: String = ""
     @State private var photoUrls: [String] = []
 
     // T07.5 stats placeholders (persisted now).
@@ -55,10 +57,8 @@ struct NewGameLogFormView: View {
 
     @State private var submitErrorMessage: String?
     @State private var isSubmitting = false
-
-    private var captureLabelPrefix: String {
-        UIImagePickerController.isSourceTypeAvailable(.camera) ? "Capture" : "Select"
-    }
+    @State private var showOpenSettingsAction = false
+    @State private var submitAfterCapture = false
 
     var body: some View {
         Group {
@@ -82,29 +82,14 @@ struct NewGameLogFormView: View {
                             photoPreview(data: backPhotoData, title: "Back")
                         }
 
-                        HStack(spacing: 12) {
-                            Button(frontPhotoData == nil ? "\(captureLabelPrefix) Front" : "Retake Front") {
-                                activeRetakeRequest = CaptureRequest(lens: .front, forcePhotoLibrary: false)
-                            }
-                            .buttonStyle(.bordered)
-
-                            Button(backPhotoData == nil ? "\(captureLabelPrefix) Back" : "Retake Back") {
-                                activeRetakeRequest = CaptureRequest(lens: .back, forcePhotoLibrary: false)
-                            }
-                            .buttonStyle(.bordered)
+                        Button(frontPhotoData == nil && backPhotoData == nil ? "Capture both cameras" : "Retake both photos") {
+                            showDualCapture = true
                         }
+                        .buttonStyle(.borderedProminent)
 
-                        HStack(spacing: 12) {
-                            Button("Select Front") {
-                                activeRetakeRequest = CaptureRequest(lens: .front, forcePhotoLibrary: true)
-                            }
-                            .buttonStyle(.bordered)
-
-                            Button("Select Back") {
-                                activeRetakeRequest = CaptureRequest(lens: .back, forcePhotoLibrary: true)
-                            }
-                            .buttonStyle(.bordered)
-                        }
+                        Text("Camera only — dual capture when your device supports it.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
                     }
 
                     Section("Choose league") {
@@ -161,6 +146,26 @@ struct NewGameLogFormView: View {
                         statsSectionContent
                     }
 
+                    Section("Awards (Optional)") {
+                        if participantProfileIds.isEmpty {
+                            Text("Select winners and losers to choose MVP/LVP.")
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Picker("MVP", selection: $selectedMVPProfileId) {
+                                Text("None").tag("")
+                                ForEach(selectedParticipants, id: \.profileId) { participant in
+                                    Text(displayName(for: participant.profileId)).tag(participant.profileId)
+                                }
+                            }
+                            Picker("LVP", selection: $selectedLVPProfileId) {
+                                Text("None").tag("")
+                                ForEach(selectedParticipants, id: \.profileId) { participant in
+                                    Text(displayName(for: participant.profileId)).tag(participant.profileId)
+                                }
+                            }
+                        }
+                    }
+
                     Section {
                         if let outcome {
                             let isMySideWinners = (outcome == .won)
@@ -202,6 +207,13 @@ struct NewGameLogFormView: View {
                             Text(submitErrorMessage)
                                 .foregroundStyle(.red)
                                 .font(.footnote)
+                            if showOpenSettingsAction {
+                                Button("Open Settings") {
+                                    guard let settingsURL = URL(string: UIApplication.openSettingsURLString) else { return }
+                                    UIApplication.shared.open(settingsURL)
+                                }
+                                .buttonStyle(.bordered)
+                            }
                         }
                         if isSubmitting {
                             HStack(spacing: 8) {
@@ -212,9 +224,9 @@ struct NewGameLogFormView: View {
                             }
                         }
                         Button("Submit Game") {
-                            Task { await submitGameLog() }
+                            Task { await handleSubmitTapped() }
                         }
-                        .disabled(!canSubmitGameLog || isSubmitting)
+                        .disabled(!canSubmitWithoutPhotos || isSubmitting)
                     }
                 }
                 .navigationTitle("New Game")
@@ -245,15 +257,26 @@ struct NewGameLogFormView: View {
         .onChange(of: selectedLoserProfileIds) { _, _ in
             syncStatsWithParticipants()
         }
-        .sheet(item: $activeRetakeRequest) { request in
-            CameraCapturePicker(lens: request.lens, forcePhotoLibrary: request.forcePhotoLibrary) { data in
-                switch request.lens {
-                case .front:
-                    frontPhotoData = data
-                case .back:
-                    backPhotoData = data
+        .fullScreenCover(isPresented: $showDualCapture) {
+            DualCameraCaptureView(
+                onCaptured: { front, back in
+                    frontPhotoData = front
+                    backPhotoData = back
+                    showDualCapture = false
+                    if submitAfterCapture {
+                        submitAfterCapture = false
+                        Task { await submitGameLog() }
+                    }
+                },
+                onCancel: {
+                    showDualCapture = false
+                    if submitAfterCapture {
+                        submitAfterCapture = false
+                        submitErrorMessage = "Capture was canceled before submission."
+                    }
                 }
-            }
+            )
+            .ignoresSafeArea()
         }
     }
 
@@ -509,16 +532,29 @@ struct NewGameLogFormView: View {
         currentStatsValidationError == nil
     }
 
+    private var canSubmitWithoutPhotos: Bool {
+        !selectedCommunityId.isEmpty &&
+        outcome != nil &&
+        selectedWinnerProfileIds.count == teamSize &&
+        selectedLoserProfileIds.count == teamSize &&
+        currentStatsValidationError == nil
+    }
+
     private var submitDisableReasons: [String] {
         var reasons: [String] = []
         if frontPhotoData == nil || backPhotoData == nil {
-            reasons.append("Need front and back photos")
+            reasons.append("Photos are required and will be captured when you submit")
         }
         if selectedWinnerProfileIds.count != teamSize || selectedLoserProfileIds.count != teamSize {
             reasons.append("Winners and losers must each equal team size")
         }
         if selectedGameType == .pong, teamSize > 1, pongTotalCups != pongCupMode.rawValue {
             reasons.append("Pong total must equal selected cup mode")
+        }
+        if !selectedMVPProfileId.isEmpty &&
+            !selectedLVPProfileId.isEmpty &&
+            selectedMVPProfileId == selectedLVPProfileId {
+            reasons.append("MVP and LVP must be different players")
         }
         return reasons
     }
@@ -572,6 +608,17 @@ struct NewGameLogFormView: View {
         case .battlePong, .baseball:
             break
         }
+        if !selectedMVPProfileId.isEmpty && !participantSet.contains(selectedMVPProfileId) {
+            return "MVP must be one of the selected participants."
+        }
+        if !selectedLVPProfileId.isEmpty && !participantSet.contains(selectedLVPProfileId) {
+            return "LVP must be one of the selected participants."
+        }
+        if !selectedMVPProfileId.isEmpty &&
+            !selectedLVPProfileId.isEmpty &&
+            selectedMVPProfileId == selectedLVPProfileId {
+            return "MVP and LVP must be different players."
+        }
         return nil
     }
 
@@ -608,6 +655,12 @@ struct NewGameLogFormView: View {
         }
         if !beerBallFirstFinishedByProfileId.isEmpty && !ids.contains(beerBallFirstFinishedByProfileId) {
             beerBallFirstFinishedByProfileId = ""
+        }
+        if !selectedMVPProfileId.isEmpty && !ids.contains(selectedMVPProfileId) {
+            selectedMVPProfileId = ""
+        }
+        if !selectedLVPProfileId.isEmpty && !ids.contains(selectedLVPProfileId) {
+            selectedLVPProfileId = ""
         }
 
         // Solo Pong defaults: fixed 10-cup mode and last cup = winner.
@@ -721,6 +774,7 @@ struct NewGameLogFormView: View {
 
     private func submitGameLog() async {
         submitErrorMessage = nil
+        showOpenSettingsAction = false
         guard canSubmitGameLog else { return }
         guard let uid = currentUserId else {
             submitErrorMessage = "Sign in again, then try submitting."
@@ -774,6 +828,8 @@ struct NewGameLogFormView: View {
                 participantProfileIds: participants,
                 winnerProfileIds: winners,
                 loserProfileIds: losers,
+                mvpProfileId: selectedMVPProfileId.isEmpty ? nil : selectedMVPProfileId,
+                lvpProfileId: selectedLVPProfileId.isEmpty ? nil : selectedLVPProfileId,
                 photoUrls: [frontUrl, backUrl],
                 notes: nil,
                 pongStats: pongStats,
@@ -787,6 +843,35 @@ struct NewGameLogFormView: View {
             submitErrorMessage = error.localizedDescription
             AppDebugLog.log("submitGameLog failed: \(error.localizedDescription)")
         }
+    }
+
+    private func handleSubmitTapped() async {
+        submitErrorMessage = nil
+        showOpenSettingsAction = false
+
+        guard canSubmitWithoutPhotos else {
+            submitErrorMessage = "Complete required game details before submitting."
+            return
+        }
+
+        if !hasRequiredPhotos {
+            let status = await CameraPermissionCoordinator.ensureVideoPermission()
+            switch status {
+            case .authorized:
+                submitAfterCapture = true
+                showDualCapture = true
+            case .denied, .restricted:
+                submitErrorMessage = "Camera access is required to submit a game. Enable access in Settings."
+                showOpenSettingsAction = true
+            case .cameraUnavailable:
+                // Capture flow falls back to photo library if camera is unavailable.
+                submitAfterCapture = true
+                showDualCapture = true
+            }
+            return
+        }
+
+        await submitGameLog()
     }
 
     private func buildPongStats() -> [String: Any] {
@@ -848,13 +933,17 @@ struct NewGameLogFormView: View {
         isLoading = true
         errorMessage = nil
         do {
-            communities = try await container.communityService.fetchCommunities()
+            let page = try await container.communityService.fetchCommunitiesPage(cursor: nil, pageSize: 25)
+            communities = page.items
             selectedCommunityId = communities.first?.communityId ?? ""
-            await loadMembers()
+            isLoading = false
+            if !selectedCommunityId.isEmpty {
+                Task { await loadMembers() }
+            }
         } catch {
             errorMessage = error.localizedDescription
+            isLoading = false
         }
-        isLoading = false
     }
 
     private func loadMembers() async {

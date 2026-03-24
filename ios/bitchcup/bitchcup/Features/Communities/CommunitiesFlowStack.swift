@@ -50,6 +50,16 @@ struct CommunitiesFlowStack: View {
                         }
                         .buttonStyle(.plain)
                     }
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button {
+                            dismiss()
+                        } label: {
+                            Text("Home")
+                                .font(.custom("NeueHaasDisplay-Mediu", size: 18))
+                                .foregroundStyle(Color(red: 41.0 / 255.0, green: 0.0 / 255.0, blue: 3.0 / 255.0))
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
         }
         .environmentObject(navigator)

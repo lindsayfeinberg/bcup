@@ -33,6 +33,10 @@ protocol UserServiceProtocol {
 
 protocol CommunityServiceProtocol {
     func fetchCommunities() async throws -> [(communityId: String, name: String)]
+    func fetchCommunitiesPage(
+        cursor: CommunitiesPageCursor?,
+        pageSize: Int
+    ) async throws -> PagedResponse<[(communityId: String, name: String)], CommunitiesPageCursor>
     func fetchMembers(communityId: String) async throws -> [(profileId: String, displayName: String)]
     func createCommunity(name: String) async throws -> (communityId: String, inviteCode: String, inviteLink: String)
     func joinCommunity(inviteCode: String) async throws -> String
@@ -65,6 +69,8 @@ struct FeedRow: Identifiable {
     let loserProfileIds: [String]
     let winnerNames: [String]
     let loserNames: [String]
+    let mvpProfileId: String?
+    let lvpProfileId: String?
     let photoUrls: [String]
     let createdAt: Date
     var id: String { gameLogId }
@@ -75,20 +81,53 @@ struct FeedRow: Identifiable {
 
     var winnersText: String {
         winnerNames.isEmpty
-            ? winnerProfileIds.enumerated().map { "Winner \($0.offset + 1)" }.joined(separator: ", ")
+            ? winnerProfileIds.joined(separator: ", ")
             : winnerNames.joined(separator: ", ")
     }
 
     var losersText: String {
         loserNames.isEmpty
-            ? loserProfileIds.enumerated().map { "Loser \($0.offset + 1)" }.joined(separator: ", ")
+            ? loserProfileIds.joined(separator: ", ")
             : loserNames.joined(separator: ", ")
     }
+}
+
+struct PagedResponse<Items, Cursor> {
+    let items: Items
+    let nextCursor: Cursor?
+    let hasMore: Bool
+}
+
+struct FeedPageCursor {
+    let createdAt: Timestamp
+    let documentId: String
+}
+
+struct HomeFeedPageCursor {
+    let createdAt: Timestamp
+    let documentId: String
+}
+
+struct CommunitiesPageCursor {
+    let membershipDocumentId: String
 }
 
 protocol FeedServiceProtocol {
     /// Returns recent logs scoped to the signed-in user's communities.
     func fetchFeed() async throws -> [FeedRow]
+    /// Returns recent logs for a single community (caller must be a member; rules enforce read access).
+    func fetchFeed(forCommunityId communityId: String) async throws -> [FeedRow]
+    /// Returns one page of the home feed scoped to the signed-in user's communities.
+    func fetchFeedPage(
+        cursor: HomeFeedPageCursor?,
+        pageSize: Int
+    ) async throws -> PagedResponse<[FeedRow], HomeFeedPageCursor>
+    /// Returns one page of a community-scoped feed.
+    func fetchFeedPage(
+        forCommunityId communityId: String,
+        cursor: FeedPageCursor?,
+        pageSize: Int
+    ) async throws -> PagedResponse<[FeedRow], FeedPageCursor>
 }
 
 // MARK: - Container
@@ -139,6 +178,8 @@ struct GameLogCreatePayload {
     let participantProfileIds: [String]
     let winnerProfileIds: [String]
     let loserProfileIds: [String]
+    let mvpProfileId: String?
+    let lvpProfileId: String?
     let photoUrls: [String]
     let notes: String?
     let pongStats: [String: Any]?
@@ -152,6 +193,8 @@ struct GameLogUpdatePayload {
     let participantProfileIds: [String]
     let winnerProfileIds: [String]
     let loserProfileIds: [String]
+    let mvpProfileId: String?
+    let lvpProfileId: String?
     let photoUrls: [String]
     let notes: String?
     let pongStats: [String: Any]?
@@ -253,6 +296,7 @@ final class UserService: UserServiceProtocol {
         let ref = Storage.storage().reference().child("profilePhotos/\(userId)/\(fileName)")
         let metadata = StorageMetadata()
         metadata.contentType = contentType
+        metadata.cacheControl = "public,max-age=31536000,immutable"
         _ = try await ref.putDataAsync(data, metadata: metadata)
         let url = try await ref.downloadURL()
         AppDebugLog.log("UserService.uploadProfilePhoto: downloadURL OK")
@@ -310,22 +354,75 @@ final class CommunityService: CommunityServiceProtocol {
     private static let functionsRegion = "us-central1"
 
     func fetchCommunities() async throws -> [(communityId: String, name: String)] {
-        guard let userId = Auth.auth().currentUser?.uid else { return [] }
+        var all: [(communityId: String, name: String)] = []
+        var cursor: CommunitiesPageCursor?
+        let pageSize = 25
+
+        while true {
+            let page = try await fetchCommunitiesPage(cursor: cursor, pageSize: pageSize)
+            all.append(contentsOf: page.items)
+            guard page.hasMore, let next = page.nextCursor else { break }
+            cursor = next
+        }
+        return all
+    }
+
+    func fetchCommunitiesPage(
+        cursor: CommunitiesPageCursor?,
+        pageSize: Int
+    ) async throws -> PagedResponse<[(communityId: String, name: String)], CommunitiesPageCursor> {
+        guard let userId = Auth.auth().currentUser?.uid else {
+            return PagedResponse(items: [], nextCursor: nil, hasMore: false)
+        }
+
         let db = AppFirestore.db()
-        let memberships = try await db
+        var query: Query = db
             .collection("memberships")
             .whereField("profileId", isEqualTo: userId)
-            .getDocuments()
+            .order(by: FieldPath.documentID())
+            .limit(to: pageSize)
+
+        if let cursor {
+            query = query.start(after: [cursor.membershipDocumentId])
+        }
+
+        let memberships = try await query.getDocuments()
+
+        let orderedCommunityIds: [String] = memberships.documents.compactMap {
+            $0.data()["communityId"] as? String
+        }
+        let uniqueCommunityIds = Array(Set(orderedCommunityIds))
+
+        var namesByCommunityId: [String: String] = [:]
+        try await withThrowingTaskGroup(of: (String, String?).self) { group in
+            for communityId in uniqueCommunityIds {
+                group.addTask {
+                    let communityDoc = try await db.collection("communities").document(communityId).getDocument()
+                    let name = communityDoc.data()?["name"] as? String
+                    return (communityId, name)
+                }
+            }
+            for try await (communityId, name) in group {
+                if let name, !name.isEmpty {
+                    namesByCommunityId[communityId] = name
+                }
+            }
+        }
 
         var communities: [(communityId: String, name: String)] = []
-        for doc in memberships.documents {
-            guard let communityId = doc.data()["communityId"] as? String else { continue }
-            let communityDoc = try await db.collection("communities").document(communityId).getDocument()
-            if let name = communityDoc.data()?["name"] as? String {
+        communities.reserveCapacity(orderedCommunityIds.count)
+        var seen = Set<String>()
+        for communityId in orderedCommunityIds where seen.insert(communityId).inserted {
+            if let name = namesByCommunityId[communityId] {
                 communities.append((communityId: communityId, name: name))
             }
         }
-        return communities
+
+        let hasMore = memberships.documents.count == pageSize
+        let nextCursor = memberships.documents.last.map {
+            CommunitiesPageCursor(membershipDocumentId: $0.documentID)
+        }
+        return PagedResponse(items: communities, nextCursor: hasMore ? nextCursor : nil, hasMore: hasMore)
     }
     func fetchMembers(communityId: String) async throws -> [(profileId: String, displayName: String)] {
         guard let currentUserId = Auth.auth().currentUser?.uid else { return [] }
@@ -559,6 +656,7 @@ final class GameLogService: GameLogServiceProtocol {
         let ref = Storage.storage().reference().child(path)
         let metadata = StorageMetadata()
         metadata.contentType = contentType
+        metadata.cacheControl = "public,max-age=31536000,immutable"
         metadata.customMetadata = ["createdByProfileId": uid]
         _ = try await ref.putDataAsync(data, metadata: metadata)
         let url = try await ref.downloadURL()
@@ -575,6 +673,8 @@ final class GameLogService: GameLogServiceProtocol {
             "participantProfileIds": payload.participantProfileIds,
             "winnerProfileIds": payload.winnerProfileIds,
             "loserProfileIds": payload.loserProfileIds,
+            "mvpProfileId": payload.mvpProfileId ?? NSNull(),
+            "lvpProfileId": payload.lvpProfileId ?? NSNull(),
             "photoUrls": payload.photoUrls,
             "notes": payload.notes ?? NSNull(),
             "createdAt": now,
@@ -606,6 +706,8 @@ final class GameLogService: GameLogServiceProtocol {
             "participantProfileIds": payload.participantProfileIds,
             "winnerProfileIds": payload.winnerProfileIds,
             "loserProfileIds": payload.loserProfileIds,
+            "mvpProfileId": payload.mvpProfileId ?? NSNull(),
+            "lvpProfileId": payload.lvpProfileId ?? NSNull(),
             "photoUrls": payload.photoUrls,
             "notes": payload.notes ?? NSNull(),
             "pongStats": payload.pongStats ?? NSNull(),
@@ -686,13 +788,117 @@ extension GameLogService: FeedServiceProtocol {
         return map
     }
 
+    /// Maps a `gameLogs` document to `FeedRow` (shared by home feed and community-scoped feed).
+    private static func feedRow(
+        document: QueryDocumentSnapshot,
+        communityNameById: [String: String],
+        membershipDisplayNamesByCommunityId: [String: [String: String]],
+        profileDisplayNameById: [String: String]
+    ) -> FeedRow? {
+        let d = document.data()
+        guard
+            let communityId = d["communityId"] as? String,
+            let gameType = d["gameType"] as? String,
+            let createdAtTs = d["createdAt"] as? Timestamp
+        else { return nil }
+
+        let winnerIds = d["winnerProfileIds"] as? [String] ?? []
+        let loserIds = d["loserProfileIds"] as? [String] ?? []
+        let participantNames = d["participantDisplayNames"] as? [String: String] ?? [:]
+        let membershipNames = membershipDisplayNamesByCommunityId[communityId] ?? [:]
+        let mvpProfileId = d["mvpProfileId"] as? String
+        let lvpProfileId = d["lvpProfileId"] as? String
+
+        return FeedRow(
+            gameLogId: document.documentID,
+            communityId: communityId,
+            communityName: communityNameById[communityId],
+            gameType: gameType,
+            winnerProfileIds: winnerIds,
+            loserProfileIds: loserIds,
+            winnerNames: winnerIds.compactMap { participantNames[$0] ?? membershipNames[$0] ?? profileDisplayNameById[$0] },
+            loserNames: loserIds.compactMap { participantNames[$0] ?? membershipNames[$0] ?? profileDisplayNameById[$0] },
+            mvpProfileId: mvpProfileId,
+            lvpProfileId: lvpProfileId,
+            photoUrls: d["photoUrls"] as? [String] ?? [],
+            createdAt: createdAtTs.dateValue()
+        )
+    }
+
+    /// Loads `memberships` display names for each community in feed scope.
+    private static func fetchMembershipDisplayNamesByCommunityId(
+        db: Firestore,
+        communityIds: [String]
+    ) async throws -> [String: [String: String]] {
+        let uniqueCommunityIds = Array(Set(communityIds))
+        guard !uniqueCommunityIds.isEmpty else { return [:] }
+
+        var result: [String: [String: String]] = [:]
+        try await withThrowingTaskGroup(of: (String, [String: String]).self) { group in
+            for communityId in uniqueCommunityIds {
+                group.addTask {
+                    let snapshot = try await db
+                        .collection("memberships")
+                        .whereField("communityId", isEqualTo: communityId)
+                        .getDocuments()
+                    var names: [String: String] = [:]
+                    for doc in snapshot.documents {
+                        let data = doc.data()
+                        guard let profileId = data["profileId"] as? String else { continue }
+                        guard let displayName = data["displayName"] as? String, !displayName.isEmpty else { continue }
+                        names[profileId] = displayName
+                    }
+                    return (communityId, names)
+                }
+            }
+            for try await (communityId, names) in group {
+                result[communityId] = names
+            }
+        }
+        return result
+    }
+
+    /// Loads `profiles/{id}.displayName` for winner/loser labels in feed rows.
+    private static func fetchProfileDisplayNamesMap(db: Firestore, profileIds: [String]) async -> [String: String] {
+        let unique = Array(Set(profileIds))
+        guard !unique.isEmpty else { return [:] }
+        var map: [String: String] = [:]
+        await withTaskGroup(of: (String, String?).self) { group in
+            for id in unique {
+                group.addTask {
+                    let snap = try? await db.collection("profiles").document(id).getDocument()
+                    let name = snap?.data()?["displayName"] as? String
+                    return (id, name)
+                }
+            }
+            for await (id, name) in group {
+                if let name, !name.isEmpty {
+                    map[id] = name
+                }
+            }
+        }
+        return map
+    }
+
     func fetchFeed() async throws -> [FeedRow] {
+        let page = try await fetchFeedPage(cursor: nil, pageSize: Self.feedPageSize)
+        return page.items
+    }
+
+    func fetchFeed(forCommunityId communityId: String) async throws -> [FeedRow] {
+        let page = try await fetchFeedPage(forCommunityId: communityId, cursor: nil, pageSize: Self.feedPageSize)
+        return page.items
+    }
+
+    func fetchFeedPage(
+        cursor: HomeFeedPageCursor?,
+        pageSize: Int
+    ) async throws -> PagedResponse<[FeedRow], HomeFeedPageCursor> {
         guard let userId = Auth.auth().currentUser?.uid else {
-            AppDebugLog.log("FeedService.fetchFeed: no signed-in user — returning empty")
-            return []
+            AppDebugLog.log("FeedService.fetchFeedPage: no signed-in user — returning empty")
+            return PagedResponse(items: [], nextCursor: nil, hasMore: false)
         }
 
-        // 1. Resolve community IDs from memberships
         let db = AppFirestore.db()
         let membershipDocs = try await db
             .collection("memberships")
@@ -702,64 +908,139 @@ extension GameLogService: FeedServiceProtocol {
         let communityIds: [String] = membershipDocs.documents.compactMap {
             $0.data()["communityId"] as? String
         }
-
-        AppDebugLog.log("FeedService.fetchFeed: memberships=\(communityIds.count) communityIds=\(communityIds)")
-
         guard !communityIds.isEmpty else {
-            AppDebugLog.log("FeedService.fetchFeed: user has no communities — returning empty")
-            return []
+            return PagedResponse(items: [], nextCursor: nil, hasMore: false)
         }
 
         let communityNameById = try await Self.fetchCommunityNamesMap(db: db, communityIds: communityIds)
-        AppDebugLog.log("FeedService.fetchFeed: community names resolved=\(communityNameById.count)/\(Set(communityIds).count)")
-
-        // 2. Chunk community IDs to respect Firestore whereIn limit of 10
+        let membershipDisplayNamesByCommunityId = try await Self.fetchMembershipDisplayNamesByCommunityId(
+            db: db,
+            communityIds: communityIds
+        )
         let chunks = stride(from: 0, to: communityIds.count, by: Self.whereInChunkSize).map {
             Array(communityIds[$0 ..< min($0 + Self.whereInChunkSize, communityIds.count)])
         }
 
-        // 3. Query each chunk and collect rows
-        var allRows: [FeedRow] = []
+        struct HomeFeedCandidate {
+            let row: FeedRow
+            let createdAt: Timestamp
+            let documentId: String
+        }
+
+        var allCandidates: [HomeFeedCandidate] = []
+        var allDocuments: [QueryDocumentSnapshot] = []
+        var anyChunkHasMore = false
         for chunk in chunks {
-            let snapshot = try await db
+            var query: Query = db
                 .collection("gameLogs")
                 .whereField("communityId", in: chunk)
                 .order(by: "createdAt", descending: true)
-                .limit(to: Self.feedPageSize)
-                .getDocuments()
+                .order(by: FieldPath.documentID(), descending: true)
+                .limit(to: pageSize)
 
-            let rows: [FeedRow] = snapshot.documents.compactMap { doc in
-                let d = doc.data()
-                guard
-                    let communityId = d["communityId"] as? String,
-                    let gameType = d["gameType"] as? String,
-                    let createdAtTs = d["createdAt"] as? Timestamp
-                else { return nil }
-
-                let winnerIds = d["winnerProfileIds"] as? [String] ?? []
-                let loserIds = d["loserProfileIds"] as? [String] ?? []
-                let participantNames = d["participantDisplayNames"] as? [String: String] ?? [:]
-
-                return FeedRow(
-                    gameLogId: doc.documentID,
-                    communityId: communityId,
-                    communityName: communityNameById[communityId],
-                    gameType: gameType,
-                    winnerProfileIds: winnerIds,
-                    loserProfileIds: loserIds,
-                    winnerNames: winnerIds.compactMap { participantNames[$0] },
-                    loserNames: loserIds.compactMap { participantNames[$0] },
-                    photoUrls: d["photoUrls"] as? [String] ?? [],
-                    createdAt: createdAtTs.dateValue()
-                )
+            if let cursor {
+                query = query.start(after: [cursor.createdAt, cursor.documentId])
             }
-            allRows.append(contentsOf: rows)
+
+            let snapshot = try await query.getDocuments()
+            allDocuments.append(contentsOf: snapshot.documents)
+            if snapshot.documents.count == pageSize {
+                anyChunkHasMore = true
+            }
         }
 
-        // 4. Merge-sort across chunks by createdAt desc, then trim to page size
-        allRows.sort { $0.createdAt > $1.createdAt }
-        let result = Array(allRows.prefix(Self.feedPageSize))
-        AppDebugLog.log("FeedService.fetchFeed: logs returned=\(result.count)")
-        return result
+        let allProfileIds = allDocuments.flatMap { document in
+            let data = document.data()
+            let winners = data["winnerProfileIds"] as? [String] ?? []
+            let losers = data["loserProfileIds"] as? [String] ?? []
+            return winners + losers
+        }
+        let profileDisplayNameById = await Self.fetchProfileDisplayNamesMap(db: db, profileIds: allProfileIds)
+
+        for document in allDocuments {
+            guard let createdAtTs = document.data()["createdAt"] as? Timestamp else { continue }
+            guard let row = Self.feedRow(
+                document: document,
+                communityNameById: communityNameById,
+                membershipDisplayNamesByCommunityId: membershipDisplayNamesByCommunityId,
+                profileDisplayNameById: profileDisplayNameById
+            ) else { continue }
+                allCandidates.append(
+                    HomeFeedCandidate(
+                        row: row,
+                        createdAt: createdAtTs,
+                        documentId: document.documentID
+                    )
+                )
+        }
+
+        let deduped = Dictionary(grouping: allCandidates, by: \.documentId).compactMap { $0.value.first }
+        let sorted = deduped.sorted { lhs, rhs in
+            if lhs.createdAt == rhs.createdAt {
+                return lhs.documentId > rhs.documentId
+            }
+            return lhs.createdAt.dateValue() > rhs.createdAt.dateValue()
+        }
+        let items = Array(sorted.prefix(pageSize))
+        let rows = items.map(\.row)
+        let nextCursor = items.last.map {
+            HomeFeedPageCursor(createdAt: $0.createdAt, documentId: $0.documentId)
+        }
+        let canAdvance = nextCursor != nil
+        let hasMore = canAdvance && (anyChunkHasMore || sorted.count > pageSize)
+        return PagedResponse(items: rows, nextCursor: hasMore ? nextCursor : nil, hasMore: hasMore)
+    }
+
+    func fetchFeedPage(
+        forCommunityId communityId: String,
+        cursor: FeedPageCursor?,
+        pageSize: Int
+    ) async throws -> PagedResponse<[FeedRow], FeedPageCursor> {
+        guard Auth.auth().currentUser != nil else {
+            AppDebugLog.log("FeedService.fetchFeedPage(forCommunityId:): no signed-in user — returning empty")
+            return PagedResponse(items: [], nextCursor: nil, hasMore: false)
+        }
+
+        let db = AppFirestore.db()
+        let communityNameById = try await Self.fetchCommunityNamesMap(db: db, communityIds: [communityId])
+        let membershipDisplayNamesByCommunityId = try await Self.fetchMembershipDisplayNamesByCommunityId(
+            db: db,
+            communityIds: [communityId]
+        )
+
+        var query: Query = db
+            .collection("gameLogs")
+            .whereField("communityId", isEqualTo: communityId)
+            .order(by: "createdAt", descending: true)
+            .order(by: FieldPath.documentID(), descending: true)
+            .limit(to: pageSize)
+
+        if let cursor {
+            query = query.start(after: [cursor.createdAt, cursor.documentId])
+        }
+
+        let snapshot = try await query.getDocuments()
+        let allProfileIds = snapshot.documents.flatMap { document in
+            let data = document.data()
+            let winners = data["winnerProfileIds"] as? [String] ?? []
+            let losers = data["loserProfileIds"] as? [String] ?? []
+            return winners + losers
+        }
+        let profileDisplayNameById = await Self.fetchProfileDisplayNamesMap(db: db, profileIds: allProfileIds)
+        let items = snapshot.documents.compactMap { doc in
+            Self.feedRow(
+                document: doc,
+                communityNameById: communityNameById,
+                membershipDisplayNamesByCommunityId: membershipDisplayNamesByCommunityId,
+                profileDisplayNameById: profileDisplayNameById
+            )
+        }
+        let hasMore = items.count == pageSize
+        let nextCursor = snapshot.documents.last.flatMap { lastDoc -> FeedPageCursor? in
+            guard let createdAtTs = lastDoc.data()["createdAt"] as? Timestamp else { return nil }
+            return FeedPageCursor(createdAt: createdAtTs, documentId: lastDoc.documentID)
+        }
+        AppDebugLog.log("FeedService.fetchFeedPage(forCommunityId:): communityId=\(communityId) logs=\(items.count)")
+        return PagedResponse(items: items, nextCursor: hasMore ? nextCursor : nil, hasMore: hasMore)
     }
 }

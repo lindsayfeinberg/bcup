@@ -132,6 +132,8 @@ Canonical valid sample:
 | `participantProfileIds` | array<string> | yes | no | none | client | no | Must be unique IDs. |
 | `winnerProfileIds` | array<string> | yes | no | none | client | no | Min length 1. |
 | `loserProfileIds` | array<string> | yes | no | none | client | no | Min length 1. |
+| `mvpProfileId` | string | no | yes | `null` | client | no | Optional; must be one of `participantProfileIds` when present. |
+| `lvpProfileId` | string | no | yes | `null` | client | no | Optional; must be one of `participantProfileIds` when present. |
 | `photoUrls` | array<string> | yes | no | none | client | no | Min length 1. |
 | `notes` | string | no | yes | `null` | client | no | Optional free-text note. |
 | `pongStats` | object | no | yes | `null` | client | no | Required for strict `PONG` validation in UI. |
@@ -159,6 +161,8 @@ Canonical valid sample:
   "participantProfileIds": ["uid_abc123", "uid_def456"],
   "winnerProfileIds": ["uid_abc123"],
   "loserProfileIds": ["uid_def456"],
+  "mvpProfileId": "uid_abc123",
+  "lvpProfileId": "uid_def456",
   "photoUrls": ["https://storage.googleapis.com/bcup/logs/gameLog_001/photo1.jpg"],
   "notes": "Close game.",
   "pongStats": {
@@ -186,9 +190,31 @@ Canonical valid sample:
 - `loserProfileIds` is a subset of `participantProfileIds`
 - No overlap between winners and losers
 - No duplicates in `participantProfileIds`, `winnerProfileIds`, or `loserProfileIds`
+- `mvpProfileId` must be in `participantProfileIds` when present
+- `lvpProfileId` must be in `participantProfileIds` when present
+- `mvpProfileId != lvpProfileId` when both are present
 - `pongStats.cupMode` is either `6` or `10` when `gameType == PONG`
 - Sum of `pongStats.playerCupsHit` equals `pongStats.cupMode` when `gameType == PONG`
 - `pongStats.lastCupByProfileId` must be in `participantProfileIds` when present
+
+---
+
+## Image Delivery Contract (`T13.2`)
+
+- Storage originals are the source of truth:
+  - `profiles.profilePhotoUrl`
+  - `gameLogs.photoUrls[]`
+- Clients may derive transformed URLs for display surfaces; originals remain persisted data.
+- Current iOS variant contract:
+  - `feedThumb`: append `_400x400` before extension
+  - `avatar`: append `_128x128` before extension
+  - `full`: original URL
+- Fallback rule: if transformed URL cannot be built or fetch fails, use original URL.
+- Upload metadata requirement for photo objects:
+  - `Cache-Control: public,max-age=31536000,immutable`
+- Format/quality policy:
+  - Prefer modern compressed formats when supported by transformation pipeline.
+  - Use auto/tuned quality in resize extension configuration.
 
 ---
 

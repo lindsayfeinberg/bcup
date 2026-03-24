@@ -29,6 +29,9 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         AppDebugLog.log("AppDelegate: starting Firebase configure")
+        #if DEBUG
+        UserDefaults.standard.set(true, forKey: "feature.image.transformedDelivery")
+        #endif
         FirebaseApp.configure()
 
         if let app = FirebaseApp.app() {

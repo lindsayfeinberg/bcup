@@ -5,6 +5,10 @@ struct CommunitiesListView: View {
     @State private var communities: [(communityId: String, name: String)] = []
     @State private var isLoading = true
     @State private var errorMessage: String?
+    @State private var cursor: CommunitiesPageCursor?
+    @State private var hasMore = false
+    @State private var isLoadingMore = false
+    @State private var loadMoreErrorMessage: String?
 
     var body: some View {
         Group {
@@ -25,6 +29,12 @@ struct CommunitiesListView: View {
                     NavigationLink(community.name) {
                         CommunityDetailView(communityId: community.communityId)
                     }
+                    .onAppear {
+                        Task { await loadMoreIfNeeded(currentCommunityId: community.communityId) }
+                    }
+                }
+                .overlay(alignment: .bottom) {
+                    footer
                 }
             }
         }
@@ -36,11 +46,64 @@ struct CommunitiesListView: View {
     private func load() async {
         isLoading = true
         errorMessage = nil
+        cursor = nil
+        hasMore = false
+        loadMoreErrorMessage = nil
         do {
-            communities = try await container.communityService.fetchCommunities()
+            let page = try await container.communityService.fetchCommunitiesPage(cursor: nil, pageSize: 25)
+            communities = page.items
+            cursor = page.nextCursor
+            hasMore = page.hasMore
         } catch {
             errorMessage = error.localizedDescription
         }
         isLoading = false
+    }
+
+    private func loadMoreIfNeeded(currentCommunityId: String) async {
+        guard hasMore, !isLoadingMore else { return }
+        guard Set(communities.suffix(3).map(\.communityId)).contains(currentCommunityId) else { return }
+
+        isLoadingMore = true
+        loadMoreErrorMessage = nil
+        defer { isLoadingMore = false }
+        do {
+            let page = try await container.communityService.fetchCommunitiesPage(cursor: cursor, pageSize: 25)
+            communities += page.items
+            let deduped = Dictionary(grouping: communities, by: \.communityId).compactMap { $0.value.first }
+            communities = deduped.sorted { $0.name < $1.name }
+            cursor = page.nextCursor
+            hasMore = page.hasMore
+        } catch {
+            loadMoreErrorMessage = error.localizedDescription
+        }
+    }
+
+    @ViewBuilder
+    private var footer: some View {
+        if isLoadingMore {
+            ProgressView("Loading more...")
+                .padding(.bottom, 12)
+        } else if let loadMoreErrorMessage {
+            VStack(spacing: 8) {
+                Text(loadMoreErrorMessage)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                Button("Retry loading more") {
+                    Task {
+                        if let last = communities.last?.communityId {
+                            await loadMoreIfNeeded(currentCommunityId: last)
+                        }
+                    }
+                }
+                .buttonStyle(.bordered)
+            }
+            .padding(.bottom, 12)
+        } else if !hasMore, !communities.isEmpty {
+            Text("No more leagues.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .padding(.bottom, 12)
+        }
     }
 }
