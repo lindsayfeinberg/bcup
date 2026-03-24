@@ -245,9 +245,18 @@ struct FeedView: View {
             }
             .task {
                 await sessionManager.ensureOnboardingCompleteOrRouteToOnboarding()
-                guard case .loading = feedState else { return }
                 await loadInitialFeed()
                 await loadProfilePhoto()
+            }
+            .onChange(of: showGameLog) { wasShowing, isShowing in
+                if wasShowing && !isShowing {
+                    Task { await loadInitialFeed() }
+                }
+            }
+            .onChange(of: showCommunitiesFlow) { wasShowing, isShowing in
+                if wasShowing && !isShowing {
+                    Task { await loadInitialFeed() }
+                }
             }
             .onChange(of: scenePhase) { _, newPhase in
                 guard newPhase == .background else { return }
