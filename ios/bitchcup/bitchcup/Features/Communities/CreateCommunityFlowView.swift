@@ -13,12 +13,21 @@ struct CreateCommunityFlowView: View {
         !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
     
+    private var fieldAccentColor: Color {
+        Color(red: 180.0 / 255.0, green: 61.0 / 255.0, blue: 37.0 / 255.0)
+    }
+    
+    private var fieldPlaceholderColor: Color {
+        Color(red: 207.0 / 255.0, green: 106.0 / 255.0, blue: 84.0 / 255.0)
+    }
+    
     let onSuccess: (String, String, String) -> Void
 
     var body: some View {
         if let community = createdCommunity {
             InviteView(
                 communityId: community.communityId,
+                leagueName: name,
                 inviteCode: community.inviteCode,
                 inviteLink: community.inviteLink
             ) {
@@ -26,26 +35,33 @@ struct CreateCommunityFlowView: View {
             }
         } else {
             VStack(alignment: .leading, spacing: 22) {
-                        TextField("League name", text: $name)
-                            .font(.custom("NeueHaasDisplay-Roman", size: 24))
-                            .foregroundStyle(Color(red: 41.0 / 255.0, green: 0.0 / 255.0, blue: 3.0 / 255.0))
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 14)
-                            .background(
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .fill(Color.white)
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .stroke(Color(red: 180.0 / 255.0, green: 61.0 / 255.0, blue: 37.0 / 255.0), lineWidth: 2)
-                            )
-                            .tint(.black)
-                            .textInputAutocapitalization(.words)
-                            .autocorrectionDisabled(true)
+                        TextField(
+                            "",
+                            text: $name,
+                            prompt: Text("League name").foregroundStyle(fieldPlaceholderColor)
+                        )
+                        .font(.custom("NeueHaasDisplay-Roman", size: 24))
+                        .foregroundStyle(fieldAccentColor)
+                        .textFieldStyle(.plain)
+                        .padding(.horizontal, 20)
+                        .frame(maxWidth: .infinity, minHeight: 56, maxHeight: 56)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(Color.white)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .stroke(fieldAccentColor, lineWidth: 2)
+                        )
+                        .tint(fieldAccentColor)
+                        .textInputAutocapitalization(.words)
+                        .autocorrectionDisabled(true)
 
-                        Text("Creates the league on the server and adds you as the first member.")
+                        Text("Enter a league name above to create a league.")
                             .font(.custom("NeueHaasDisplay-Light", size: 17))
                             .foregroundStyle(Color(red: 180.0 / 255.0, green: 61.0 / 255.0, blue: 37.0 / 255.0))
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: .infinity, alignment: .center)
 
                         Button("Create League") {
                             guard !isWorking else { return }
@@ -95,8 +111,11 @@ struct CreateCommunityFlowView: View {
                         dismiss()
                     } label: {
                         Text("Back")
-                            .font(.custom("NeueHaasDisplay-Mediu", size: 18))
+                            .font(.custom("NeueHaasDisplay-Mediu", size: 16))
                             .foregroundStyle(Color(red: 41.0 / 255.0, green: 0.0 / 255.0, blue: 3.0 / 255.0))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
+                            .fixedSize(horizontal: true, vertical: false)
                     }
                     .buttonStyle(.plain)
                 }

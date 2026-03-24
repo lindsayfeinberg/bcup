@@ -96,7 +96,9 @@ struct FeedView: View {
                     .accessibilityLabel("Account menu")
                 }
                 .padding(.horizontal)
-                .padding(.vertical, 8)
+                .padding(.top, 18)
+                .padding(.bottom, 10)
+                .background(Color(.systemBackground).opacity(0.92))
 
                 // MARK: Body
                 switch feedState {
@@ -109,13 +111,20 @@ struct FeedView: View {
                     }
 
                 case .empty:
-                    EmptyStateView(
-                        title: "No games yet",
-                        message: "Log a game or join a league to see activity here.",
-                        actionLabel: "Log a Game"
-                    ) {
-                        showGameLog = true
+                    VStack(spacing: 10) {
+                        Spacer()
+                        Text("No games yet")
+                            .font(.custom("NeueHaasDisplay-Bold", size: 32))
+                            .multilineTextAlignment(.center)
+                        Text("Log a game or join a league to see activity.")
+                            .font(.custom("NeueHaasDisplay-Light", size: 18))
+                            .foregroundStyle(.black)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 20)
+                        Spacer()
                     }
+                    .offset(y: -22)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                 case .content:
                     VStack(spacing: 0) {
@@ -185,27 +194,41 @@ struct FeedView: View {
                     }
                 }
 
-                // MARK: Bottom bar
-                HStack {
-                    Button("Create/Join a League") {
+                // MARK: Bottom actions
+                HStack(spacing: 0) {
+                    Button {
                         showCommunitiesFlow = true
+                    } label: {
+                        Text("Leagues")
+                            .font(.custom("NeueHaasDisplay-Mediu", size: 20))
+                            .frame(width: 150)
+                            .padding(.vertical, 10)
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding()
+                    .buttonStyle(FeedPrimaryActionButtonStyle())
+                    
+                    Spacer(minLength: 28)
 
-                    Divider()
-                        .frame(height: 30)
-
-                    Button("Submit Game") {
+                    Button {
                         showGameLog = true
+                    } label: {
+                        Text("Log Game")
+                            .font(.custom("NeueHaasDisplay-Mediu", size: 20))
+                            .frame(width: 150)
+                            .padding(.vertical, 10)
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding()
+                    .buttonStyle(FeedPrimaryActionButtonStyle())
                 }
-                .background(Color(.systemGray5))
-                .cornerRadius(12)
-                .padding(.horizontal)
+                .padding(.horizontal, 8)
                 .padding(.bottom)
+            }
+            .background {
+                if case .empty = feedState {
+                    Image("blank_background")
+                        .resizable()
+                        .scaledToFill()
+                        .padding(.top, 136)
+                        .padding(.bottom, 52)
+                }
             }
             .fullScreenCover(isPresented: $showCommunitiesFlow) {
                 CommunitiesFlowStack()
@@ -248,7 +271,7 @@ struct FeedView: View {
                 switch phase {
                 case .empty:
                     ProgressView()
-                        .frame(width: 28, height: 28)
+                        .frame(width: 38, height: 38)
                 case .success(let image):
                     image
                         .resizable()
@@ -274,13 +297,30 @@ struct FeedView: View {
                         .foregroundStyle(.primary)
                 }
             }
-            .frame(width: 28, height: 28)
+            .frame(width: 38, height: 38)
             .clipShape(Circle())
         } else {
             Image(systemName: "person.circle.fill")
-                .font(.title2)
+                .font(.title)
                 .foregroundStyle(.primary)
         }
+    }
+}
+
+private struct FeedPrimaryActionButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(.white)
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(Color(red: 180.0 / 255.0, green: 61.0 / 255.0, blue: 37.0 / 255.0))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(Color.white, lineWidth: 2)
+            )
+            .opacity(configuration.isPressed ? 0.85 : 1.0)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }
 

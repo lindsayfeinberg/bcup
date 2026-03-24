@@ -134,7 +134,7 @@ Canonical valid sample:
 | `loserProfileIds` | array<string> | yes | no | none | client | no | Min length 1. |
 | `mvpProfileId` | string | no | yes | `null` | client | no | Optional; must be one of `participantProfileIds` when present. |
 | `lvpProfileId` | string | no | yes | `null` | client | no | Optional; must be one of `participantProfileIds` when present. |
-| `photoUrls` | array<string> | yes | no | none | client | no | Min length 1. |
+| `photoUrls` | array<string> | yes | no | none | client | no | Exactly one URL (concatenated front+back image). |
 | `notes` | string | no | yes | `null` | client | no | Optional free-text note. |
 | `pongStats` | object | no | yes | `null` | client | no | Required for strict `PONG` validation in UI. |
 | `pongStats.cupMode` | number | no | no | none | client | no | Must be `6` or `10`. |
@@ -185,7 +185,7 @@ Canonical valid sample:
 
 - `winnerProfileIds.length >= 1`
 - `loserProfileIds.length >= 1`
-- `photoUrls.length >= 1`
+- `photoUrls.length == 1` (single concatenated image URL)
 - `winnerProfileIds` is a subset of `participantProfileIds`
 - `loserProfileIds` is a subset of `participantProfileIds`
 - No overlap between winners and losers
@@ -203,7 +203,7 @@ Canonical valid sample:
 
 - Storage originals are the source of truth:
   - `profiles.profilePhotoUrl`
-  - `gameLogs.photoUrls[]`
+  - `gameLogs.photoUrls[0]` (single item)
 - Clients may derive transformed URLs for display surfaces; originals remain persisted data.
 - Current iOS variant contract:
   - `feedThumb`: append `_400x400` before extension

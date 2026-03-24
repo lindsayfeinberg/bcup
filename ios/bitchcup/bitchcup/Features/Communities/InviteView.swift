@@ -3,17 +3,26 @@ import SwiftUI
 struct InviteView: View {
     @Environment(\.dismiss) private var dismiss
     let communityId: String
+    let leagueName: String?
     let inviteCode: String
     let inviteLink: String
 
     @State private var showShareSheet = false
     @State private var copied = false
     var onDone: () -> Void
+    
+    private var createdTitle: String {
+        let trimmed = leagueName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? "League Created!" : "\(trimmed) League Created!"
+    }
 
     var body: some View {
         VStack(spacing: 24) {
-            Text("League Created!")
+            Text(createdTitle)
                 .font(.custom("NeueHaasDisplay-Bold", size: 48))
+                .multilineTextAlignment(.center)
+                .lineLimit(nil)
+                .fixedSize(horizontal: false, vertical: true)
                 .padding(.bottom, 12)
 
             VStack(spacing: 8) {
@@ -75,8 +84,11 @@ struct InviteView: View {
                     dismiss()
                 } label: {
                     Text("Back")
-                        .font(.custom("NeueHaasDisplay-Mediu", size: 18))
+                        .font(.custom("NeueHaasDisplay-Mediu", size: 16))
                         .foregroundStyle(Color(red: 41.0 / 255.0, green: 0.0 / 255.0, blue: 3.0 / 255.0))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                        .fixedSize(horizontal: true, vertical: false)
                 }
                 .buttonStyle(.plain)
             }

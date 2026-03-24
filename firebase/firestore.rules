@@ -191,7 +191,7 @@ service cloud.firestore {
         isCommunityMember(request.resource.data.communityId) &&
         request.resource.data.winnerProfileIds.size() > 0 &&
         request.resource.data.loserProfileIds.size() > 0 &&
-        request.resource.data.photoUrls.size() > 0;
+        request.resource.data.photoUrls.size() == 1;
 
       // Only log creator can update/delete.
       allow update: if signedIn() &&
@@ -205,7 +205,7 @@ service cloud.firestore {
         request.resource.data.createdAt == resource.data.createdAt &&
         request.resource.data.winnerProfileIds.size() > 0 &&
         request.resource.data.loserProfileIds.size() > 0 &&
-        request.resource.data.photoUrls.size() > 0;
+        request.resource.data.photoUrls.size() == 1;
 
       allow delete: if signedIn() &&
         isCommunityMember(resource.data.communityId) &&

@@ -9,6 +9,7 @@ struct CommunitiesListView: View {
     @State private var hasMore = false
     @State private var isLoadingMore = false
     @State private var loadMoreErrorMessage: String?
+    @State private var showCommunitiesFlow = false
 
     var body: some View {
         Group {
@@ -19,11 +20,28 @@ struct CommunitiesListView: View {
                     Task { await load() }
                 }
             } else if communities.isEmpty {
-                EmptyStateView(
-                    title: "No leagues yet",
-                    message: "Create or join a league to get started.",
-                    actionLabel: nil
-                )
+                VStack(spacing: 10) {
+                    Spacer()
+                        .frame(maxHeight: 165)
+                    Text("No leagues yet")
+                        .font(.custom("NeueHaasDisplay-Bold", size: 32))
+                        .multilineTextAlignment(.center)
+                    Button("Join or Create League") {
+                        showCommunitiesFlow = true
+                    }
+                    .font(.custom("NeueHaasDisplay-Bold", size: 24))
+                    .frame(maxWidth: .infinity, minHeight: 48)
+                    .foregroundStyle(.white)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(Color(red: 180.0 / 255.0, green: 61.0 / 255.0, blue: 37.0 / 255.0))
+                    )
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 32)
+                    .padding(.top, 8)
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 List(communities, id: \.communityId) { community in
                     NavigationLink(community.name) {
@@ -40,7 +58,19 @@ struct CommunitiesListView: View {
         }
         .navigationTitle("Your Leagues")
         .navigationBarTitleDisplayMode(.inline)
+        .background {
+            if communities.isEmpty, errorMessage == nil, !isLoading {
+                Image("no_leagues_background")
+                    .resizable()
+                    .scaledToFill()
+                    .padding(.vertical, 12)
+            }
+        }
         .task { await load() }
+        .fullScreenCover(isPresented: $showCommunitiesFlow) {
+            CommunitiesFlowStack()
+                .environmentObject(container)
+        }
     }
 
     private func load() async {

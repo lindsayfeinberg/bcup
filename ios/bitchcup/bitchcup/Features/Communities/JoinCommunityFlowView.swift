@@ -12,6 +12,14 @@ struct JoinCommunityFlowView: View {
     private var isInviteCodeValid: Bool {
         !inviteCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
+    
+    private var fieldAccentColor: Color {
+        Color(red: 180.0 / 255.0, green: 61.0 / 255.0, blue: 37.0 / 255.0)
+    }
+    
+    private var fieldPlaceholderColor: Color {
+        Color(red: 207.0 / 255.0, green: 106.0 / 255.0, blue: 84.0 / 255.0)
+    }
 
     private var previewLeagueName: String {
         pendingPreview?.name ?? "this"
@@ -25,26 +33,39 @@ struct JoinCommunityFlowView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
-            TextField("Invite code", text: $inviteCode)
-                .font(.custom("NeueHaasDisplay-Roman", size: 24))
-                .foregroundStyle(Color(red: 41.0 / 255.0, green: 0.0 / 255.0, blue: 3.0 / 255.0))
-                .padding(.horizontal, 14)
-                .padding(.vertical, 14)
-                .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color.white)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(Color(red: 180.0 / 255.0, green: 61.0 / 255.0, blue: 37.0 / 255.0), lineWidth: 2)
-                )
-                .tint(.black)
-                .textInputAutocapitalization(.characters)
-                .autocorrectionDisabled(true)
+            TextField(
+                "",
+                text: $inviteCode,
+                prompt: Text("Invite code").foregroundStyle(fieldPlaceholderColor)
+            )
+            .font(.custom("NeueHaasDisplay-Roman", size: 24))
+            .foregroundStyle(fieldAccentColor)
+            .textFieldStyle(.plain)
+            .padding(.horizontal, 20)
+            .frame(maxWidth: .infinity, minHeight: 56, maxHeight: 56)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.white)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(fieldAccentColor, lineWidth: 2)
+            )
+            .tint(fieldAccentColor)
+            .textInputAutocapitalization(.characters)
+            .autocorrectionDisabled(true)
+            .onChange(of: inviteCode) { _, newValue in
+                let uppercased = newValue.uppercased()
+                if newValue != uppercased {
+                    inviteCode = uppercased
+                }
+            }
 
             Text("Leagues are limited to 350 members. If the league is full, you cannot join.")
                 .font(.custom("NeueHaasDisplay-Light", size: 17))
                 .foregroundStyle(Color(red: 180.0 / 255.0, green: 61.0 / 255.0, blue: 37.0 / 255.0))
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity, alignment: .center)
 
             Button("Join League") {
                 Task {
@@ -92,8 +113,11 @@ struct JoinCommunityFlowView: View {
                     dismiss()
                 } label: {
                     Text("Back")
-                        .font(.custom("NeueHaasDisplay-Mediu", size: 18))
+                        .font(.custom("NeueHaasDisplay-Mediu", size: 16))
                         .foregroundStyle(Color(red: 41.0 / 255.0, green: 0.0 / 255.0, blue: 3.0 / 255.0))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                        .fixedSize(horizontal: true, vertical: false)
                 }
                 .buttonStyle(.plain)
             }

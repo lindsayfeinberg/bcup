@@ -25,6 +25,7 @@ struct CommunitiesFlowStack: View {
                     case .invite(let communityId, let inviteCode, let inviteLink):
                         InviteView(
                             communityId: communityId,
+                            leagueName: nil,
                             inviteCode: inviteCode,
                             inviteLink: inviteLink
                         ) {
@@ -40,27 +41,21 @@ struct CommunitiesFlowStack: View {
                     }
                 }
                 .toolbar {
-                    ToolbarItem(placement: .navigationBarLeading) {
-                        Button {
-                            dismiss()
-                        } label: {
-                            Text("Close")
-                                .font(.custom("NeueHaasDisplay-Mediu", size: 18))
-                                .foregroundStyle(Color(red: 41.0 / 255.0, green: 0.0 / 255.0, blue: 3.0 / 255.0))
-                        }
-                        .buttonStyle(.plain)
-                    }
                     ToolbarItem(placement: .navigationBarTrailing) {
                         Button {
                             dismiss()
                         } label: {
                             Text("Home")
-                                .font(.custom("NeueHaasDisplay-Mediu", size: 18))
+                                .font(.custom("NeueHaasDisplay-Mediu", size: 16))
                                 .foregroundStyle(Color(red: 41.0 / 255.0, green: 0.0 / 255.0, blue: 3.0 / 255.0))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.75)
+                                .fixedSize(horizontal: true, vertical: false)
                         }
                         .buttonStyle(.plain)
                     }
                 }
+                .navigationBarTitleDisplayMode(.inline)
         }
         .environmentObject(navigator)
     }
