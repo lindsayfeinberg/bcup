@@ -791,6 +791,10 @@ struct NewGameLogFormView: View {
             submitErrorMessage = "Capture both front and back photos before submitting."
             return
         }
+        guard let combinedPhotoData = makeCombinedPhotoData(frontData: frontData, backData: backData) else {
+            submitErrorMessage = "Could not combine front and back photos. Please retake and try again."
+            return
+        }
 
         let gameLogId = AppFirestore.db().collection("gameLogs").document().documentID
         let communityId = selectedCommunityId
@@ -805,18 +809,11 @@ struct NewGameLogFormView: View {
         defer { isSubmitting = false }
 
         do {
-            let frontUrl = try await gameLogService.uploadGamePhoto(
+            let combinedUrl = try await gameLogService.uploadGamePhoto(
                 communityId: communityId,
                 gameLogId: gameLogId,
-                side: "front",
-                data: frontData,
-                contentType: "image/jpeg"
-            )
-            let backUrl = try await gameLogService.uploadGamePhoto(
-                communityId: communityId,
-                gameLogId: gameLogId,
-                side: "back",
-                data: backData,
+                side: "combined",
+                data: combinedPhotoData,
                 contentType: "image/jpeg"
             )
 
@@ -830,7 +827,7 @@ struct NewGameLogFormView: View {
                 loserProfileIds: losers,
                 mvpProfileId: selectedMVPProfileId.isEmpty ? nil : selectedMVPProfileId,
                 lvpProfileId: selectedLVPProfileId.isEmpty ? nil : selectedLVPProfileId,
-                photoUrls: [frontUrl, backUrl],
+                photoUrls: [combinedUrl],
                 notes: nil,
                 pongStats: pongStats,
                 beerBallStats: beerBallStats,
@@ -897,6 +894,46 @@ struct NewGameLogFormView: View {
 
     private func buildBattlePongStats() -> [String: Any] {
         ["playerCupsHit": battlePongCupsByProfileId]
+    }
+
+    private func makeCombinedPhotoData(frontData: Data, backData: Data) -> Data? {
+        guard let frontImage = UIImage(data: frontData), let backImage = UIImage(data: backData) else {
+            return nil
+        }
+
+        // Normalize both images to the same height, then place side-by-side.
+        let targetHeight = max(frontImage.size.height, backImage.size.height)
+        let resizedFront = resized(image: frontImage, targetHeight: targetHeight)
+        let resizedBack = resized(image: backImage, targetHeight: targetHeight)
+        let combinedSize = CGSize(width: resizedFront.size.width + resizedBack.size.width, height: targetHeight)
+
+        let format = UIGraphicsImageRendererFormat.default()
+        format.opaque = true
+        let renderer = UIGraphicsImageRenderer(size: combinedSize, format: format)
+        let combinedImage = renderer.image { _ in
+            UIColor.black.setFill()
+            UIBezierPath(rect: CGRect(origin: .zero, size: combinedSize)).fill()
+            resizedFront.draw(in: CGRect(origin: .zero, size: resizedFront.size))
+            resizedBack.draw(in: CGRect(
+                x: resizedFront.size.width,
+                y: 0,
+                width: resizedBack.size.width,
+                height: resizedBack.size.height
+            ))
+        }
+        return combinedImage.jpegData(compressionQuality: 0.85)
+    }
+
+    private func resized(image: UIImage, targetHeight: CGFloat) -> UIImage {
+        guard image.size.height > 0, image.size.height != targetHeight else { return image }
+        let scale = targetHeight / image.size.height
+        let targetSize = CGSize(width: image.size.width * scale, height: targetHeight)
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        let renderer = UIGraphicsImageRenderer(size: targetSize, format: format)
+        return renderer.image { _ in
+            image.draw(in: CGRect(origin: .zero, size: targetSize))
+        }
     }
 
     private func buildBaseballStats() -> [String: Any] {

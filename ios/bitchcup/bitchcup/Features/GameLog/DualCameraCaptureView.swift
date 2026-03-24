@@ -154,18 +154,22 @@ final class DualMultiCamViewController: UIViewController {
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        backPreview.frame = view.bounds
-
-        let pipWidth: CGFloat = min(140, view.bounds.width * 0.28)
-        let pipHeight = pipWidth * 4 / 3
-        let margin: CGFloat = 16
-        frontPreview.frame = CGRect(
-            x: view.bounds.maxX - pipWidth - margin,
-            y: view.safeAreaInsets.top + margin,
-            width: pipWidth,
-            height: pipHeight
+        // Split layout: rear and front previews stacked vertically.
+        let total = view.bounds
+        let halfHeight = floor(total.height / 2)
+        backPreview.frame = CGRect(
+            x: total.minX,
+            y: total.minY,
+            width: total.width,
+            height: halfHeight
         )
-        frontPreview.cornerRadius = 12
+        frontPreview.frame = CGRect(
+            x: total.minX,
+            y: halfHeight,
+            width: total.width,
+            height: total.height - halfHeight
+        )
+        frontPreview.cornerRadius = 0
         frontPreview.masksToBounds = true
     }
 
