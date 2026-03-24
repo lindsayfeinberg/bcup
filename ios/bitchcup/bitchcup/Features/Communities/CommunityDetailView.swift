@@ -6,7 +6,7 @@ struct CommunityDetailView: View {
 
     @EnvironmentObject private var container: DependencyContainer
     @State private var communityName: String = ""
-    @State private var members: [(profileId: String, displayName: String)] = []
+    @State private var members: [CommunityMemberRosterRow] = []
     @State private var isLoading = true
     @State private var errorMessage: String?
 
@@ -67,13 +67,26 @@ struct CommunityDetailView: View {
                     .foregroundStyle(.secondary)
                     .font(.subheadline)
             } else {
-                ForEach(members, id: \.profileId) { member in
+                ForEach(members) { member in
                     HStack {
                         Circle()
                             .frame(width: 36, height: 36)
                             .foregroundStyle(Color(.systemGray4))
-                        Text(member.displayName.isEmpty ? "Unknown" : member.displayName)
-                            .font(.subheadline)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(member.displayName.isEmpty ? "Unknown" : member.displayName)
+                                .font(.subheadline)
+                            if member.communityGamesPlayed == 0 {
+                                Text("No league games yet")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            } else {
+                                Text(Self.oddsFormatter.string(
+                                    from: NSNumber(value: member.communityOdds)
+                                ) ?? "0.000")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            }
+                        }
                         Spacer()
                     }
                 }
@@ -241,4 +254,11 @@ struct CommunityDetailView: View {
                 .padding(.vertical, 8)
         }
     }
+    private static let oddsFormatter: NumberFormatter = {
+        let f = NumberFormatter()
+        f.minimumFractionDigits = 3
+        f.maximumFractionDigits = 3
+        f.numberStyle = .decimal
+        return f
+    }()
 }

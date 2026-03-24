@@ -107,6 +107,7 @@ export const createCommunity = onCall({region}, async (request) => {
         profilePhotoUrl,
         joinedAt: now,
         communityOdds: 0,
+        communityGamesPlayed: 0,
         createdAt: now,
         updatedAt: now,
       });
@@ -178,6 +179,7 @@ export const joinCommunity = onCall({region}, async (request) => {
         profilePhotoUrl,
         joinedAt: now,
         communityOdds: 0,
+        communityGamesPlayed: 0,
         createdAt: now,
         updatedAt: now,
       });

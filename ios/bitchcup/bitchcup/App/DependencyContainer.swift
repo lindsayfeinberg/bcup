@@ -17,6 +17,8 @@ struct ProfileRecord {
     let userId: String
     let displayName: String?
     let profilePhotoUrl: String?
+    let overallOdds: Double
+    let overallGamesPlayed: Int
     let ageConfirmed21PlusAt: Date?
     let onboardingCompleteAt: Date?
 }
@@ -30,6 +32,13 @@ protocol UserServiceProtocol {
     /// Sets display name, photo URL, and `onboardingCompleteAt`.
     func completeProfileOnboarding(userId: String, displayName: String, profilePhotoUrl: String) async throws
 }
+struct CommunityMemberRosterRow: Identifiable {
+    let profileId: String
+    let displayName: String
+    let communityOdds: Double
+    let communityGamesPlayed: Int
+    var id: String { profileId }
+}
 
 protocol CommunityServiceProtocol {
     func fetchCommunities() async throws -> [(communityId: String, name: String)]
@@ -37,7 +46,7 @@ protocol CommunityServiceProtocol {
         cursor: CommunitiesPageCursor?,
         pageSize: Int
     ) async throws -> PagedResponse<[(communityId: String, name: String)], CommunitiesPageCursor>
-    func fetchMembers(communityId: String) async throws -> [(profileId: String, displayName: String)]
+    func fetchMembers(communityId: String) async throws -> [CommunityMemberRosterRow]
     func createCommunity(name: String) async throws -> (communityId: String, inviteCode: String, inviteLink: String)
     func joinCommunity(inviteCode: String) async throws -> String
     func previewJoinCommunity(inviteCode: String) async throws -> CommunityJoinPreview
@@ -261,11 +270,19 @@ final class UserService: UserServiceProtocol {
         let ageConfirmed21PlusAt = Self.parseDate(from: data["ageConfirmed21PlusAt"])
         let displayName = data["displayName"] as? String
         let profilePhotoUrl = data["profilePhotoUrl"] as? String
+        let overallOdds = (data["overallOdds"] as? Double)
+            ?? (data["overallOdds"] as? Int).map(Double.init)
+            ?? 0.0
+        let overallGamesPlayed = (data["overallGamesPlayed"] as? Int)
+            ?? (data["overallGamesPlayed"] as? Double).map(Int.init)
+            ?? 0
         AppDebugLog.log("UserService.fetchProfile: exists onboardingCompleteAt=\(onboardingCompleteAt != nil) age21=\(ageConfirmed21PlusAt != nil)")
         return ProfileRecord(
             userId: userId,
             displayName: displayName,
             profilePhotoUrl: profilePhotoUrl,
+            overallOdds: overallOdds,
+            overallGamesPlayed: overallGamesPlayed,
             ageConfirmed21PlusAt: ageConfirmed21PlusAt,
             onboardingCompleteAt: onboardingCompleteAt
         )
@@ -280,6 +297,7 @@ final class UserService: UserServiceProtocol {
             "displayName": "",
             "profilePhotoUrl": "",
             "overallOdds": 0,
+            "overallGamesPlayed": 0,
             "ageConfirmed21PlusAt": now,
             "createdAt": now,
             "updatedAt": now
@@ -424,7 +442,7 @@ final class CommunityService: CommunityServiceProtocol {
         }
         return PagedResponse(items: communities, nextCursor: hasMore ? nextCursor : nil, hasMore: hasMore)
     }
-    func fetchMembers(communityId: String) async throws -> [(profileId: String, displayName: String)] {
+    func fetchMembers(communityId: String) async throws -> [CommunityMemberRosterRow] {
         guard let currentUserId = Auth.auth().currentUser?.uid else { return [] }
         let db = AppFirestore.db()
         let memberships = try await db
@@ -432,24 +450,49 @@ final class CommunityService: CommunityServiceProtocol {
             .whereField("communityId", isEqualTo: communityId)
             .getDocuments()
 
-        var members: [(profileId: String, displayName: String)] = []
+        var members: [CommunityMemberRosterRow] = []
         for doc in memberships.documents {
-            guard let profileId = doc.data()["profileId"] as? String else { continue }
-            // Prefer denormalized roster fields from memberships to avoid reading other users' `profiles/*`.
             let membershipData = doc.data()
+            guard let profileId = membershipData["profileId"] as? String else { continue }
+
+            let communityOdds = (membershipData["communityOdds"] as? Double)
+                ?? (membershipData["communityOdds"] as? Int).map(Double.init)
+                ?? 0.0
+            let communityGamesPlayed = (membershipData["communityGamesPlayed"] as? Int)
+                ?? (membershipData["communityGamesPlayed"] as? Double).map(Int.init)
+                ?? 0
+
             let displayNameFromMembership = membershipData["displayName"] as? String
-            if let displayNameFromMembership {
-                members.append((profileId: profileId, displayName: displayNameFromMembership))
+            if let displayNameFromMembership, !displayNameFromMembership.isEmpty {
+                members.append(CommunityMemberRosterRow(
+                    profileId: profileId,
+                    displayName: displayNameFromMembership,
+                    communityOdds: communityOdds,
+                    communityGamesPlayed: communityGamesPlayed
+                ))
                 continue
             }
 
             // Legacy fallback: only read your own profile (allowed by rules).
             if profileId == currentUserId {
-                let profileDoc = try await db.collection("profiles").document(profileId).getDocument()
+                let profileDoc = try await db
+                    .collection("profiles")
+                    .document(profileId)
+                    .getDocument()
                 let displayName = profileDoc.data()?["displayName"] as? String ?? ""
-                members.append((profileId: profileId, displayName: displayName))
+                members.append(CommunityMemberRosterRow(
+                    profileId: profileId,
+                    displayName: displayName,
+                    communityOdds: communityOdds,
+                    communityGamesPlayed: communityGamesPlayed
+                ))
             } else {
-                members.append((profileId: profileId, displayName: ""))
+                members.append(CommunityMemberRosterRow(
+                    profileId: profileId,
+                    displayName: "",
+                    communityOdds: communityOdds,
+                    communityGamesPlayed: communityGamesPlayed
+                ))
             }
         }
         return members

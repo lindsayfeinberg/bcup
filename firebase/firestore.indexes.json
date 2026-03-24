@@ -57,6 +57,20 @@
       ]
     },
     {
+      "collectionGroup": "gameLogs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "participantProfileIds",
+          "arrayConfig": "CONTAINS"
+        },
+        {
+          "fieldPath": "communityId",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "brackets",
       "queryScope": "COLLECTION",
       "fields": [
