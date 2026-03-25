@@ -72,7 +72,10 @@ struct ProfileView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(Color.white, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
-        .task { await loadProfile() }
+        .task {
+            AppAnalytics.logProfileScreen()
+            await loadProfile()
+        }
     }
 
     private var profileLoadingState: some View {
@@ -308,6 +311,7 @@ struct ProfileView: View {
 
         guard let userId = container.authService.currentUserId else {
             errorMessage = "Sign in again to view your profile."
+            AppAnalytics.logProfileLoad(outcome: .noAuth)
             return
         }
 
@@ -346,8 +350,10 @@ struct ProfileView: View {
                 mvps: mvps,
                 lvps: lvps
             )
+            AppAnalytics.logProfileLoad(outcome: .success, historyCount: historyRows.count)
         } catch {
             errorMessage = error.localizedDescription
+            AppAnalytics.logProfileLoad(outcome: .failed, errorMessage: error.localizedDescription)
         }
     }
 
@@ -461,6 +467,7 @@ struct ProfileView: View {
             hasMoreHistory = page.hasMore
         } catch {
             loadMoreHistoryErrorMessage = error.localizedDescription
+            AppAnalytics.logProfileHistoryLoadMoreFailed(message: error.localizedDescription)
         }
     }
     private static let oddsFormatter: NumberFormatter = {

@@ -1,21 +1,21 @@
 import FirebaseAnalytics
 import Foundation
 
-/// T05.6: Firebase Analytics for the onboarding funnel. No user IDs, emails, or display names.
+/// T05.6 / T11.4: Firebase Analytics for the onboarding funnel. No user IDs, emails, or display names.
 enum OnboardingAnalytics {
     private enum CustomEvent {
-        static let signInTap = "onb_sign_in_tap"
-        static let signInFail = "onb_sign_in_fail"
-        static let ageConfirmOk = "onb_age_confirm_ok"
-        static let ageConfirmFail = "onb_age_confirm_fail"
-        static let profileSubmitOk = "onb_profile_submit_ok"
-        static let profileSubmitFail = "onb_profile_submit_fail"
-        static let funnelComplete = "onb_funnel_complete"
+        static let signInTap = "bcup_onb_sign_in_tap"
+        static let signInFail = "bcup_onb_sign_in_fail"
+        static let ageConfirmOk = "bcup_onb_age_confirm_ok"
+        static let ageConfirmFail = "bcup_onb_age_confirm_fail"
+        static let profileSubmitOk = "bcup_onb_profile_submit_ok"
+        static let profileSubmitFail = "bcup_onb_profile_submit_fail"
+        static let funnelComplete = "bcup_onb_funnel_complete"
     }
 
     private enum Param {
-        static let photoAdded = "photo_added"
-        static let errorSnippet = "error_snippet"
+        static let photoAdded = "bcup_photo_added"
+        static let errorSnippet = "bcup_error_snippet"
     }
 
     // MARK: - Sign-in
@@ -44,9 +44,9 @@ enum OnboardingAnalytics {
     static func logOnboardingScreen(_ phase: OnboardingPhase) {
         let name: String
         switch phase {
-        case .signInWithGoogle: name = "OnboardingSignIn"
-        case .ageConfirmation: name = "OnboardingAgeGate"
-        case .profileSetup: name = "OnboardingProfileSetup"
+        case .signInWithGoogle: name = "bcup_onb_sign_in"
+        case .ageConfirmation: name = "bcup_onb_age_gate"
+        case .profileSetup: name = "bcup_onb_profile_setup"
         }
         Analytics.logEvent(AnalyticsEventScreenView, parameters: [
             AnalyticsParameterScreenName: name,

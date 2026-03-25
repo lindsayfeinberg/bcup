@@ -27,9 +27,10 @@ service firebase.storage {
     // Profile photos: signed-in users can read, owner can write/delete.
     match /profilePhotos/{profileId}/{fileName} {
       allow read: if signedIn();
-      allow create, update, delete: if signedIn() &&
+      allow create, update: if signedIn() &&
         uid() == profileId &&
-        (request.method == 'delete' || validImageUpload(10));
+        validImageUpload(10);
+      allow delete: if signedIn() && uid() == profileId;
     }
 
     // Game photos: only community members can read.
@@ -39,9 +40,11 @@ service firebase.storage {
       allow create: if isCommunityMember(communityId) &&
         validImageUpload(15) &&
         request.resource.metadata.createdByProfileId == uid();
-      allow update, delete: if isCommunityMember(communityId) &&
+      allow update: if isCommunityMember(communityId) &&
         resource.metadata.createdByProfileId == uid() &&
-        (request.method == 'delete' || validImageUpload(15));
+        validImageUpload(15);
+      allow delete: if isCommunityMember(communityId) &&
+        resource.metadata.createdByProfileId == uid();
     }
 
     // Deny everything else by default.

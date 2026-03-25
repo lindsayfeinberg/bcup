@@ -307,11 +307,72 @@ Clients should treat derived fields as read-only.
 
 - `memberships`: `profileId ASC, joinedAt DESC`
 - `memberships`: `communityId ASC, joinedAt ASC`
-- `gameLogs`: `communityId ASC, createdAt DESC`
-- `gameLogs`: `participantProfileIds CONTAINS, communityId ASC`
-- `gameLogs`: `createdByProfileId ASC, createdAt DESC`
-- `brackets`: `communityId ASC, createdAt DESC`
-- `communities`: `inviteCode ASC` (lookup by invite code)
+- `gameLogs`: `communityId ASC, createdAt DESC, __name__ DESC` — required for home feed and per-community feed: `orderBy createdAt` + `orderBy documentId` for stable cursors (`DependencyContainer` feed services; chunk size 10 for `in` on `communityId`).
+- `gameLogs`: `participantProfileIds CONTAINS, communityId ASC` — `computeCommunityOdds` / rules-aligned odds paths in `functions/src/oddsRecalc.ts` (no `orderBy`).
+- `gameLogs`: `createdByProfileId ASC, createdAt DESC` — **not** referenced by current client/functions queries; keep for documented “my logs” listing if added later (`data-contracts` / specs).
+- `brackets`: `communityId ASC, createdAt DESC` — **not** referenced by current codebase (bracket UI uses document listener by id); keep for future list-by-community queries.
+- `communities`: `inviteCode ASC` (single-field; typically auto-indexed for equality + `limit(1)` in `functions/src/communities.ts`)
+
+### Firestore performance notes (T11.5)
+
+**Index deploy:** After changing [`firebase/firestore.indexes.json`](../../firebase/firestore.indexes.json), deploy with:
+
+```bash
+firebase deploy --only firestore:indexes
+```
+
+(from repo root; uses [`firebase.json`](../../firebase.json) → `firestore.indexes`).
+
+**High-volume client reads (iOS, `DependencyContainer` — read-only audit, no code change here):**
+
+| Path | Query pattern | Cost notes |
+|------|----------------|------------|
+| Home feed | `memberships` where `profileId == uid` (full scan of memberships for user) → chunked `gameLogs` where `communityId in (≤10)` · `orderBy createdAt, documentId desc` · `limit` (50) per chunk; merge client-side | Read counts scale with **number of communities** (one query per chunk per page). N+1: **display names** — `fetchProfileDisplayNamesMap` / `fetchCommunityNamesMap` issue **one `getDocument` per unique id** per page (parallelized). |
+| Community feed | `gameLogs` where `communityId ==` · same order/limit | Favorable: single query + name maps. |
+| Community roster | `memberships` where `communityId ==` (no limit) + optional profile reads for self only | Membership doc count = **member count** per open roster. |
+| Communities list | `memberships` where `profileId ==` · `orderBy documentId` · paginate 25 + parallel `communities/{id}` gets | Stable pagination; community gets parallelized. |
+
+**Profile aggregates (`ProfileView`):** `fetchAllFeedRows()` loops `fetchFeedPage` until exhausted (page size 50) to compute stats — **read count grows with all game logs across the user’s leagues** (worst case unbounded). Mitigations to consider later: server-maintained aggregates, capped pages with explicit UX, or callable that returns counts.
+
+**Cloud Functions (partner-sensitive seeds — document only):** `buildH2HMap` in `functions/src/bracketSeeding.ts` loads **all** `gameLogs` for a `communityId` with no `limit` — payload and read cost scale with league history. `computeOverallOdds` uses `array-contains` on `participantProfileIds` with no community filter — scans **global** logs for that user profile.
+
+**Realtime listeners:** `BracketsView` attaches a **single-document** listener on `brackets/{id}` — bounded payload (full bracket tree in one doc; large for big tournaments — acceptable for v1 if bracket docs stay under Firestore’s 1 MiB doc limit).
+
+### Threat model (T11.6)
+
+Lightweight review of **unauthorized access** and **abuse** against the **Firebase + iOS** surface described in this doc, [`firebase/firestore.rules`](../../firebase/firestore.rules), [`firebase/storage.rules`](../../firebase/storage.rules), and [`docs/architecture/api-contracts.md`](api-contracts.md). Likelihood / impact are qualitative (**L/M/H**).
+
+#### Trust boundaries (never trust the client alone)
+
+| Client-submitted data | Server enforcement today | Gap |
+|----------------------|--------------------------|-----|
+| `gameLogs` outcomes (`participantProfileIds`, winners/losers, MVP/LVP) | Rules: creator = `uid()`, member of `communityId`, array sizes & MVP/LVP ∈ participants | Rules do **not** prove participants are **community members** or that outcomes match a real match; integrity relies on honest clients + social recovery. |
+| `brackets` shape (`rounds`, `status`, `seedMethod`, `teamSize`) | Rules: member of `communityId`; key whitelist; `id` / `communityId` / `createdAt` immutable on update | **Any** league member may **update** bracket `rounds` and `status` (see Firestore `brackets` `update`). Not narrowed to creator/admin/callable-only. |
+| `profiles` odds / games played | Rules: client cannot change `overallOdds` / `overallGamesPlayed` on update | OK — derived fields server-owned. |
+| `communities` invite metadata | Client updates: name only; `inviteCode` / `inviteLink` immutable | OK. New codes issued only via Admin/callables. |
+| Storage paths | `gamePhotos/{communityId}/{gameLogId}/{fileName}` + metadata `createdByProfileId` | Path uses `gameLogId`; client must align with Firestore doc id (coordination). Size/type caps in rules. |
+| Callable payloads (`createCommunity`, `joinCommunity`, etc.) | `functions/src/communities.ts`, `brackets.ts`, `bracketManualSeed.ts`, `bracketGameLogSync.ts`: `request.auth`, validation | **No Firebase App Check** in repo — callables are **authenticated user** surface only, not bot-resistant. |
+
+#### Risk register (summary)
+
+| Threat | Affected component | L / I | Mitigation (existing vs recommended) |
+|--------|--------------------|-------|--------------------------------------|
+| Member tampering with bracket progression or structure | Firestore `brackets` client `update` | M / H | **Existing:** none in rules for structural validation. **Recommended:** restrict `rounds`/`status` updates to **Admin / trusted callables** only; client read-only except DRAFT manual seed if needed. |
+| Fabricated or mistaken `gameLogs` opponents / results | Firestore `gameLogs` `create`/`update` | M / M | **Existing:** membership + key checks. **Recommended:** optional **callable** validation against roster or bracket match; or post-hoc moderation / reporting. |
+| Roster / odds fields visible to all members | Firestore `memberships` **read** if `isCommunityMember(communityId)` | L / M | **Existing:** by design for roster (`displayName` denormalized). **Recommended:** document product expectation; avoid extra PII on membership docs. |
+| Profile photo URLs readable by any signed-in user who guesses path | Storage `profilePhotos/{profileId}/**` **read: signedIn** | M / M | **Existing:** any authed user can read any profile object. **Recommended:** tighten to **owner-only** read **or** signed URLs with TTL if URLs leak. |
+| Invite code guessing / enumeration | `previewJoinCommunity` + 8-char code ([`communities.ts`](../../functions/src/communities.ts)) | L / L–M | **Existing:** random unambiguous alphabet, uniqueness check. **Recommended:** rate-limit / CAPTCHA on preview + join callables; lockout after N failures (server-side). |
+| Spam: communities, brackets, game logs, uploads | Callables + rules allow writes for members | M / M | **Existing:** community **member cap** (350) in `createCommunity` / join transaction. **Recommended:** **App Check** on callables; per-user rate limits; monitor Firestore/Storage **quotas** and **functions** invocations (see T11.5 cost notes). |
+| Amplified backend cost from game log churn | `onGameLogCreated` / `Updated` / `Deleted` → odds + bracket sync | M / M | **Existing:** triggers always run. **Recommended:** idempotent handlers (already important); batch/alarm on errors; consider debounce for odds if workloads grow. |
+| `GoogleService-Info.plist` / API keys in repo | iOS client config | L / L | **Existing:** typical for mobile Firebase; rules enforce access. **Recommended:** separate **dev/prod** projects and plists; never commit **service account JSON**; CI uses **workload identity** / secrets manager for deploy keys. |
+
+#### Secrets & config
+
+- **Client:** `GoogleService-Info.plist` exposes project id, app id, API key — expected for Firebase SDK; **security is rules + Auth**, not hiding the plist.
+- **Server:** Cloud Functions use Admin SDK; keys belong in **GCP / Firebase** runtime only, not in git.
+- **CI:** [.github/workflows/*.yml](../../.github/workflows/) should not embed deploy tokens in logs; use GitHub **encrypted secrets** for `firebase deploy`.
+
+---
 
 ## Change control
 

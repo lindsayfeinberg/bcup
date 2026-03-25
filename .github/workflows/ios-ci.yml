@@ -26,15 +26,15 @@ jobs:
       - name: Build
         run: |
           xcodebuild build \
-            -project ios/bcup.xcodeproj \
-            -scheme bcup \
+            -project ios/bitchcup/bitchcup.xcodeproj \
+            -scheme bitchcup \
             -destination 'platform=iOS Simulator,name=iPhone 15,OS=latest' \
             CODE_SIGNING_ALLOWED=NO
 
       - name: Test
         run: |
           xcodebuild test \
-            -project ios/bcup.xcodeproj \
-            -scheme bcup \
+            -project ios/bitchcup/bitchcup.xcodeproj \
+            -scheme bitchcup \
             -destination 'platform=iOS Simulator,name=iPhone 15,OS=latest' \
             CODE_SIGNING_ALLOWED=NO

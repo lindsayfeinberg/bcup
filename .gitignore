@@ -1,3 +1,7 @@
+node_modules/
+
+firestore-debug.log
+storage-debug.log
 *.xcuserstate
 ios/bitchcup/bitchcup/Resources/GoogleService-Info.plist
 *.cursorios/bitchcup/bitchcup.xcodeproj/project.xcworkspace/xcuserdata/lindsayfeinberg.xcuserdatad/UserInterfaceState.xcuserstate

@@ -111,7 +111,11 @@ service cloud.firestore {
       let lvpOk = !data.keys().hasAny(["lvpProfileId"]) ||
         data.lvpProfileId == null ||
         (data.lvpProfileId is string && data.participantProfileIds.hasAny([data.lvpProfileId]));
-      let notSame = data.mvpProfileId == null || data.lvpProfileId == null ||
+      // Avoid reading mvp/lvp when keys are absent (undefined throws).
+      let notSame = !data.keys().hasAny(["mvpProfileId"]) ||
+        !data.keys().hasAny(["lvpProfileId"]) ||
+        data.mvpProfileId == null ||
+        data.lvpProfileId == null ||
         data.mvpProfileId != data.lvpProfileId;
       return mvpOk && lvpOk && notSame;
     }
