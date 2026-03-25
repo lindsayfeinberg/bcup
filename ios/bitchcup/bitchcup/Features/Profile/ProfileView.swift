@@ -173,36 +173,7 @@ struct ProfileView: View {
     @ViewBuilder
     private var profileAvatar: some View {
         if let profilePhotoUrl {
-            let transformedURL = ImageVariantURLBuilder.variantURL(from: profilePhotoUrl, variant: .avatar)
-            AsyncImage(url: transformedURL) { phase in
-                switch phase {
-                case .empty:
-                    ProgressView()
-                        .tint(ProfileTestStyle.ink)
-                        .frame(width: profileAvatarSize, height: profileAvatarSize)
-                        .background(ProfileBrandColor.formLightRed.opacity(0.35))
-                case .success(let image):
-                    image
-                        .resizable()
-                        .scaledToFill()
-                case .failure:
-                    AsyncImage(url: profilePhotoUrl) { fallbackPhase in
-                        switch fallbackPhase {
-                        case .success(let fallbackImage):
-                            fallbackImage
-                                .resizable()
-                                .scaledToFill()
-                        default:
-                            avatarPlaceholder
-                        }
-                    }
-                @unknown default:
-                    avatarPlaceholder
-                }
-            }
-            .frame(width: profileAvatarSize, height: profileAvatarSize)
-            .clipShape(Circle())
-            .overlay(Circle().stroke(ProfileTestStyle.ink, lineWidth: 1))
+            ProfileResolvedAvatarView(originalURL: profilePhotoUrl, size: profileAvatarSize)
         } else {
             avatarPlaceholder
                 .frame(width: profileAvatarSize, height: profileAvatarSize)
@@ -515,6 +486,67 @@ private struct ProfileAggregateStats {
         guard gamesPlayed > 0 else { return "0%" }
         let rate = (Double(wins) / Double(gamesPlayed)) * 100
         return "\(Int(rate.rounded()))%"
+    }
+}
+
+/// Loads the `400x400` Storage variant via `downloadURL()` so the token matches the resized object.
+private struct ProfileResolvedAvatarView: View {
+    let originalURL: URL
+    let size: CGFloat
+
+    @State private var loadURL: URL?
+
+    var body: some View {
+        Group {
+            if let loadURL {
+                AsyncImage(url: loadURL) { phase in
+                    switch phase {
+                    case .empty:
+                        ProgressView()
+                            .tint(ProfileTestStyle.ink)
+                            .frame(width: size, height: size)
+                            .background(ProfileBrandColor.formLightRed.opacity(0.35))
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .scaledToFill()
+                    case .failure:
+                        AsyncImage(url: originalURL) { fallbackPhase in
+                            switch fallbackPhase {
+                            case .success(let fallbackImage):
+                                fallbackImage
+                                    .resizable()
+                                    .scaledToFill()
+                            default:
+                                avatarFailurePlaceholder
+                            }
+                        }
+                    @unknown default:
+                        avatarFailurePlaceholder
+                    }
+                }
+            } else {
+                ProgressView()
+                    .tint(ProfileTestStyle.ink)
+                    .frame(width: size, height: size)
+                    .background(ProfileBrandColor.formLightRed.opacity(0.35))
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(Circle())
+        .overlay(Circle().stroke(ProfileTestStyle.ink, lineWidth: 1))
+        .task(id: originalURL) {
+            loadURL = await ImageVariantURLResolver.shared.resolveURL(originalURL: originalURL, variant: .avatar)
+        }
+    }
+
+    private var avatarFailurePlaceholder: some View {
+        ZStack {
+            Circle()
+                .fill(ProfileBrandColor.formLightRed.opacity(0.35))
+            Image(systemName: "person.fill")
+                .foregroundStyle(ProfileTestStyle.ink)
+        }
     }
 }
 

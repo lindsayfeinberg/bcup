@@ -1,5 +1,6 @@
 import PhotosUI
 import SwiftUI
+import UIKit
 
 struct OnboardingProfileSetupView: View {
     @Binding var displayName: String
@@ -7,47 +8,143 @@ struct OnboardingProfileSetupView: View {
     let isSaving: Bool
     let errorMessage: String?
     let onSubmit: () -> Void
+    @State private var previewUIImage: UIImage?
+
+    private var fieldAccentColor: Color {
+        Color(red: 180.0 / 255.0, green: 61.0 / 255.0, blue: 37.0 / 255.0)
+    }
+
+    private var fieldPlaceholderColor: Color {
+        Color(red: 207.0 / 255.0, green: 106.0 / 255.0, blue: 84.0 / 255.0)
+    }
+
+    private var isDisplayNameValid: Bool {
+        !displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var profilePreviewAvatar: some View {
+        Group {
+            if let previewUIImage {
+                Image(uiImage: previewUIImage)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                ZStack {
+                    Circle()
+                        .fill(fieldPlaceholderColor.opacity(0.35))
+                    Image(systemName: "person.fill")
+                        .foregroundStyle(fieldAccentColor)
+                }
+            }
+        }
+        .frame(width: 168, height: 168)
+        .clipShape(Circle())
+        .overlay(Circle().stroke(fieldAccentColor, lineWidth: 1))
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
+        VStack(alignment: .leading, spacing: 22) {
             Text("Your profile")
-                .font(.title2)
-                .fontWeight(.semibold)
+                .font(.custom("NeueHaasDisplay-Bold", size: 42))
+                .frame(maxWidth: .infinity, alignment: .center)
 
-            Text("Choose a display name. You can add a profile photo now or skip.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+            HStack {
+                Spacer()
+                profilePreviewAvatar
+                Spacer()
+            }
 
-            TextField("Display name", text: $displayName)
-                .textFieldStyle(.roundedBorder)
+            Text("Choose a display name and profile. Please choose wisely because you cannot update them later on in this version :/")
+                .font(.custom("NeueHaasDisplay-Light", size: 17))
+                .foregroundStyle(.black)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .lineLimit(nil)
+                .fixedSize(horizontal: false, vertical: true)
+
+            TextField(
+                "",
+                text: $displayName,
+                prompt: Text("Display name").foregroundStyle(fieldPlaceholderColor)
+            )
+                .font(.custom("NeueHaasDisplay-Roman", size: 24))
+                .foregroundStyle(fieldAccentColor)
+                .textFieldStyle(.plain)
+                .padding(.horizontal, 20)
+                .frame(maxWidth: .infinity, minHeight: 56, maxHeight: 56)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color.white)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(fieldAccentColor, lineWidth: 2)
+                )
+                .tint(fieldAccentColor)
                 .textContentType(.name)
 
             PhotosPicker(selection: $selectedPhotoItem, matching: .images, photoLibrary: .shared()) {
-                Label("Choose profile photo (optional)", systemImage: "photo.on.rectangle.angled")
+                HStack {
+                    Image(systemName: "photo.on.rectangle.angled")
+                    Text("Choose Profile Photo")
+                }
+                .font(.custom("NeueHaasDisplay-Mediu", size: 24))
+                .frame(maxWidth: .infinity, minHeight: 56)
+                .foregroundStyle(fieldAccentColor)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color.white)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(fieldAccentColor, lineWidth: 2)
+                )
             }
+            .buttonStyle(.plain)
 
             if let errorMessage {
                 Text(errorMessage)
-                    .font(.footnote)
-                    .foregroundStyle(.red)
+                    .font(.custom("NeueHaasDisplay-Light", size: 13))
+                    .foregroundStyle(fieldAccentColor)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity, alignment: .center)
             }
 
-            Button {
+            Button(isSaving ? "Saving..." : "Finish") {
                 onSubmit()
-            } label: {
-                HStack {
-                    if isSaving {
-                        ProgressView()
-                            .progressViewStyle(.circular)
-                    }
-                    Text(isSaving ? "Saving…" : "Finish")
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
             }
-            .buttonStyle(.borderedProminent)
-            .disabled(isSaving || displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .font(.custom("NeueHaasDisplay-Bold", size: 30))
+            .frame(maxWidth: .infinity, minHeight: 56)
+            .foregroundStyle(
+                isDisplayNameValid
+                    ? .white
+                    : fieldPlaceholderColor
+            )
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(fieldAccentColor)
+            )
+            .buttonStyle(.plain)
+            .disabled(isSaving || !isDisplayNameValid)
+            .opacity(isSaving ? 0.65 : 1.0)
         }
-        .padding()
+        .padding(.horizontal, 20)
+        .onChange(of: selectedPhotoItem) { _, newValue in
+            Task { await updatePreviewImage(from: newValue) }
+        }
+    }
+
+    @MainActor
+    private func updatePreviewImage(from item: PhotosPickerItem?) async {
+        guard let item else {
+            previewUIImage = nil
+            return
+        }
+        if let data = try? await item.loadTransferable(type: Data.self),
+           let uiImage = UIImage(data: data) {
+            previewUIImage = uiImage
+        } else {
+            previewUIImage = nil
+        }
     }
 }

@@ -44,6 +44,7 @@ service cloud.firestore {
         "displayName",
         "profilePhotoUrl",
         "overallOdds",
+        "overallGamesPlayed",
         "ageConfirmed21PlusAt",
         "onboardingCompleteAt",
         "createdAt",
@@ -134,13 +135,15 @@ service cloud.firestore {
         hasProfileKeys() &&
         request.resource.data.id == profileId &&
         request.resource.data.googleAuthId == uid() &&
-        request.resource.data.overallOdds == 0;
+        request.resource.data.overallOdds == 0 &&
+        request.resource.data.overallGamesPlayed == 0;
 
       allow update: if isOwnProfile(profileId) &&
         hasProfileKeys() &&
         request.resource.data.id == resource.data.id &&
         request.resource.data.googleAuthId == resource.data.googleAuthId &&
         request.resource.data.overallOdds == resource.data.overallOdds &&
+        request.resource.data.overallGamesPlayed == resource.data.overallGamesPlayed &&
         request.resource.data.createdAt == resource.data.createdAt;
 
       allow delete: if false;

@@ -210,8 +210,8 @@ Canonical valid sample:
   - `gameLogs.photoUrls[0]` (single item)
 - Clients may derive transformed URLs for display surfaces; originals remain persisted data.
 - Current iOS variant contract:
-  - `feedThumb`: append `_400x400` before extension
-  - `avatar`: append `_128x128` before extension
+  - `feedThumb`: append `_800x800` before extension
+  - `avatar`: append `_400x400` before extension
   - `full`: original URL
 - Fallback rule: if transformed URL cannot be built or fetch fails, use original URL.
 - Upload metadata requirement for photo objects:

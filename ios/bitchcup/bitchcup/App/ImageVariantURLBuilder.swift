@@ -8,9 +8,9 @@ enum ImageVariant: String {
     fileprivate var suffix: String {
         switch self {
         case .feedThumb:
-            return "_400x400"
+            return "_800x800"
         case .avatar:
-            return "_128x128"
+            return "_400x400"
         case .full:
             return ""
         }
@@ -25,6 +25,11 @@ enum ImageDeliveryConfig {
 }
 
 enum ImageVariantURLBuilder {
+    /// Rewrites only the `/o/...` object path for a Firebase Storage download URL.
+    ///
+    /// Each object has its own download `token` query parameter. Path rewriting alone reuses the original token, so the
+    /// variant object will not load. Call `ImageVariantURLResolver.resolveURL` (or `StorageReference.downloadURL`) for a
+    /// valid variant URL.
     static func variantURL(from originalURL: URL, variant: ImageVariant) -> URL {
         guard ImageDeliveryConfig.isTransformedDeliveryEnabled else { return originalURL }
         guard variant != .full else { return originalURL }
