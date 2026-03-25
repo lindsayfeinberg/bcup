@@ -1,5 +1,30 @@
 import SwiftUI
 
+private enum ProfileBrandColor {
+    static let red = Color(red: 180.0 / 255.0, green: 61.0 / 255.0, blue: 37.0 / 255.0)
+    static let formLightRed = Color(red: 232.0 / 255.0, green: 162.0 / 255.0, blue: 145.0 / 255.0)
+    /// Win pill background (history).
+    static let forestGreen = Color(red: 36.0 / 255.0, green: 138.0 / 255.0, blue: 28.0 / 255.0)
+}
+
+private enum ProfileTestStyle {
+    static let ink = Color.black
+}
+
+private enum ProfileChrome {
+    static let lightBorder = Color(red: 220.0 / 255.0, green: 220.0 / 255.0, blue: 222.0 / 255.0)
+}
+
+private enum ProfileTypography {
+    static let profileName = Font.custom("NeueHaasDisplay-Mediu", size: 32)
+    /// Aggregate Stats and Game History section titles (same size).
+    static let sectionHeader = Font.custom("NeueHaasDisplay-Mediu", size: 26)
+    static let statValue = Font.custom("NeueHaasDisplay-Mediu", size: 22)
+    static let statLabel = Font.custom("NeueHaasDisplay-Mediu", size: 17)
+}
+
+private let profileAvatarSize: CGFloat = 84
+
 struct ProfileView: View {
     @EnvironmentObject private var container: DependencyContainer
 
@@ -18,24 +43,16 @@ struct ProfileView: View {
     var body: some View {
         Group {
             if isLoading {
-                LoadingView(message: "Loading profile...")
+                profileLoadingState
             } else if let errorMessage {
-                ErrorView(message: errorMessage) {
-                    Task { await loadProfile() }
-                }
+                profileErrorState(message: errorMessage)
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 20) {
                         profileHeaderSection
                         statsSection
                         if historyRows.isEmpty {
-                            EmptyStateView(
-                                title: "No games yet",
-                                message: "Once you play games, your private history and stats will show here.",
-                                actionLabel: "Refresh"
-                            ) {
-                                Task { await loadProfile() }
-                            }
+                            profileEmptyHistoryCard
                         } else {
                             historySection
                         }
@@ -43,32 +60,114 @@ struct ProfileView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding()
                 }
+                .scrollContentBackground(.hidden)
+                .background(Color.white)
                 .refreshable {
                     await loadProfile()
                 }
             }
         }
-        .navigationTitle(displayName)
+        .background(Color.white)
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(Color.white, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
         .task { await loadProfile() }
     }
 
+    private var profileLoadingState: some View {
+        VStack(spacing: 16) {
+            ProgressView()
+                .tint(ProfileTestStyle.ink)
+                .scaleEffect(1.2)
+            Text("Loading profile...")
+                .font(AppFont.subheadline)
+                .foregroundStyle(ProfileTestStyle.ink)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.white)
+    }
+
+    private func profileErrorState(message: String) -> some View {
+        VStack(spacing: 16) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 44))
+                .foregroundStyle(ProfileTestStyle.ink)
+            Text("Error")
+                .font(AppFont.headline)
+                .foregroundStyle(ProfileTestStyle.ink)
+            Text(message)
+                .font(AppFont.subheadline)
+                .foregroundStyle(ProfileTestStyle.ink)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal)
+            Button {
+                Task { await loadProfile() }
+            } label: {
+                Text("Retry")
+                    .font(AppFont.buttonProminent)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+            }
+            .buttonStyle(ProfilePrimaryButtonStyle())
+            .padding(.horizontal, 24)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.white)
+    }
+
+    private var profileEmptyHistoryCard: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "tray")
+                .font(.system(size: 40))
+                .foregroundStyle(ProfileTestStyle.ink)
+            Text("No games yet")
+                .font(AppFont.emptyStateTitle)
+                .foregroundStyle(ProfileTestStyle.ink)
+            Text("Once you play games, your private history and stats will show here.")
+                .font(AppFont.subheadline)
+                .foregroundStyle(ProfileTestStyle.ink)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal)
+            Button {
+                Task { await loadProfile() }
+            } label: {
+                Text("Refresh")
+                    .font(AppFont.buttonProminent)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+            }
+            .buttonStyle(ProfilePrimaryButtonStyle())
+            .padding(.horizontal, 8)
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.white)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(ProfileChrome.lightBorder, lineWidth: 1)
+        )
+    }
+
     private var profileHeaderSection: some View {
-        HStack(spacing: 12) {
+        VStack(spacing: 12) {
             profileAvatar
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(displayName)
-                    .font(.title2)
-                    .fontWeight(.semibold)
-                    .lineLimit(1)
-                Text("Profile")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer()
+            Text(displayName)
+                .font(ProfileTypography.profileName)
+                .foregroundStyle(ProfileTestStyle.ink)
+                .lineLimit(2)
+                .multilineTextAlignment(.center)
         }
+        .frame(maxWidth: .infinity)
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.white)
+        )
     }
 
     @ViewBuilder
@@ -79,8 +178,9 @@ struct ProfileView: View {
                 switch phase {
                 case .empty:
                     ProgressView()
-                        .frame(width: 64, height: 64)
-                        .background(Color(.systemGray5))
+                        .tint(ProfileTestStyle.ink)
+                        .frame(width: profileAvatarSize, height: profileAvatarSize)
+                        .background(ProfileBrandColor.formLightRed.opacity(0.35))
                 case .success(let image):
                     image
                         .resizable()
@@ -100,28 +200,29 @@ struct ProfileView: View {
                     avatarPlaceholder
                 }
             }
-            .frame(width: 64, height: 64)
+            .frame(width: profileAvatarSize, height: profileAvatarSize)
             .clipShape(Circle())
-            .overlay(Circle().stroke(Color(.systemGray4), lineWidth: 1))
+            .overlay(Circle().stroke(ProfileTestStyle.ink, lineWidth: 1))
         } else {
             avatarPlaceholder
-                .frame(width: 64, height: 64)
+                .frame(width: profileAvatarSize, height: profileAvatarSize)
         }
     }
 
     private var avatarPlaceholder: some View {
         ZStack {
             Circle()
-                .fill(Color(.systemGray5))
+                .fill(ProfileBrandColor.formLightRed.opacity(0.35))
             Image(systemName: "person.fill")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(ProfileTestStyle.ink)
         }
     }
 
     private var statsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Aggregate Stats")
-                .font(.headline)
+                .font(ProfileTypography.sectionHeader)
+                .foregroundStyle(ProfileTestStyle.ink)
 
             HStack(spacing: 10) {
                 statTile(title: "Games", value: "\(stats.gamesPlayed)")
@@ -142,63 +243,86 @@ struct ProfileView: View {
                 statTile(title: "LVPs", value: "\(stats.lvps)")
             }
         }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.white)
+        )
     }
 
     private var historySection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Game History")
-                .font(.headline)
+                .font(ProfileTypography.sectionHeader)
+                .foregroundStyle(ProfileTestStyle.ink)
 
             ForEach(historyRows) { row in
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
                         Text(row.outcomeLabel)
-                            .font(.caption)
+                            .font(AppFont.caption)
                             .fontWeight(.semibold)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(row.outcomeColor.opacity(0.2))
-                            .foregroundStyle(row.outcomeColor)
+                            .foregroundStyle(Color.white)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(row.didWin ? ProfileBrandColor.forestGreen : ProfileBrandColor.red)
                             .clipShape(Capsule())
                         Spacer()
                         Text(row.dateText)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .font(AppFont.caption)
+                            .foregroundStyle(ProfileTestStyle.ink)
                     }
 
                     Text(row.gameTypeText)
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
+                        .font(AppFont.subheadlineBold)
+                        .foregroundStyle(ProfileTestStyle.ink)
 
                     Text("League: \(row.communityText)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(AppFont.caption)
+                        .foregroundStyle(ProfileTestStyle.ink)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(12)
-                .background(Color(.systemGray6))
-                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .background(Color.white)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(ProfileChrome.lightBorder, lineWidth: 1)
+                )
                 .onAppear {
                     Task { await loadMoreHistoryIfNeeded(currentRow: row) }
                 }
             }
             historyFooter
         }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.white)
+        )
     }
 
     private func statTile(title: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(value)
-                .font(.title3)
-                .fontWeight(.bold)
+                .font(ProfileTypography.statValue)
+                .foregroundStyle(ProfileTestStyle.ink)
             Text(title)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(ProfileTypography.statLabel)
+                .foregroundStyle(ProfileTestStyle.ink)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
-        .background(Color(.systemGray6))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.white)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(ProfileChrome.lightBorder, lineWidth: 1)
+        )
     }
 
     private func loadProfile() async {
@@ -266,33 +390,47 @@ struct ProfileView: View {
     private var historyFooter: some View {
         if isLoadingMoreHistory {
             ProgressView("Loading more...")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
+                .font(AppFont.footnote)
+                .tint(ProfileTestStyle.ink)
+                .foregroundStyle(ProfileTestStyle.ink)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 8)
         } else if historyRows.isEmpty, hasMoreHistory {
             Button("Load older games") {
                 Task { await loadMoreHistory() }
             }
-            .buttonStyle(.bordered)
+            .font(AppFont.button)
+            .foregroundStyle(Color.white)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 8)
+            .padding(.vertical, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(ProfileTestStyle.ink)
+            )
+            .padding(.vertical, 4)
         } else if let loadMoreHistoryErrorMessage {
             VStack(spacing: 8) {
                 Text(loadMoreHistoryErrorMessage)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .font(AppFont.footnote)
+                    .foregroundStyle(ProfileTestStyle.ink)
                 Button("Retry loading more") {
                     Task { await loadMoreHistory() }
                 }
-                .buttonStyle(.bordered)
+                .font(AppFont.button)
+                .foregroundStyle(Color.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(ProfileTestStyle.ink)
+                )
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 8)
         } else if !hasMoreHistory, !historyRows.isEmpty {
             Text("No older games.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
+                .font(AppFont.footnote)
+                .foregroundStyle(ProfileTestStyle.ink)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 8)
         }
@@ -380,6 +518,19 @@ private struct ProfileAggregateStats {
     }
 }
 
+private struct ProfilePrimaryButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(Color.white)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(ProfileTestStyle.ink)
+            )
+            .opacity(configuration.isPressed ? 0.85 : 1.0)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
+
 private struct ProfileHistoryRow: Identifiable {
     let gameLogId: String
     let gameTypeText: String
@@ -390,6 +541,5 @@ private struct ProfileHistoryRow: Identifiable {
     var id: String { gameLogId }
 
     var outcomeLabel: String { didWin ? "Win" : "Loss" }
-    var outcomeColor: Color { didWin ? .green : .red }
     var dateText: String { createdAt.formatted(date: .abbreviated, time: .shortened) }
 }

@@ -85,6 +85,8 @@ struct FeedRow: Identifiable {
     let lvpDisplayName: String?
     /// Formatted game-type stats (multi-line), or nil when none stored.
     let statsSummary: String?
+    /// Optional caption text from the game log (shown under the photo on the feed).
+    let notes: String?
     let photoUrls: [String]
     let createdAt: Date
     var id: String { gameLogId }
@@ -999,6 +1001,10 @@ extension GameLogService: FeedServiceProtocol {
 
         let statsSummary = formatGameLogStats(gameType: gameType, data: d, resolveName: resolveName)
 
+        let notesFromDoc = d["notes"] as? String
+        let notesTrimmed = notesFromDoc?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let notes: String? = (notesTrimmed?.isEmpty == false) ? notesTrimmed : nil
+
         return FeedRow(
             gameLogId: document.documentID,
             communityId: communityId,
@@ -1013,6 +1019,7 @@ extension GameLogService: FeedServiceProtocol {
             mvpDisplayName: mvpDisplayName,
             lvpDisplayName: lvpDisplayName,
             statsSummary: statsSummary,
+            notes: notes,
             photoUrls: d["photoUrls"] as? [String] ?? [],
             createdAt: createdAtTs.dateValue()
         )

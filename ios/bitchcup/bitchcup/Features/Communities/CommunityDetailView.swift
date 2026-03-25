@@ -4,6 +4,12 @@ import SwiftUI
 struct CommunityDetailView: View {
     let communityId: String
 
+    private let pageTitleFont = Font.custom("NeueHaasDisplay-Bold", size: 42)
+    private let sectionHeaderFont = Font.custom("NeueHaasDisplay-Mediu", size: 28)
+    private let memberRankFont = Font.custom("NeueHaasDisplay-Mediu", size: 18)
+    private let memberNameFont = Font.custom("NeueHaasDisplay-Mediu", size: 17)
+    private let memberDetailFont = Font.custom("NeueHaasDisplay-Light", size: 15)
+
     @EnvironmentObject private var container: DependencyContainer
     @State private var communityName: String = ""
     @State private var members: [CommunityMemberRosterRow] = []
@@ -18,6 +24,21 @@ struct CommunityDetailView: View {
     @State private var isLoadingMoreFeed = false
     @State private var loadMoreFeedErrorMessage: String?
 
+    private var displayCommunityName: String {
+        let trimmed = communityName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "League" : trimmed
+    }
+
+    /// Highest `communityOdds` first (best → worst); ties broken by `profileId` for stable order.
+    private var membersOrderedByOdds: [CommunityMemberRosterRow] {
+        members.sorted { lhs, rhs in
+            if lhs.communityOdds != rhs.communityOdds {
+                return lhs.communityOdds > rhs.communityOdds
+            }
+            return lhs.profileId < rhs.profileId
+        }
+    }
+
     var body: some View {
         Group {
             if isLoading {
@@ -27,67 +48,94 @@ struct CommunityDetailView: View {
                     Task { await loadInitial() }
                 }
             } else {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 24) {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(displayCommunityName)
+                        .font(pageTitleFont)
+                        .foregroundStyle(.black)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.horizontal)
+                        .padding(.top, 24)
+                        .padding(.bottom, 28)
 
-                        membersSection
-
-                        recentGamesSection
-
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Bracket")
-                                .font(.headline)
-                            Text("Bracket entry will appear here (T10).")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 24) {
+                            membersSection
+                            recentGamesSection
+                            bracketPlaceholder
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding()
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding()
+                    .refreshable {
+                        await refreshAll()
+                    }
                 }
-                .refreshable {
-                    await refreshAll()
-                }
+                .background(Color.white)
             }
         }
-        .navigationTitle(communityName.isEmpty ? "League" : communityName)
+        .background(Color.white)
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(Color.white, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
         .task {
             await loadInitial()
+        }
+    }
+
+    private var bracketPlaceholder: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Bracket")
+                .font(sectionHeaderFont)
+                .foregroundStyle(.black)
+            Text("Bracket entry will appear here (T10).")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
         }
     }
 
     private var membersSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Members (\(members.count))")
-                .font(.headline)
+                .font(sectionHeaderFont)
+                .foregroundStyle(.black)
 
             if members.isEmpty {
                 Text("No members yet.")
+                    .font(memberDetailFont)
                     .foregroundStyle(.secondary)
-                    .font(.subheadline)
             } else {
-                ForEach(members) { member in
-                    HStack {
+                ForEach(Array(membersOrderedByOdds.enumerated()), id: \.element.id) { index, member in
+                    HStack(alignment: .center, spacing: 10) {
+                        Text("\(index + 1).")
+                            .font(memberRankFont)
+                            .foregroundStyle(.black)
+                            .frame(minWidth: 36, alignment: .trailing)
+                            .monospacedDigit()
+
                         Circle()
                             .frame(width: 36, height: 36)
                             .foregroundStyle(Color(.systemGray4))
+
                         VStack(alignment: .leading, spacing: 2) {
                             Text(member.displayName.isEmpty ? "Unknown" : member.displayName)
-                                .font(.subheadline)
+                                .font(memberNameFont)
+                                .foregroundStyle(.black)
                             if member.communityGamesPlayed == 0 {
                                 Text("No league games yet")
-                                    .font(.caption)
+                                    .font(memberDetailFont)
                                     .foregroundStyle(.secondary)
                             } else {
                                 Text(Self.oddsFormatter.string(
                                     from: NSNumber(value: member.communityOdds)
                                 ) ?? "0.000")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                                    .font(memberDetailFont)
+                                    .foregroundStyle(.secondary)
+                                    .monospacedDigit()
                             }
                         }
-                        Spacer()
+                        Spacer(minLength: 0)
                     }
                 }
             }
@@ -97,7 +145,8 @@ struct CommunityDetailView: View {
     private var recentGamesSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Recent Games")
-                .font(.headline)
+                .font(sectionHeaderFont)
+                .foregroundStyle(.black)
 
             if isLoadingFeed && feedErrorMessage == nil {
                 ProgressView()

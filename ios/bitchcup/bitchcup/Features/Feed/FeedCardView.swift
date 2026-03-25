@@ -80,7 +80,7 @@ struct FeedCardView: View {
 
             flippableGameCard
 
-            captionPlaceholderBelowPhoto
+            captionBelowPhotoIfPresent
         }
         .background {
             shape.fill(cardBackgroundColor)
@@ -309,16 +309,25 @@ struct FeedCardView: View {
             .padding(.top, 12)
     }
 
-    private var captionPlaceholderBelowPhoto: some View {
-        Text("PLACE FOR CAPTION")
-            .font(AppFont.body)
-            .foregroundStyle(.primary)
-            .multilineTextAlignment(.leading)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .accessibilityLabel("Caption placeholder")
-            .padding(.horizontal, 12)
-            .padding(.top, FeedCardLayout.captionVerticalPadding)
-            .padding(.bottom, FeedCardLayout.captionVerticalPadding)
+    private var feedCaptionFromNotes: String {
+        let t = row.notes?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return t
+    }
+
+    @ViewBuilder
+    private var captionBelowPhotoIfPresent: some View {
+        let text = feedCaptionFromNotes
+        if !text.isEmpty {
+            Text(text)
+                .font(AppFont.body)
+                .foregroundStyle(.primary)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityLabel("Caption")
+                .padding(.horizontal, 12)
+                .padding(.top, FeedCardLayout.captionVerticalPadding)
+                .padding(.bottom, FeedCardLayout.captionVerticalPadding)
+        }
     }
 
     private var relativeTimeStringAbbreviated: String {

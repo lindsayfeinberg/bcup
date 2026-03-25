@@ -75,6 +75,8 @@ struct NewGameLogFormView: View {
     @State private var battlePongCupsByProfileId: [String: Int] = [:]
     @State private var baseballHitsByProfileId: [String: Int] = [:]
 
+    @State private var gameLogNotes: String = ""
+
     @State private var submitErrorMessage: String?
     @State private var isSubmitting = false
     @State private var showOpenSettingsAction = false
@@ -283,6 +285,17 @@ struct NewGameLogFormView: View {
                         }
                     } header: {
                         Text("Awards (Optional)")
+                            .font(AppFont.sectionHeader)
+                            .foregroundStyle(GameLogBrandColor.formLightRed)
+                    }
+                    .listRowBackground(widgetOutlineBackground)
+
+                    Section {
+                        TextField("Add a note", text: $gameLogNotes)
+                            .font(AppFont.body)
+                            .textFieldStyle(.roundedBorder)
+                    } header: {
+                        Text("Notes")
                             .font(AppFont.sectionHeader)
                             .foregroundStyle(GameLogBrandColor.formLightRed)
                     }
@@ -1134,6 +1147,8 @@ struct NewGameLogFormView: View {
         let beerBallStats = selectedGameType == .beerBall ? buildBeerBallStats() : nil
         let battlePongStats = selectedGameType == .battlePong ? buildBattlePongStats() : nil
         let baseballStats = selectedGameType == .baseball ? buildBaseballStats() : nil
+        let trimmedNotes = gameLogNotes.trimmingCharacters(in: .whitespacesAndNewlines)
+        let notesPayload: String? = trimmedNotes.isEmpty ? nil : trimmedNotes
         let gameLogService = container.gameLogService
 
         isSubmitting = true
@@ -1159,7 +1174,7 @@ struct NewGameLogFormView: View {
                 mvpProfileId: selectedMVPProfileId.isEmpty ? nil : selectedMVPProfileId,
                 lvpProfileId: selectedLVPProfileId.isEmpty ? nil : selectedLVPProfileId,
                 photoUrls: [combinedUrl],
-                notes: nil,
+                notes: notesPayload,
                 pongStats: pongStats,
                 beerBallStats: beerBallStats,
                 battlePongStats: battlePongStats,

@@ -9,6 +9,7 @@ struct FeedView: View {
     @State private var showCommunitiesList = false
     @State private var showGameLog = false
     @State private var showProfile = false
+    @State private var showAccountMenu = false
     @State private var profilePhotoUrl: URL?
 
     private enum FeedState {
@@ -100,28 +101,17 @@ struct FeedView: View {
 
                 // MARK: Header
                 HStack {
-                    Text("BitchCUP")
+                    Text("Bitch Cup")
                         .font(headerFont)
                     Spacer()
-                    Menu {
-                        Button {
-                            showProfile = true
-                        } label: {
-                            Label("View profile", systemImage: "person")
-                        }
-                        Button {
-                            showCommunitiesList = true
-                        } label: {
-                            Label("View leagues", systemImage: "person.3")
-                        }
-                        Divider()
-                        Button(role: .destructive) {
-                            sessionManager.signOut()
-                        } label: {
-                            Label("Log out", systemImage: "rectangle.portrait.and.arrow.right")
-                        }
+                    Button {
+                        showAccountMenu = true
                     } label: {
                         accountMenuAvatar
+                    }
+                    .popover(isPresented: $showAccountMenu, attachmentAnchor: .rect(.bounds), arrowEdge: .top) {
+                        accountMenuPopoverContent
+                            .presentationCompactAdaptation(.popover)
                     }
                     .accessibilityLabel("Account menu")
                 }
@@ -283,6 +273,52 @@ struct FeedView: View {
         }
     }
 
+    /// Compact account actions (popover width is fixed; `Menu` dropdown cannot be narrowed on iOS).
+    @ViewBuilder
+    private var accountMenuPopoverContent: some View {
+        VStack(alignment: .center, spacing: 0) {
+            Button {
+                showAccountMenu = false
+                showProfile = true
+            } label: {
+                Text("View profile")
+                    .font(AppFont.button)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                showAccountMenu = false
+                showCommunitiesList = true
+            } label: {
+                Text("View leagues")
+                    .font(AppFont.button)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+            }
+            .buttonStyle(.plain)
+
+            Divider()
+
+            Button {
+                showAccountMenu = false
+                sessionManager.signOut()
+            } label: {
+                Text("Log out")
+                    .font(AppFont.button)
+                    .foregroundStyle(FeedBrand.primaryButtonRed)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+            }
+            .buttonStyle(.plain)
+        }
+        .frame(width: 196)
+    }
+
     @ViewBuilder
     private var accountMenuAvatar: some View {
         if let profilePhotoUrl {
@@ -327,13 +363,17 @@ struct FeedView: View {
     }
 }
 
+private enum FeedBrand {
+    static let primaryButtonRed = Color(red: 180.0 / 255.0, green: 61.0 / 255.0, blue: 37.0 / 255.0)
+}
+
 private struct FeedPrimaryActionButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .foregroundStyle(.white)
             .background(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(Color(red: 180.0 / 255.0, green: 61.0 / 255.0, blue: 37.0 / 255.0))
+                    .fill(FeedBrand.primaryButtonRed)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
