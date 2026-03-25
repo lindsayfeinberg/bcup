@@ -230,8 +230,9 @@ Canonical valid sample:
 | `communityId` | string | yes | no | none | client | yes | Scope for participants and odds. |
 | `participantProfileIds` | array<string> | yes | no | none | server | no | Auto-populate from current members at creation. |
 | `seedMethod` | string enum | yes | no | none | client | yes | `COMMUNITY_ODDS \| MANUAL \| RANDOM`. |
+| `teamSize` | number | yes | no | none | server | yes | Integer 1–4; players per side in each match. Set at creation. |
 | `status` | string enum | yes | no | `DRAFT` | client | no | `DRAFT \| ACTIVE \| COMPLETE`. |
-| `rounds` | array<object> | yes | no | `[]` | server | no | Structured round/match data. |
+| `rounds` | array<object> | yes | no | `[]` | server | no | See **Bracket `rounds` structure** below. |
 | `createdAt` | timestamp | yes | no | server timestamp | server | yes | Global rule. |
 | `updatedAt` | timestamp | yes | no | server timestamp | server | no | Global rule. |
 
@@ -243,6 +244,7 @@ Canonical valid sample:
   "communityId": "community_001",
   "participantProfileIds": ["uid_abc123", "uid_def456", "uid_ghi789", "uid_jkl012"],
   "seedMethod": "COMMUNITY_ODDS",
+  "teamSize": 1,
   "status": "DRAFT",
   "rounds": [],
   "createdAt": "SERVER_TIMESTAMP",
@@ -250,18 +252,39 @@ Canonical valid sample:
 }
 ```
 
-### Bracket `rounds` — match objects (2v2-friendly)
+**At creation:** `COMMUNITY_ODDS` and `RANDOM` are written with non-empty `rounds` and `status` **`ACTIVE`** by the server. `MANUAL` is written with empty `rounds` and **`DRAFT`** until `finalizeManualBracket`.
 
-Each element of `rounds` is product-defined; typically a **round** contains **matches**. For each **match**, align with `gameLogs` where outcomes are attributed:
+### Bracket `rounds` structure
 
-| Field (per match) | Type | Notes |
+`rounds` is an **array of rounds**. Each element:
+
+| Field | Type | Notes |
+|---|---|---|
+| `roundNumber` | number | Integer ≥ 1, unique within the bracket’s `rounds` array (1-based). |
+| `matches` | array<object> | Matches in this round; see **Match object** below. |
+
+`matchId` values must be **unique across all matches** in the bracket (all rounds).
+
+### Bracket match object (2v2-friendly)
+
+Align outcome fields with `gameLogs` where results are attributed.
+
+| Field | Type | Notes |
 |---|---|---|
 | `matchId` | string | Stable id within the bracket. |
-| `participantProfileIds` | array<string> | Everyone in the match (e.g. four ids for 2v2). |
-| `winnerProfileIds` | array<string> | Min length 1; e.g. two ids for a winning team. |
-| `loserProfileIds` | array<string> | Min length 1; e.g. two ids for a losing team. |
+| `roundNumber` | number | Same logical round as the parent `rounds[]` entry (redundant but supports flat lookups). |
+| `participantProfileIds` | array<string> | Everyone in the match; minimum length 2 (1v1 or 2v2). |
+| `winnerProfileIds` | array<string> | **Omit** when the match is unplayed. When present, `loserProfileIds` must also be present. Min length 1 when present. |
+| `loserProfileIds` | array<string> | **Omit** when unplayed. When present, `winnerProfileIds` must also be present. Min length 1 when present. |
+| `feederMatchIds` | array<string> | **Optional.** Exactly two `matchId` strings for round 2+ placeholders when `participantProfileIds` is empty; omit on round 1 matches. |
+
+**Unplayed matches:** omit both `winnerProfileIds` and `loserProfileIds` entirely. Do **not** persist these keys with empty arrays `[]` for unplayed matches (empty array is invalid for a recorded result).
+
+**Played matches:** both arrays must be present, each length ≥ 1.
 
 **Invariants (same as `gameLogs`):** `winnerProfileIds` and `loserProfileIds` are subsets of `participantProfileIds`; sets are disjoint; no duplicate ids within each array.
+
+Server-side validation reference: `functions/src/bracketModel.ts` (`validateBracketMatch`, `validateRoundsStructure`).
 
 Firestore security rules only enforce **top-level** bracket keys (`hasBracketKeys`); **nested** match validation should be enforced in **Cloud Functions** (or the client) when implementing `updateMatchResult`.
 

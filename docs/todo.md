@@ -125,15 +125,20 @@ This plan is sequenced to let two developers work in parallel with clear handoff
 - `T10.2` Auto-populate bracket participants from all community members.
 - `T10.3` Implement seeding selector (`odds`, `manual`, `random`).
 - `T10.4` Implement odds seeding with fallback and tie-break behavior.
-- `T10.5` Implement manual seeding UI with validation.
-- `T10.6` Implement random seeding using deterministic seed strategy.
+- [x] `T10.5` Implement manual team assignment UI with validation.
+- [x] `T10.6` Implement random seeding using deterministic seed strategy.
 - `T10.7` Build bracket visualization and match result updates.
+  - **Option 2 (chosen):** Bracket outcomes come from the normal **game log** flow. Optional `bracketId` + `bracketMatchId` on `gameLogs`; `gameLog` create still drives community/overall odds via existing triggers; a Cloud Function applies the same outcome to the bracket document.
+  - `T10.7.a` **Contracts:** Add optional `bracketId` and `bracketMatchId` to `gameLogs` in `data-contracts.md` and `data-model.md`; document behavior in `api-contracts.md` (callable `updateMatchResult` is non-primary / optional for backfill).
+  - `T10.7.b` **Rules:** Extend `hasGameLogKeys()` in `firestore.rules` so client creates may include those optional fields.
+  - `T10.7.c` **Functions:** On `gameLogs` **create**, when both bracket fields are set: load bracket, find `matchId`, validate community + roster + no prior outcome; write `winnerProfileIds` / `loserProfileIds` on the match; advance winners through `feederMatchIds` into the next match’s `participantProfileIds`; idempotent skip if match already has outcome; set bracket `COMPLETE` when the final is decided (define edge cases for byes / placeholders).
+  - `T10.7.d` **iOS:** Extend `GameLogCreatePayload` and `createGameLog` to pass optional bracket fields; prefill `NewGameLogFormView` from a bracket match (community, participants, `teamSize`); add “Log result” (or equivalent) from bracket UI into that flow.
 
 ### [ ] T11. Quality, Security, and Observability
 
 **Depends on:** `[T08, T09, T10]`
 
-- `T11.1` Add unit tests for odds and seeding logic.
+- [x] `T11.1` Add unit tests for odds and seeding logic.
 - `T11.2` Add integration tests for Firestore/Storage security rules.
 - `T11.3` Add UI tests for onboarding, game logging, and bracket critical paths.
 - `T11.4` Add Firebase Analytics and Crashlytics instrumentation to major flows.

@@ -158,6 +158,57 @@ protocol FeedServiceProtocol {
     ) async throws -> PagedResponse<[FeedRow], FeedPageCursor>
 }
 
+// MARK: - Bracket
+
+enum SeedMethod: String, CaseIterable, Identifiable {
+    case communityOdds = "COMMUNITY_ODDS"
+    case manual = "MANUAL"
+    case random = "RANDOM"
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .communityOdds: return "League Odds"
+        case .manual: return "Manual"
+        case .random: return "Random"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .communityOdds: return "Seed by win rate in this league"
+        case .manual: return "Pick the order yourself"
+        case .random: return "Randomly assign seeds"
+        }
+    }
+}
+
+enum BracketServiceError: LocalizedError {
+    case invalidResponse
+    case notAMember
+    case tooFewMembers
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidResponse: return "Unexpected response from server."
+        case .notAMember: return "You are not a member of this league."
+        case .tooFewMembers: return "Need at least 2 members to create a bracket."
+        }
+    }
+}
+
+protocol BracketServiceProtocol {
+    func createBracket(
+        communityId: String,
+        seedMethod: SeedMethod,
+        teamSize: Int
+    ) async throws -> String
+    func finalizeManualBracket(
+        bracketId: String,
+        teams: [[String]]
+    ) async throws
+}
 // MARK: - Container
 
 @MainActor
@@ -167,14 +218,17 @@ final class DependencyContainer: ObservableObject {
     let communityService: CommunityServiceProtocol
     let gameLogService: GameLogServiceProtocol
     let feedService: FeedServiceProtocol
+    let bracketService: BracketServiceProtocol
 
     init() {
         self.authService = GoogleAuthService()
         self.userService = UserService()
-        self.communityService = CommunityService()
+        let cs = CommunityService()
+        self.communityService = cs
         let gls = GameLogService()
         self.gameLogService = gls
         self.feedService = gls
+        self.bracketService = cs
     }
 
     init(
@@ -182,13 +236,15 @@ final class DependencyContainer: ObservableObject {
         userService: UserServiceProtocol,
         communityService: CommunityServiceProtocol,
         gameLogService: GameLogServiceProtocol,
-        feedService: FeedServiceProtocol
+        feedService: FeedServiceProtocol,
+        bracketService: BracketServiceProtocol
     ) {
         self.authService = authService
         self.userService = userService
         self.communityService = communityService
         self.gameLogService = gameLogService
         self.feedService = feedService
+        self.bracketService = bracketService
     }
 }
 
@@ -1232,5 +1288,69 @@ extension GameLogService: FeedServiceProtocol {
         }
         AppDebugLog.log("FeedService.fetchFeedPage(forCommunityId:): communityId=\(communityId) logs=\(items.count)")
         return PagedResponse(items: items, nextCursor: hasMore ? nextCursor : nil, hasMore: hasMore)
+    }
+}
+// MARK: - BracketService
+
+extension CommunityService: BracketServiceProtocol {
+    func createBracket(
+        communityId: String,
+        seedMethod: SeedMethod,
+        teamSize: Int
+    ) async throws -> String {
+        do {
+            let result = try await Self.postCallable(
+                functionName: "createBracket",
+                payload: [
+                    "communityId": communityId,
+                    "seedMethod": seedMethod.rawValue,
+                    "teamSize": teamSize,
+                ]
+            )
+            let data = try Self.unwrapEnvelope(result)
+            guard let bracketId = data["bracketId"] as? String else {
+                throw BracketServiceError.invalidResponse
+            }
+            return bracketId
+        } catch {
+            throw Self.mapBracketError(error)
+        }
+    }
+
+    private static func mapBracketError(_ error: Error) -> Error {
+        let ns = error as NSError
+        if ns.domain == "CommunityService" { return error }
+        if ns.domain == "BracketService" { return error }
+        if ns.code == 401 {
+            return BracketServiceError.notAMember
+        }
+        if ns.domain == NSURLErrorDomain {
+            return NSError(
+                domain: ns.domain,
+                code: ns.code,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "Network error. Check your connection and try again.",
+                ]
+            )
+        }
+        return error
+    }
+    func finalizeManualBracket(
+        bracketId: String,
+        teams: [[String]]
+    ) async throws {
+        do {
+            let result = try await Self.postCallable(
+                functionName: "finalizeManualBracket",
+                payload: [
+                    "bracketId": bracketId,
+                    "teams": teams,
+                ]
+            )
+            _ = try Self.unwrapEnvelope(result)
+        } catch {
+            throw Self.mapBracketError(error)
+        }
     }
 }

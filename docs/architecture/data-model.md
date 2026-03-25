@@ -66,7 +66,9 @@ brackets/{bracketId}
   - communityId: UUID
   - participantProfileIds: array<UUID> (auto all members)
   - seedMethod: enum (COMMUNITY_ODDS, MANUAL, RANDOM)
-  - rounds: array (structured rounds/matches; each match can use winnerProfileIds/loserProfileIds arrays for team/2v2 outcomes — see data-contracts)
+  - teamSize: integer 1–4 (players per side; immutable at create)
+  - rounds: Array<{ roundNumber: integer (1-based); matches: BracketMatch[] }>
+    each BracketMatch: matchId, roundNumber, participantProfileIds, optional winnerProfileIds/loserProfileIds (absent when unplayed), optional feederMatchIds (two matchIds for empty round 2+ placeholders)
   - status: enum (DRAFT, ACTIVE, COMPLETE)
   - createdAt: timestamp
   - updatedAt: timestamp
