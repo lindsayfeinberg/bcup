@@ -44,6 +44,8 @@ memberships/{communityId}_{profileId}
 gameLogs/{gameLogId}
   - id: UUID
   - communityId: UUID
+  - bracketId: UUID | null
+  - bracketMatchId: string | null
   - gameType: enum (PONG, BEER_BALL, BATTLE_PONG, BASEBALL)
   - createdByProfileId: UUID
   - participantProfileIds: array<UUID>

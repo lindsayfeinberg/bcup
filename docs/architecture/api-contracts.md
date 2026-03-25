@@ -110,13 +110,16 @@
 ## Game Logs
 
 ### `createGameLog`
-- **Trigger:** HTTPS callable
+- **Trigger:** Firestore document create (`gameLogs/{gameLogId}`) by an authenticated client (via `setData`)
 - **Auth:** Must be authenticated and a member of `communityId`
 - **Validation:**
   - `winnerProfileIds` and `loserProfileIds` min length 1
   - Both must be subsets of `participantProfileIds`
   - No profile can appear in both winners and losers
   - `photoUrls` min length 1
+  - Optional bracket linkage:
+    - `bracketId` and `bracketMatchId` are either both set (non-empty) or both omitted
+    - when set, bracket match progression is applied by Cloud Functions trigger (non-primary “backfill-only” callable exists for repair)
   - `pongStats` required only when `gameType` is `PONG`, with:
     - `cupMode` in `{6, 10}`
     - sum of `playerCupsHit` equal to `cupMode`
@@ -166,7 +169,7 @@
 ---
 
 ### `updateGameLog`
-- **Trigger:** HTTPS callable
+- **Trigger:** Firestore document update (`gameLogs/{gameLogId}`) by the authenticated log creator
 - **Auth:** Must be authenticated and the original log creator
 - **Validation:** Same field rules as `createGameLog`
 
@@ -197,7 +200,7 @@
 ---
 
 ### `deleteGameLog`
-- **Trigger:** HTTPS callable
+- **Trigger:** Firestore document delete (`gameLogs/{gameLogId}`) by the authenticated log creator
 - **Auth:** Must be authenticated and the original log creator
 
 **Request:**
@@ -372,6 +375,7 @@
 - **Trigger:** HTTPS callable
 - **Auth:** Must be authenticated and a member of the bracket's community
 - **Validation:** Same spirit as `gameLogs`: `winnerProfileIds` and `loserProfileIds` must each have length ≥ 1; both must be subsets of that match’s `participantProfileIds`; no profile in both winner and loser lists; supports **2v2** (two winners, two losers) when the match lists four participants.
+- **Note:** This is a non-primary backfill/repair path. Primary bracket progression comes from `gameLogs` create with optional `bracketId` + `bracketMatchId`.
 
 **Request:**
 ```json
