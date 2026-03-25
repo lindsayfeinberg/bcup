@@ -25,10 +25,17 @@ function newEnvelope<T extends Record<string, unknown>>(data: T) {
 }
 
 function hasOutcomeKeys(match: BracketMatch): boolean {
-  return (
+  const hasWinner =
     Object.prototype.hasOwnProperty.call(match, "winnerProfileIds") &&
-    Object.prototype.hasOwnProperty.call(match, "loserProfileIds")
-  );
+    Array.isArray(match.winnerProfileIds) &&
+    match.winnerProfileIds.length > 0;
+  const hasLoser =
+    Object.prototype.hasOwnProperty.call(match, "loserProfileIds") &&
+    Array.isArray(match.loserProfileIds) &&
+    match.loserProfileIds.length > 0;
+
+  // Bye matches may be finalized with only a winner side (no loser keys).
+  return hasWinner || hasLoser;
 }
 
 function isPlaceholderMatch(match: BracketMatch): boolean {
@@ -198,19 +205,48 @@ export function applyGameLogOutcomeToBracketDoc(
       if (!isPlaceholderMatch(match)) continue;
       const feederIds = match.feederMatchIds ?? [];
       if (feederIds.length !== 2) continue;
-      if (match.participantProfileIds.length !== 0) continue;
 
       const feederA = findMatch(updated, feederIds[0]);
       const feederB = findMatch(updated, feederIds[1]);
-      if (!feederA || !feederB) continue;
-      if (!hasOutcomeKeys(feederA.match) || !hasOutcomeKeys(feederB.match)) continue;
 
-      // Convert placeholder to scheduled match.
-      delete (match as BracketMatch).feederMatchIds;
-      match.participantProfileIds = [
-        ...(feederA.match.winnerProfileIds ?? []),
-        ...(feederB.match.winnerProfileIds ?? []),
+      const feederAWinner =
+        feederA && hasOutcomeKeys(feederA.match)
+          ? feederA.match.winnerProfileIds ?? []
+          : [];
+      const feederBWinner =
+        feederB && hasOutcomeKeys(feederB.match)
+          ? feederB.match.winnerProfileIds ?? []
+          : [];
+
+      // Nothing new learned from feeder outcomes.
+      if (feederAWinner.length === 0 && feederBWinner.length === 0) continue;
+
+      // Merge any prefilled participants (e.g. from byes) with newly known winners.
+      const combined = [
+        ...(match.participantProfileIds ?? []),
+        ...feederAWinner,
+        ...feederBWinner,
       ];
+      match.participantProfileIds = [...new Set(combined)];
+
+      const bothFeedersPlayed =
+        feederAWinner.length > 0 && feederBWinner.length > 0;
+
+      const fullParticipantSetKnown =
+        match.participantProfileIds.length === bracket.teamSize * 2;
+
+      // Convert placeholder -> scheduled match once both feeder sides are determined.
+      if (bothFeedersPlayed || fullParticipantSetKnown) {
+        delete (match as BracketMatch).feederMatchIds;
+
+        // Prefer the deterministic full set when both feeders played.
+        if (bothFeedersPlayed) {
+          match.participantProfileIds = [
+            ...feederAWinner,
+            ...feederBWinner,
+          ];
+        }
+      }
     }
   }
 

@@ -174,9 +174,20 @@ struct ManualSeedView: View {
                 bracketId: bracketId,
                 teams: teams
             )
-            onFinalized()
-            dismiss()
+            await MainActor.run {
+                onFinalized()
+            }
         } catch {
+            let desc = error.localizedDescription.lowercased()
+            if desc.contains("already finalized") {
+                // If the bracket was finalized by the first tap (or elsewhere),
+                // treat a retry as success so the UI can close cleanly.
+                errorMessage = nil
+                await MainActor.run {
+                    onFinalized()
+                }
+                return
+            }
             errorMessage = error.localizedDescription
         }
     }

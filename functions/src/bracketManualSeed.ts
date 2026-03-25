@@ -3,6 +3,7 @@ import {HttpsError, onCall} from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
 import {validateRoundsStructure} from "./bracketModel.js";
 import {generateBracketRounds} from "./bracketSeeding.js";
+import type {BracketMatch} from "./bracketModel.js";
 
 const db = admin.firestore();
 const region = "us-central1";
@@ -242,6 +243,14 @@ export const finalizeManualBracket = onCall(
     // 7. Build rounds
     const rounds = buildManualRoundsFromTeams(bracketId, teams);
 
+    logger.info("finalizeManualBracket: built rounds", {
+      bracketId,
+      round1MatchCount: rounds[0]?.matches?.length,
+      round1MatchIds: rounds[0]?.matches?.map(
+        (m: BracketMatch) => m.matchId
+      ),
+    });
+
     // 8. Validate rounds
     const validation = validateRoundsStructure(rounds);
     if (!validation.valid) {
@@ -258,6 +267,10 @@ export const finalizeManualBracket = onCall(
     // 9. Update bracket
     const now = admin.firestore.FieldValue.serverTimestamp();
     try {
+      logger.info("finalizeManualBracket: rounds to write", {
+        bracketId,
+        roundsJSON: JSON.stringify(rounds),
+      });
       await bracketSnap.ref.update({
         rounds,
         status: "ACTIVE",

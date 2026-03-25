@@ -49,13 +49,14 @@ describe("padTeamsWithByes", () => {
     expect(r[1]).toEqual(["a"]);
   });
 
-  it("pads 6 teams to 8 with 2 byes at front", () => {
+  it("pads 6 teams to 8 with 2 byes distributed", () => {
     const teams = [["a"], ["b"], ["c"], ["d"], ["e"], ["f"]];
     const r = padTeamsWithByes(teams);
     expect(r).toHaveLength(8);
     expect(r[0]).toBeNull();
-    expect(r[1]).toBeNull();
-    expect(r[2]).toEqual(["a"]);
+    expect(r[2]).toBeNull();
+    expect(r[1]).toEqual(["a"]);
+    expect(r[3]).toEqual(["b"]);
   });
 });
 
@@ -89,18 +90,29 @@ describe("generateBracketRounds", () => {
     expect(rounds[1].matches).toHaveLength(1);
   });
 
-  it("3 teams — smallest (last) gets bye, 1 round-1 match", () => {
+  it("3 teams — bye is represented as a finalized round-1 bye match", () => {
     const rounds = generateBracketRounds(
       "b1", [["a"], ["b"], ["c"]]
     );
     const r1 = rounds.find((r) => r.roundNumber === 1);
-    expect(r1?.matches).toHaveLength(1);
-    expect(
-      r1?.matches[0].participantProfileIds
-    ).toContain("b");
-    expect(
-      r1?.matches[0].participantProfileIds
-    ).toContain("c");
+    expect(r1?.matches).toHaveLength(2);
+
+    const matchWithBC = r1?.matches.find((m) =>
+      m.participantProfileIds.includes("b") &&
+      m.participantProfileIds.includes("c")
+    );
+    expect(matchWithBC).toBeDefined();
+
+    const byeMatch = r1?.matches.find((m) =>
+      m.participantProfileIds.includes("a")
+    );
+    expect(byeMatch).toBeDefined();
+    expect(byeMatch?.winnerProfileIds).toEqual(["a"]);
+
+    const r2 = rounds.find((r) => r.roundNumber === 2);
+    expect(r2?.matches).toHaveLength(1);
+    // Round-2 placeholder participants get prefilled with the bye-side winner.
+    expect(r2?.matches[0].participantProfileIds).toEqual(["a"]);
   });
 
   it("2v2 match has 4 participants", () => {
@@ -121,3 +133,13 @@ describe("generateBracketRounds", () => {
     expect(result.valid).toBe(true);
   });
 });
+
+const bracketId = "test123";
+const teams = [["playerA"], ["playerB"], ["playerC"]];
+
+const rounds = generateBracketRounds(bracketId, teams);
+
+console.log("Round count:", rounds.length);
+console.log("Round 1 match count:", rounds[0]?.matches?.length);
+console.log("Round 1 matches:", JSON.stringify(rounds[0]?.matches, null, 2));
+console.log("Round 2 matches:", JSON.stringify(rounds[1]?.matches, null, 2));

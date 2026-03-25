@@ -285,7 +285,8 @@ describe("applyGameLogOutcomeToBracketDoc", () => {
 
     expect(afterM0.result.didUpdate).toBe(true);
     const placeholderAfterM0 = afterM0.updatedBracket.rounds[1].matches[0];
-    expect(placeholderAfterM0.participantProfileIds).toEqual([]);
+    // Placeholder participants get incrementally filled when only one feeder is played.
+    expect(placeholderAfterM0.participantProfileIds).toEqual(["a"]);
     expect(placeholderAfterM0.feederMatchIds).toEqual([m0, m1]);
     expect(afterM0.updatedBracket.status).toBe("ACTIVE");
 
@@ -316,6 +317,59 @@ describe("applyGameLogOutcomeToBracketDoc", () => {
     expect(finalMatch.winnerProfileIds).toEqual(["a"]);
     expect(finalMatch.loserProfileIds).toEqual(["c"]);
     expect(afterFinal.updatedBracket.status).toBe("COMPLETE");
+  });
+
+  it("completes placeholder participants with prefilled bye even if one feeder match is missing", () => {
+    const bracketId = "br1";
+    const byeFeederMatchId = "br1_r1_m0"; // missing from rounds[0].matches
+    const realFeederMatchId = "br1_r1_m1";
+    const placeholderMatchId = "br1_r2_m0";
+
+    const bracket = makeBracketDoc({
+      bracketId,
+      communityId: "c1",
+      status: "ACTIVE",
+      teamSize: 1,
+      rounds: [
+        {
+          roundNumber: 1,
+          matches: [
+            {
+              matchId: realFeederMatchId,
+              roundNumber: 1,
+              participantProfileIds: ["c", "d"],
+            },
+          ],
+        },
+        {
+          roundNumber: 2,
+          matches: [
+            {
+              matchId: placeholderMatchId,
+              roundNumber: 2,
+              participantProfileIds: ["b"], // prefilled bye-side winner
+              feederMatchIds: [byeFeederMatchId, realFeederMatchId],
+            },
+          ],
+        },
+      ],
+    });
+
+    const afterRealFeeder = applyGameLogOutcomeToBracketDoc(bracket, {
+      bracketMatchId: realFeederMatchId,
+      communityId: "c1",
+      participantProfileIds: ["c", "d"],
+      winnerProfileIds: ["c"],
+      loserProfileIds: ["d"],
+    });
+
+    expect(afterRealFeeder.result.didUpdate).toBe(true);
+    const updatedPlaceholder = afterRealFeeder.updatedBracket.rounds[1]
+      .matches[0];
+    expect(updatedPlaceholder.participantProfileIds).toEqual(["b", "c"]);
+    // When both participant sides are known, the placeholder converts to a scheduled match.
+    expect(updatedPlaceholder.feederMatchIds).toBeUndefined();
+    expect(afterRealFeeder.updatedBracket.status).toBe("ACTIVE");
   });
 });
 

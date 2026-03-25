@@ -97,11 +97,13 @@ export type MatchValidationError =
   | "FEEDER_MATCH_IDS_INVALID"
   | "PLACEHOLDER_PARTICIPANTS_NOT_EMPTY"
   | "PLACEHOLDER_MUST_NOT_HAVE_OUTCOME"
-  | "OUTCOME_REQUIRES_BOTH_SIDES"
+  // NOTE: Bye matches may be finalized with only one side (winner or loser).
   | "WINNERS_EMPTY"
   | "LOSERS_EMPTY"
   | "WINNER_NOT_SUBSET"
   | "LOSER_NOT_SUBSET"
+  | "WINNERS_DO_NOT_COVER_PARTICIPANTS"
+  | "LOSERS_DO_NOT_COVER_PARTICIPANTS"
   | "WINNER_LOSER_OVERLAP"
   | "WINNERS_HAS_DUPLICATES"
   | "LOSERS_HAS_DUPLICATES";
@@ -164,7 +166,9 @@ export function validateBracketMatch(
     }
 
     const participants = match.participantProfileIds;
-    if (!Array.isArray(participants) || participants.length !== 0) {
+    // Placeholder participants may be partially prefilled (e.g. bye-side winners),
+    // but outcomes must not exist yet.
+    if (!Array.isArray(participants)) {
       errors.push("PLACEHOLDER_PARTICIPANTS_NOT_EMPTY");
     }
 
@@ -177,7 +181,7 @@ export function validateBracketMatch(
 
   // participantProfileIds — scheduled match
   const participants = match.participantProfileIds;
-  if (!Array.isArray(participants) || participants.length < 2) {
+  if (!Array.isArray(participants) || participants.length < 1) {
     errors.push("PARTICIPANTS_TOO_FEW");
     return {valid: false, errors};
   }
@@ -190,12 +194,10 @@ export function validateBracketMatch(
   const hasLosers = "loserProfileIds" in match;
 
   if (!hasWinners && !hasLosers) {
+    if (participantSet.size < 2) {
+      errors.push("PARTICIPANTS_TOO_FEW");
+    }
     return {valid: errors.length === 0, errors};
-  }
-
-  if (hasWinners !== hasLosers) {
-    errors.push("OUTCOME_REQUIRES_BOTH_SIDES");
-    return {valid: false, errors};
   }
 
   // winnerProfileIds
@@ -227,6 +229,30 @@ export function validateBracketMatch(
         (id) => !participantSet.has(id)
       );
       if (notSubset) errors.push("LOSER_NOT_SUBSET");
+    }
+  }
+
+  // If only one side has outcome keys (e.g. bye match), ensure it covers all participants.
+  // This keeps bye match semantics consistent: winners/losers are the advancing side.
+  if (hasWinners && !hasLosers) {
+    const winnerSet = new Set((match.winnerProfileIds as string[]) ?? []);
+    const allCovered = [...participantSet].every((id) => winnerSet.has(id));
+    if (!allCovered) {
+      errors.push("WINNERS_DO_NOT_COVER_PARTICIPANTS");
+    }
+    if (participantSet.size < 2) {
+      // allow bye matches with a single "team" worth of participants
+    }
+  } else if (!hasWinners && hasLosers) {
+    const loserSet = new Set((match.loserProfileIds as string[]) ?? []);
+    const allCovered = [...participantSet].every((id) => loserSet.has(id));
+    if (!allCovered) {
+      errors.push("LOSERS_DO_NOT_COVER_PARTICIPANTS");
+    }
+  } else if (hasWinners && hasLosers) {
+    // When both sides exist, scheduled matches must have at least 2 participants total.
+    if (participantSet.size < 2) {
+      errors.push("PARTICIPANTS_TOO_FEW");
     }
   }
 

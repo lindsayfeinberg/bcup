@@ -716,11 +716,21 @@ final class CommunityService: CommunityServiceProtocol {
                 userInfo: [NSLocalizedDescriptionKey: "You are already in this league."]
             )
         case "INVALID_ARGUMENT":
-            return NSError(
-                domain: domain,
-                code: 400,
-                userInfo: [NSLocalizedDescriptionKey: "Check the information you entered and try again."]
-            )
+            // Some `INVALID_ARGUMENT` errors represent deterministic state (e.g. retries after success).
+            // Preserve the server message when we can, otherwise fall back to a generic guidance string.
+            if message.lowercased().contains("already finalized") {
+                return NSError(
+                    domain: domain,
+                    code: 400,
+                    userInfo: [NSLocalizedDescriptionKey: message]
+                )
+            } else {
+                return NSError(
+                    domain: domain,
+                    code: 400,
+                    userInfo: [NSLocalizedDescriptionKey: "Check the information you entered and try again."]
+                )
+            }
         case "UNAUTHENTICATED":
             return NSError(
                 domain: domain,
@@ -773,17 +783,23 @@ final class GameLogService: GameLogServiceProtocol {
         }
         let filename = "\(side)_\(UUID().uuidString).jpg"
         let path = "gamePhotos/\(communityId)/\(gameLogId)/\(filename)"
+        AppDebugLog.log("GameLogService.uploadGamePhoto: start path=\(path) bytes=\(data.count) uidPresent=\(!uid.isEmpty)")
         let ref = Storage.storage().reference().child(path)
         let metadata = StorageMetadata()
         metadata.contentType = contentType
         metadata.cacheControl = "public,max-age=31536000,immutable"
         metadata.customMetadata = ["createdByProfileId": uid]
         _ = try await ref.putDataAsync(data, metadata: metadata)
+        AppDebugLog.log("GameLogService.uploadGamePhoto: putDataAsync OK path=\(path)")
         let url = try await ref.downloadURL()
+        AppDebugLog.log("GameLogService.uploadGamePhoto: downloadURL OK host=\(url.host ?? "nil")")
         return url.absoluteString
     }
 
     func createGameLog(payload: GameLogCreatePayload) async throws {
+        AppDebugLog.log(
+            "GameLogService.createGameLog: start gameLogId=\(payload.gameLogId) communityId=\(payload.communityId) bracketId=\(payload.bracketId ?? "nil") bracketMatchId=\(payload.bracketMatchId ?? "nil") participants=\(payload.participantProfileIds.count) winners=\(payload.winnerProfileIds.count) losers=\(payload.loserProfileIds.count) photos=\(payload.photoUrls.count)"
+        )
         let now = Timestamp(date: Date())
         var data: [String: Any] = [
             "id": payload.gameLogId,
@@ -824,6 +840,7 @@ final class GameLogService: GameLogServiceProtocol {
             .collection("gameLogs")
             .document(payload.gameLogId)
             .setData(data)
+        AppDebugLog.log("GameLogService.createGameLog: setData OK gameLogId=\(payload.gameLogId)")
     }
 
     func updateGameLog(payload: GameLogUpdatePayload) async throws {

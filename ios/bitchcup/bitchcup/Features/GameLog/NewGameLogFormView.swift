@@ -46,6 +46,9 @@ struct NewGameLogFormView: View {
     let bracketContext: GameLogBracketContext?
 
     private var isBracketLinked: Bool { bracketContext != nil }
+    private var bracketParticipantProfileIdsInOrder: [String] {
+        bracketContext?.participantProfileIds ?? []
+    }
     private var bracketScopedParticipantProfileIds: Set<String> {
         Set(bracketContext?.participantProfileIds ?? [])
     }
@@ -238,6 +241,7 @@ struct NewGameLogFormView: View {
                                     .stroke(GameLogBrandColor.red, lineWidth: 2)
                             )
                             .buttonStyle(.plain)
+                            .disabled(isBracketLinked && !currentUserIsGameMember)
 
                             Button {
                                 outcome = .lost
@@ -258,6 +262,7 @@ struct NewGameLogFormView: View {
                                     .stroke(GameLogBrandColor.red, lineWidth: 2)
                             )
                             .buttonStyle(.plain)
+                            .disabled(isBracketLinked && !currentUserIsGameMember)
                         }
                     } header: {
                         Text("Outcome")
@@ -915,7 +920,8 @@ struct NewGameLogFormView: View {
         selectedWinnerProfileIds.count == teamSize &&
         selectedLoserProfileIds.count == teamSize &&
         hasRequiredPhotos &&
-        currentStatsValidationError == nil
+        currentStatsValidationError == nil &&
+        (!isBracketLinked || currentUserIsGameMember)
     }
 
     private var canSubmitWithoutPhotos: Bool {
@@ -923,7 +929,8 @@ struct NewGameLogFormView: View {
         outcome != nil &&
         selectedWinnerProfileIds.count == teamSize &&
         selectedLoserProfileIds.count == teamSize &&
-        currentStatsValidationError == nil
+        currentStatsValidationError == nil &&
+        (!isBracketLinked || currentUserIsGameMember)
     }
 
     private var submitDisableReasons: [String] {
@@ -947,6 +954,13 @@ struct NewGameLogFormView: View {
 
     private var currentUserId: String? {
         Auth.auth().currentUser?.uid
+    }
+
+    /// In bracket-linked flows, only a user who is actually one of the match participants may submit.
+    private var currentUserIsGameMember: Bool {
+        guard let myUserId = currentUserId else { return false }
+        guard isBracketLinked else { return true }
+        return bracketParticipantProfileIdsInOrder.contains(myUserId)
     }
 
     private var hasRequiredPhotos: Bool {
@@ -1134,18 +1148,48 @@ struct NewGameLogFormView: View {
         selectedWinnerProfileIds.removeAll()
         selectedLoserProfileIds.removeAll()
 
-        if isBracketLinked && !bracketScopedParticipantProfileIds.contains(myUserId) {
-            // In bracket-linked flows, only auto-lock the user if they are actually one of the match participants.
+        guard let outcome else { return }
+        if isBracketLinked && !bracketParticipantProfileIdsInOrder.contains(myUserId) {
+            // In bracket-linked flows, only auto-fill if the user is actually one of the match participants.
             return
         }
 
+        // If bracket-linked, the match participant list already contains the full 2-team set.
+        // We can deterministically split into "team A / team B" by ordering, then map them
+        // onto winners/losers based on whether the user tapped "I won" or "I lost".
+        if isBracketLinked, teamSize > 1 {
+            let ids = bracketParticipantProfileIdsInOrder
+            guard !ids.isEmpty else { return }
+
+            let teamA = Array(ids.prefix(teamSize))
+            let teamB = Array(ids.suffix(teamSize))
+            let myIndex = ids.firstIndex(of: myUserId)
+            let myTeamIsFirstHalf = (myIndex ?? 0) < teamSize
+
+            let myTeam = myTeamIsFirstHalf ? teamA : teamB
+            let otherTeam = myTeamIsFirstHalf ? teamB : teamA
+
+            switch outcome {
+            case .won:
+                selectedWinnerProfileIds = Set(myTeam)
+                selectedLoserProfileIds = Set(otherTeam)
+            case .lost:
+                selectedWinnerProfileIds = Set(otherTeam)
+                selectedLoserProfileIds = Set(myTeam)
+            }
+
+            // Ensure no overlap even if Firestore ordering is imperfect.
+            selectedWinnerProfileIds.subtract(selectedLoserProfileIds)
+            selectedLoserProfileIds.subtract(selectedWinnerProfileIds)
+            return
+        }
+
+        // Solo or non-bracket-linked flows: keep the old behavior of locking just the current user.
         switch outcome {
         case .won:
             selectedWinnerProfileIds.insert(myUserId)
         case .lost:
             selectedLoserProfileIds.insert(myUserId)
-        case .none:
-            break
         }
     }
 
@@ -1200,28 +1244,46 @@ struct NewGameLogFormView: View {
     }
 
     private func submitGameLog() async {
-        submitErrorMessage = nil
-        showOpenSettingsAction = false
+        let t0 = Date()
+        await MainActor.run {
+            submitErrorMessage = nil
+            showOpenSettingsAction = false
+        }
         guard canSubmitGameLog else { return }
         guard let uid = currentUserId else {
-            submitErrorMessage = "Sign in again, then try submitting."
+            await MainActor.run {
+                submitErrorMessage = "Sign in again, then try submitting."
+            }
             return
         }
+        AppDebugLog.log(
+            "submitGameLog: start bracketLinked=\(isBracketLinked) communityId=\(selectedCommunityId) teamSize=\(teamSize) gameType=\(selectedGameType.rawValue) bracketId=\(bracketContext?.bracketId ?? "nil") bracketMatchId=\(bracketContext?.bracketMatchId ?? "nil")"
+        )
         let participants = participantProfileIds
         let winners = Array(selectedWinnerProfileIds).sorted()
         let losers = Array(selectedLoserProfileIds).sorted()
         guard !participants.isEmpty else {
-            submitErrorMessage = "Select participants before submitting."
+            await MainActor.run {
+                submitErrorMessage = "Select participants before submitting."
+            }
             return
         }
         guard let frontData = frontPhotoData, let backData = backPhotoData else {
-            submitErrorMessage = "Capture both front and back photos before submitting."
+            await MainActor.run {
+                submitErrorMessage = "Capture both front and back photos before submitting."
+            }
             return
         }
+        AppDebugLog.log(
+            "submitGameLog: inputs participants=\(participants.count) winners=\(winners.count) losers=\(losers.count) frontBytes=\(frontData.count) backBytes=\(backData.count)"
+        )
         guard let combinedPhotoData = makeCombinedPhotoData(frontData: frontData, backData: backData) else {
-            submitErrorMessage = "Could not combine front and back photos. Please retake and try again."
+            await MainActor.run {
+                submitErrorMessage = "Could not combine front and back photos. Please retake and try again."
+            }
             return
         }
+        AppDebugLog.log("submitGameLog: combinedPhotoBytes=\(combinedPhotoData.count)")
 
         let gameLogId = AppFirestore.db().collection("gameLogs").document().documentID
         let communityId = selectedCommunityId
@@ -1234,16 +1296,20 @@ struct NewGameLogFormView: View {
         let notesPayload: String? = trimmedNotes.isEmpty ? nil : trimmedNotes
         let gameLogService = container.gameLogService
 
-        isSubmitting = true
-        defer { isSubmitting = false }
+        await MainActor.run { isSubmitting = true }
+        defer { Task { @MainActor in isSubmitting = false } }
 
         do {
+            AppDebugLog.log("submitGameLog: upload start gameLogId=\(gameLogId) path=gamePhotos/\(communityId)/\(gameLogId)/combined_*.jpg")
             let combinedUrl = try await gameLogService.uploadGamePhoto(
                 communityId: communityId,
                 gameLogId: gameLogId,
                 side: "combined",
                 data: combinedPhotoData,
                 contentType: "image/jpeg"
+            )
+            AppDebugLog.log(
+                "submitGameLog: upload success ms=\(Int(Date().timeIntervalSince(t0) * 1000)) urlHost=\(URL(string: combinedUrl)?.host ?? "nil")"
             )
 
             let payload = GameLogCreatePayload(
@@ -1265,17 +1331,36 @@ struct NewGameLogFormView: View {
                 battlePongStats: battlePongStats,
                 baseballStats: baseballStats
             )
+            AppDebugLog.log(
+                "submitGameLog: createGameLog start gameLogId=\(gameLogId) bracketLinked=\(isBracketLinked) bracketId=\(payload.bracketId ?? "nil") bracketMatchId=\(payload.bracketMatchId ?? "nil") photoUrls=\(payload.photoUrls.count)"
+            )
             try await gameLogService.createGameLog(payload: payload)
-            dismiss()
+            AppDebugLog.log("submitGameLog: createGameLog success ms=\(Int(Date().timeIntervalSince(t0) * 1000))")
+            await MainActor.run {
+                dismiss()
+            }
         } catch {
-            submitErrorMessage = error.localizedDescription
-            AppDebugLog.log("submitGameLog failed: \(error.localizedDescription)")
+            await MainActor.run {
+                submitErrorMessage = error.localizedDescription
+            }
+            let ns = error as NSError
+            AppDebugLog.log(
+                "submitGameLog failed ms=\(Int(Date().timeIntervalSince(t0) * 1000)) domain=\(ns.domain) code=\(ns.code) message=\(ns.localizedDescription)"
+            )
         }
     }
 
     private func handleSubmitTapped() async {
         submitErrorMessage = nil
         showOpenSettingsAction = false
+        AppDebugLog.log(
+            "handleSubmitTapped: bracketLinked=\(isBracketLinked) canSubmitWithoutPhotos=\(canSubmitWithoutPhotos) hasRequiredPhotos=\(hasRequiredPhotos) currentUserIsGameMember=\(currentUserIsGameMember)"
+        )
+
+        if isBracketLinked && !currentUserIsGameMember {
+            submitErrorMessage = "Only participants can log this match."
+            return
+        }
 
         guard canSubmitWithoutPhotos else {
             submitErrorMessage = "Complete required game details before submitting."
@@ -1284,6 +1369,7 @@ struct NewGameLogFormView: View {
 
         if !hasRequiredPhotos {
             let status = await CameraPermissionCoordinator.ensureVideoPermission()
+            AppDebugLog.log("handleSubmitTapped: cameraPermission=\(status)")
             switch status {
             case .authorized:
                 submitAfterCapture = true

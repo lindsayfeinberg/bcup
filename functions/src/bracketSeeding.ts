@@ -199,9 +199,36 @@ export function padTeamsWithByes(
   const target = nextPowerOfTwo(teams.length);
   const byeCount = target - teams.length;
 
-  // Insert bye slots at the front (best seeds get byes)
-  const byes: null[] = Array(byeCount).fill(null);
-  return [...byes, ...teams];
+  if (byeCount <= 0) return teams;
+
+  // Distribute bye slots so round-1 pairs never contain (null, null).
+  // This guarantees a concrete round-1 "bye match" exists for every bye and
+  // keeps bracket generation stable for later rounds that reference r1 matchIds.
+  //
+  // Strategy: place byes at even indices (0,2,4,...) so they pair with a team at
+  // the adjacent odd index (1,3,5,...). Fill remaining slots with teams in order.
+  // Top seeds (earliest teams) end up in the bye-paired slots first.
+  const slots: Array<string[] | null> = Array(target).fill(null);
+
+  // Mark bye slots at even indices.
+  let byesPlaced = 0;
+  for (let i = 0; i < slots.length && byesPlaced < byeCount; i += 2) {
+    slots[i] = null;
+    byesPlaced++;
+  }
+
+  // Fill remaining slots with teams in order.
+  let ti = 0;
+  for (let i = 0; i < slots.length; i++) {
+    if (i % 2 === 0 && i / 2 < byeCount) {
+      // reserved bye slot
+      continue;
+    }
+    slots[i] = teams[ti] ?? null;
+    ti++;
+  }
+
+  return slots;
 }
 
 // MARK: - Match ID generation
@@ -241,6 +268,10 @@ export function generateBracketRounds(
   const totalSlots = paddedSlots.length;
   const totalRounds = Math.log2(totalSlots);
 
+  // For round-2 placeholder prefill, we only need to know whether each round-1 match
+  // was a bye (advancing team known) vs a real match (advancing team unknown).
+  const round1AdvancingByMatchIndex: Array<string[] | null> = [];
+
   // slot[i] holds the current occupant of bracket slot i
   // null = bye slot, string[] = team profileIds
   // We track the "advancing" team for each slot across rounds
@@ -261,15 +292,32 @@ export function generateBracketRounds(
 
       if (r === 1) {
         if (team1 === null && team2 !== null) {
-          // team2 gets bye — advance team2, no match written
+          // team2 gets bye — create a "bye match" that is already finalized.
+          // This allows later-round placeholders (which reference r1 matchIds)
+          // to be advanced even though no real game log exists.
+          round1AdvancingByMatchIndex[m] = [...team2];
+          matches.push({
+            matchId,
+            roundNumber: r,
+            participantProfileIds: [...team2],
+            winnerProfileIds: [...team2],
+          } as BracketMatch);
           slotTeams[m] = team2;
           continue;
         } else if (team2 === null && team1 !== null) {
-          // team1 gets bye — advance team1, no match written
+          // team1 gets bye — create a finalized "bye match".
+          round1AdvancingByMatchIndex[m] = [...team1];
+          matches.push({
+            matchId,
+            roundNumber: r,
+            participantProfileIds: [...team1],
+            winnerProfileIds: [...team1],
+          } as BracketMatch);
           slotTeams[m] = team1;
           continue;
         } else if (team1 !== null && team2 !== null) {
           // Real round 1 match
+          round1AdvancingByMatchIndex[m] = null;
           matches.push({
             matchId,
             roundNumber: r,
@@ -282,10 +330,20 @@ export function generateBracketRounds(
         // Later rounds: placeholder match
         const feeder1 = makeMatchId(bracketId, r - 1, slot1);
         const feeder2 = makeMatchId(bracketId, r - 1, slot2);
+
+        // Prefill participants for round-2 based on any round-1 byes.
+        // For real round-1 matches, advancement is unknown until logged.
+        const prefilledParticipants =
+          r === 2
+            ? [
+                ...(round1AdvancingByMatchIndex[slot1] ?? []),
+                ...(round1AdvancingByMatchIndex[slot2] ?? []),
+              ]
+            : [];
         const match: BracketMatch = {
           matchId,
           roundNumber: r,
-          participantProfileIds: [],
+          participantProfileIds: prefilledParticipants,
           feederMatchIds: [feeder1, feeder2],
         };
         matches.push(match);
@@ -297,6 +355,15 @@ export function generateBracketRounds(
       allRounds.push({roundNumber: r, matches});
     }
   }
+
+  logger.info("generateBracketRounds: result", {
+    bracketId,
+    round1Matches: allRounds[0]?.matches?.map(m => ({
+      matchId: m.matchId,
+      participants: m.participantProfileIds,
+      winners: m.winnerProfileIds,
+    })),
+  });
 
   return allRounds;
 }

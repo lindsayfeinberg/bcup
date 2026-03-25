@@ -23,12 +23,23 @@ struct CommunityDetailView: View {
     @State private var bracketErrorMessage: String?
     @State private var createdBracketId: String?
     @State private var showBracketView = false
+    @State private var showManualSeedFlow = false
+    @State private var showCreateBracketPopup = false
     @State private var isLoadingFeed = false
     @State private var feedErrorMessage: String?
     @State private var feedCursor: FeedPageCursor?
     @State private var hasMoreFeed = false
     @State private var isLoadingMoreFeed = false
     @State private var loadMoreFeedErrorMessage: String?
+
+    private var bracketAccentColor: Color {
+        // Kept consistent with the existing community join/create flows.
+        Color(red: 180.0 / 255.0, green: 61.0 / 255.0, blue: 37.0 / 255.0)
+    }
+
+    private var bracketAccentTextDisabledColor: Color {
+        Color(red: 207.0 / 255.0, green: 106.0 / 255.0, blue: 84.0 / 255.0)
+    }
 
     private var displayCommunityName: String {
         let trimmed = communityName.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -87,6 +98,129 @@ struct CommunityDetailView: View {
                     }
                 }
                 .background(Color.white)
+                .overlay {
+                    if showCreateBracketPopup {
+                        ZStack {
+                            Color.black.opacity(0.35)
+                                .ignoresSafeArea()
+                                .onTapGesture {
+                                    bracketErrorMessage = nil
+                                    showCreateBracketPopup = false
+                                }
+
+                            VStack(alignment: .center, spacing: 18) {
+                                Text("Create Bracket")
+                                    .font(sectionHeaderFont)
+                                    .foregroundStyle(.black)
+                                    .multilineTextAlignment(.center)
+
+                                // Seed method picker
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text("Seeding method")
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+
+                                    Picker("Seeding", selection: $selectedSeedMethod) {
+                                        ForEach(SeedMethod.allCases) { method in
+                                            VStack(alignment: .leading) {
+                                                Text(method.displayName)
+                                            }
+                                            .tag(method)
+                                        }
+                                    }
+                                    .pickerStyle(.segmented)
+
+                                    Text(selectedSeedMethod.subtitle)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+
+                                // Team size picker
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text("Team size")
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+
+                                    Picker("Team size", selection: $selectedTeamSize) {
+                                        Text("1v1").tag(1)
+                                        Text("2v2").tag(2)
+                                        Text("3v3").tag(3)
+                                        Text("4v4").tag(4)
+                                    }
+                                    .pickerStyle(.segmented)
+
+                                    Text("Players per side in each match")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+
+                                // Error
+                                if let bracketErrorMessage {
+                                    Text(bracketErrorMessage)
+                                        .font(.caption)
+                                        .foregroundStyle(.red)
+                                }
+
+                                if !canCreateBracket {
+                                    Text("Need at least \(minMembersForBracket) members for \(selectedTeamSize)v\(selectedTeamSize).")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+
+                                // Footer buttons
+                                HStack(spacing: 12) {
+                                    Button("Cancel") {
+                                        bracketErrorMessage = nil
+                                        showCreateBracketPopup = false
+                                    }
+                                    .font(.custom("NeueHaasDisplay-Mediu", size: 22))
+                                    .foregroundStyle(bracketAccentColor)
+                                    .frame(maxWidth: .infinity, minHeight: 48)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                            .fill(Color.white)
+                                    )
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                            .stroke(bracketAccentColor, lineWidth: 2)
+                                    )
+                                    .buttonStyle(.plain)
+
+                                    Button {
+                                        Task { await createBracket() }
+                                    } label: {
+                                        HStack(spacing: 8) {
+                                            if isCreatingBracket {
+                                                ProgressView()
+                                                    .scaleEffect(0.8)
+                                            }
+                                            Text(isCreatingBracket ? "Creating..." : "Create Bracket")
+                                        }
+                                    }
+                                    .font(.custom("NeueHaasDisplay-Mediu", size: 22))
+                                    .foregroundStyle(.white)
+                                    .frame(maxWidth: .infinity, minHeight: 48)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                            .fill(bracketAccentColor)
+                                    )
+                                    .buttonStyle(.plain)
+                                    .disabled(!canCreateBracket || isCreatingBracket)
+                                }
+                            }
+                            .padding(20)
+                            .background(
+                                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                    .fill(Color.white)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                    .stroke(.white, lineWidth: 2)
+                            )
+                            .padding(.horizontal, 24)
+                        }
+                    }
+                }
             }
         }
         .background(Color.white)
@@ -97,77 +231,58 @@ struct CommunityDetailView: View {
         .task {
             await loadInitial()
         }
+        .fullScreenCover(isPresented: $showManualSeedFlow) {
+            if let bracketId = createdBracketId {
+                ManualBracketSeedingFlowView(
+                    bracketId: bracketId,
+                    teamSize: selectedTeamSize,
+                    members: members
+                ) {
+                    showManualSeedFlow = false
+                    showBracketView = true
+                }
+                .environmentObject(container)
+            } else {
+                EmptyView()
+            }
+        }
     }
 
     private var bracketPlaceholder: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Bracket")
+            Text("Bracket Manager")
                 .font(sectionHeaderFont)
                 .foregroundStyle(.black)
 
-            // Seed method picker
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Seeding method")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-
-                Picker("Seeding", selection: $selectedSeedMethod) {
-                    ForEach(SeedMethod.allCases) { method in
-                        VStack(alignment: .leading) {
-                            Text(method.displayName)
-                        }
-                        .tag(method)
-                    }
-                }
-                .pickerStyle(.segmented)
-
-                Text(selectedSeedMethod.subtitle)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            // Team size picker
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Team size")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                Picker("Team size", selection: $selectedTeamSize) {
-                    Text("1v1").tag(1)
-                    Text("2v2").tag(2)
-                    Text("3v3").tag(3)
-                    Text("4v4").tag(4)
-                }
-                .pickerStyle(.segmented)
-                Text("Players per side in each match")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            // Error
-            if let bracketErrorMessage {
-                Text(bracketErrorMessage)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-            }
-
-            // Create button
+            // Create bracket entrypoint (opens the popup).
             Button {
-                Task { await createBracket() }
+                bracketErrorMessage = nil
+                showCreateBracketPopup = true
             } label: {
-                HStack {
-                    if isCreatingBracket {
-                        ProgressView()
-                            .scaleEffect(0.8)
-                    }
-                    Text(isCreatingBracket ? "Creating..." : "Create Bracket")
-                        .fontWeight(.semibold)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-                .background(canCreateBracket ? Color.black : Color(.systemGray4))
-                .foregroundStyle(.white)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
+                Text(isCreatingBracket ? "Creating..." : "Create Bracket")
+                    .font(.custom("NeueHaasDisplay-Bold", size: 26))
+                    .frame(maxWidth: .infinity, minHeight: 48)
             }
-            .disabled(!canCreateBracket || isCreatingBracket)
+            .buttonStyle(.plain)
+            .foregroundStyle(
+                canCreateBracket
+                    ? .white
+                    : bracketAccentTextDisabledColor
+            )
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(bracketAccentColor)
+            )
+            .disabled(!canCreateBracket || isCreatingBracket || showCreateBracketPopup)
+            .opacity((isCreatingBracket || showCreateBracketPopup) ? 0.65 : 1.0)
+
+            Text("Active Brackets")
+                .font(sectionHeaderFont)
+                .foregroundStyle(.black)
+
+            Text("Past Brackets")
+                .font(sectionHeaderFont)
+                .foregroundStyle(.black)
 
             if !canCreateBracket {
                 Text("Need at least \(minMembersForBracket) members for \(selectedTeamSize)v\(selectedTeamSize).")
@@ -260,9 +375,6 @@ struct CommunityDetailView: View {
                 LazyVStack(spacing: 24) {
                     ForEach(feedRows) { row in
                         FeedCardView(row: row, showCommunityLabel: false)
-                            .onAppear {
-                                Task { await loadMoreFeedIfNeeded(currentRow: row) }
-                            }
                     }
                     feedFooter
                 }
@@ -302,7 +414,7 @@ struct CommunityDetailView: View {
             let page = try await container.feedService.fetchFeedPage(
                 forCommunityId: communityId,
                 cursor: nil,
-                pageSize: 20
+                pageSize: 2
             )
             feedRows = page.items
             feedCursor = page.nextCursor
@@ -328,7 +440,6 @@ struct CommunityDetailView: View {
 
     private func loadMoreFeedIfNeeded(currentRow: FeedRow) async {
         guard hasMoreFeed, !isLoadingMoreFeed else { return }
-        guard Set(feedRows.suffix(3).map(\.id)).contains(currentRow.id) else { return }
 
         isLoadingMoreFeed = true
         loadMoreFeedErrorMessage = nil
@@ -338,7 +449,7 @@ struct CommunityDetailView: View {
             let page = try await container.feedService.fetchFeedPage(
                 forCommunityId: communityId,
                 cursor: feedCursor,
-                pageSize: 20
+                pageSize: 2
             )
             let unique = Dictionary(grouping: (feedRows + page.items), by: \.gameLogId).compactMap { $0.value.first }
             feedRows = unique.sorted { lhs, rhs in
@@ -362,7 +473,14 @@ struct CommunityDetailView: View {
                 teamSize: selectedTeamSize
             )
             createdBracketId = bracketId
-            showBracketView = true
+            showCreateBracketPopup = false
+            if selectedSeedMethod == .manual {
+                showBracketView = false
+                showManualSeedFlow = true
+            } else {
+                showManualSeedFlow = false
+                showBracketView = true
+            }
         } catch {
             bracketErrorMessage = error.localizedDescription
         }
@@ -390,6 +508,7 @@ struct CommunityDetailView: View {
                 Text(loadMoreFeedErrorMessage)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+
                 Button("Retry loading more") {
                     Task {
                         if let last = feedRows.last {
@@ -397,10 +516,29 @@ struct CommunityDetailView: View {
                         }
                     }
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.plain)
+                .font(sectionHeaderFont)
+                .foregroundStyle(.black)
+                .underline()
+                .frame(maxWidth: .infinity)
+                .background(Color.white)
             }
+            .padding(.vertical, 8)
+        } else if hasMoreFeed && !feedRows.isEmpty {
+            Button("Show more games") {
+                Task {
+                    if let last = feedRows.last {
+                        await loadMoreFeedIfNeeded(currentRow: last)
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+            .font(Font.custom("NeueHaasDisplay-Light", size: 16))              // or Font.custom("NeueHaasDisplay-Light", size: 16)
+            .foregroundStyle(.secondary)    // gray
+            .underline()
             .frame(maxWidth: .infinity)
             .padding(.vertical, 8)
+            .background(Color.white)
         } else if !hasMoreFeed, !feedRows.isEmpty {
             Text("No older games.")
                 .font(.footnote)
@@ -409,6 +547,8 @@ struct CommunityDetailView: View {
                 .padding(.vertical, 8)
         }
     }
+    
+    
     private static let oddsFormatter: NumberFormatter = {
         let f = NumberFormatter()
         f.minimumFractionDigits = 3
