@@ -82,6 +82,7 @@ struct OnboardingProfileSetupView: View {
                 )
                 .tint(fieldAccentColor)
                 .textContentType(.name)
+                .accessibilityIdentifier("onboarding.profile.displayName")
 
             PhotosPicker(selection: $selectedPhotoItem, matching: .images, photoLibrary: .shared()) {
                 HStack {
@@ -127,6 +128,7 @@ struct OnboardingProfileSetupView: View {
             .buttonStyle(.plain)
             .disabled(isSaving || !isDisplayNameValid)
             .opacity(isSaving ? 0.65 : 1.0)
+            .accessibilityIdentifier("onboarding.profile.finish")
         }
         .padding(.horizontal, 20)
         .onChange(of: selectedPhotoItem) { _, newValue in

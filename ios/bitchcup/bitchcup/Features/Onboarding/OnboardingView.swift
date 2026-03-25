@@ -145,7 +145,7 @@ struct OnboardingView: View {
     }
 
     private func confirmAge() async {
-        guard let uid = Auth.auth().currentUser?.uid else { return }
+        guard let uid = Auth.auth().currentUser?.uid ?? sessionManager.currentUserId ?? UITestRuntime.currentUserIdFallback else { return }
         isBusy = true
         localError = nil
         do {
@@ -162,7 +162,7 @@ struct OnboardingView: View {
     }
 
     private func submitProfile() async {
-        guard let uid = Auth.auth().currentUser?.uid else { return }
+        guard let uid = Auth.auth().currentUser?.uid ?? sessionManager.currentUserId ?? UITestRuntime.currentUserIdFallback else { return }
         let name = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return }
 

@@ -150,6 +150,11 @@ This plan is sequenced to let two developers work in parallel with clear handoff
 **Depends on:** `[T11]`
 
 - `T12.1` Execute UAT in `dev` against acceptance criteria.
+  - Handoff note: UAT execution record is prepared at `docs/uat/dev-uat-t12.1.md`.
+  - Current state: setup/template complete; full checklist execution is still pending.
+  - Known blocker: embedded terminal instability for long `xcodebuild test` runs.
+  - Resume command (run from macOS Terminal, repo root):
+    - `xcodebuild test -project ios/bitchcup/bitchcup.xcodeproj -scheme bitchcup -destination "platform=iOS Simulator,id=99FC3826-FEA5-4BAB-B272-AAA8AC29E6D2" -only-testing:bitchcupUITests`
 - `T12.2` Fix launch-blocking defects and rerun regression suite.
 - `T12.3` Finalize App Store metadata and policy wording for alcohol context.
 - `T12.4` Create incident response and rollback runbooks.

@@ -91,6 +91,7 @@ struct FeedView: View {
                     .padding(.vertical, 10)
             }
             .buttonStyle(FeedPrimaryActionButtonStyle())
+            .accessibilityIdentifier("feed.leagues")
 
             Spacer(minLength: 28)
 
@@ -103,6 +104,7 @@ struct FeedView: View {
                     .padding(.vertical, 10)
             }
             .buttonStyle(FeedPrimaryActionButtonStyle())
+            .accessibilityIdentifier("feed.logGame")
         }
         .padding(.horizontal, 8)
         .padding(.bottom)

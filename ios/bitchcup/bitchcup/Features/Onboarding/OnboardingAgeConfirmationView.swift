@@ -24,6 +24,7 @@ struct OnboardingAgeConfirmationView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 16)
             }
+            .accessibilityIdentifier("onboarding.age.confirm")
             .buttonStyle(AgeConfirmationPrimaryTextButtonStyle())
             .padding(.horizontal)
 

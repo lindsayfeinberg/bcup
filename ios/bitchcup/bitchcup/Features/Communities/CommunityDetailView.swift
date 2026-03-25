@@ -209,6 +209,7 @@ struct CommunityDetailView: View {
                                     )
                                     .buttonStyle(.plain)
                                     .disabled(!canCreateBracket || isCreatingBracket)
+                                    .accessibilityIdentifier("community.popup.createBracket")
                                 }
                             }
                             .padding(20)
@@ -293,6 +294,7 @@ struct CommunityDetailView: View {
             )
             .disabled(!canCreateBracket || isCreatingBracket || showCreateBracketPopup)
             .opacity((isCreatingBracket || showCreateBracketPopup) ? 0.65 : 1.0)
+            .accessibilityIdentifier("community.createBracket")
 
             Text("Active Brackets")
                 .font(sectionHeaderFont)
@@ -620,6 +622,7 @@ struct CommunityDetailView: View {
             )
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier("community.bracket.\(bracket.bracketId)")
     }
 
     private static func mapFeedError(_ error: Error) -> String {

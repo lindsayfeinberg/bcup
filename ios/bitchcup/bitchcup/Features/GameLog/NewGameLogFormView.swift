@@ -243,6 +243,7 @@ struct NewGameLogFormView: View {
                             )
                             .buttonStyle(.plain)
                             .disabled(isBracketLinked && !currentUserIsGameMember)
+                            .accessibilityIdentifier("gamelog.outcome.won")
 
                             Button {
                                 outcome = .lost
@@ -264,6 +265,7 @@ struct NewGameLogFormView: View {
                             )
                             .buttonStyle(.plain)
                             .disabled(isBracketLinked && !currentUserIsGameMember)
+                            .accessibilityIdentifier("gamelog.outcome.lost")
                         }
                     } header: {
                         Text("Outcome")
@@ -408,6 +410,7 @@ struct NewGameLogFormView: View {
                         }
                         .buttonStyle(SubmitGameButtonStyle())
                         .disabled(!canSubmitWithoutPhotos || isSubmitting)
+                        .accessibilityIdentifier("gamelog.submit")
                     }
                 }
                 .scrollContentBackground(.hidden)
@@ -635,6 +638,7 @@ struct NewGameLogFormView: View {
                 }
             }
             .disabled(!hasEnoughMembers)
+            .accessibilityIdentifier("gamelog.dropdown.\(title.replacingOccurrences(of: " ", with: "_"))")
 
             if isOpen.wrappedValue {
                 let filtered = participants.filter { member in
@@ -699,6 +703,7 @@ struct NewGameLogFormView: View {
                             }
                             .buttonStyle(.plain)
                             .disabled(rowDisabled)
+                            .accessibilityIdentifier("gamelog.participant.\(profileId)")
                         }
                     }
                 }
@@ -954,7 +959,7 @@ struct NewGameLogFormView: View {
     }
 
     private var currentUserId: String? {
-        Auth.auth().currentUser?.uid
+        Auth.auth().currentUser?.uid ?? container.authService.currentUserId ?? UITestRuntime.currentUserIdFallback
     }
 
     /// In bracket-linked flows, only a user who is actually one of the match participants may submit.

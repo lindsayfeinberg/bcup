@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
@@ -7,16 +8,24 @@ struct ContentView: View {
 
     var body: some View {
         Group {
-            switch sessionManager.sessionState {
-            case .loading:
-                LoadingView(message: "Checking session...")
-            case .unauthenticated, .authenticated:
-                switch router.route {
-                case .onboarding:
-                    OnboardingView()
-                case .home:
-                    FeedView()
+            if UITestRuntime.isEnabled {
+                switch UITestRuntime.scenario {
+                case .gameLog:
+                    NavigationStack {
+                        NewGameLogFormView(
+                            frontPhotoData: UIImage(systemName: "photo")?.jpegData(compressionQuality: 0.8),
+                            backPhotoData: UIImage(systemName: "photo")?.jpegData(compressionQuality: 0.8)
+                        )
+                    }
+                case .bracket:
+                    NavigationStack {
+                        CommunityDetailView(communityId: "ui-community-1")
+                    }
+                default:
+                    onboardingOrHomeContent
                 }
+            } else {
+                onboardingOrHomeContent
             }
         }
         .onAppear {
@@ -32,6 +41,21 @@ struct ContentView: View {
             guard newPhase == .active else { return }
             Task {
                 await sessionManager.refreshOnSceneBecameActive()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var onboardingOrHomeContent: some View {
+        switch sessionManager.sessionState {
+        case .loading:
+            LoadingView(message: "Checking session...")
+        case .unauthenticated, .authenticated:
+            switch router.route {
+            case .onboarding:
+                OnboardingView()
+            case .home:
+                FeedView()
             }
         }
     }

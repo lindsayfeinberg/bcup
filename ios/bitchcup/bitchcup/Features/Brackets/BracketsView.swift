@@ -359,7 +359,7 @@ private struct BracketMatchRow: View {
     }
 
     private var currentUserId: String? {
-        Auth.auth().currentUser?.uid
+        Auth.auth().currentUser?.uid ?? UITestRuntime.currentUserIdFallback
     }
 
     /// Treat a match as "played" when it has either a winner or a loser side.

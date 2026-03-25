@@ -86,6 +86,14 @@ struct bitchcupApp: App {
 
     init() {
         AppDebugLog.log("bitchcupApp.init: creating router, container, sessionManager")
+        if let scenario = UITestRuntime.scenario {
+            let (container, router, sessionManager) = UITestContainerFactory.makeContainer(for: scenario)
+            _router = StateObject(wrappedValue: router)
+            _container = StateObject(wrappedValue: container)
+            _sessionManager = StateObject(wrappedValue: sessionManager)
+            return
+        }
+
         let router = AppRouter()
         let container = DependencyContainer()
         _router = StateObject(wrappedValue: router)

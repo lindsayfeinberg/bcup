@@ -23,21 +23,70 @@ final class bitchcupUITests: XCTestCase {
     }
 
     @MainActor
-    func testExample() throws {
-        // UI tests must launch the application that they test.
-        let app = XCUIApplication()
-        app.launch()
+    func testOnboardingCriticalPath() throws {
+        let app = launchApp(scenario: "onboarding")
 
-        // Use XCTAssert and related functions to verify your tests produce the correct results.
+        let ageConfirmButton = app.buttons["onboarding.age.confirm"]
+        XCTAssertTrue(ageConfirmButton.waitForExistence(timeout: 5))
+        ageConfirmButton.tap()
+
+        let displayNameField = app.textFields["onboarding.profile.displayName"]
+        XCTAssertTrue(displayNameField.waitForExistence(timeout: 5))
+        displayNameField.tap()
+        displayNameField.typeText("UITest User")
+
+        let finishButton = app.buttons["onboarding.profile.finish"]
+        XCTAssertTrue(finishButton.exists)
+        finishButton.tap()
+
+        XCTAssertTrue(app.buttons["feed.logGame"].waitForExistence(timeout: 5))
     }
 
     @MainActor
-    func testLaunchPerformance() throws {
-        if #available(macOS 10.15, iOS 13.0, tvOS 13.0, watchOS 7.0, *) {
-            // This measures how long it takes to launch your application.
-            measure(metrics: [XCTApplicationLaunchMetric()]) {
-                XCUIApplication().launch()
-            }
-        }
+    func testGameLogCriticalPath() throws {
+        let app = launchApp(scenario: "gameLog")
+
+        let wonButton = app.buttons["gamelog.outcome.won"]
+        XCTAssertTrue(wonButton.waitForExistence(timeout: 5))
+        wonButton.tap()
+
+        let opponentsDropdown = app.buttons["gamelog.dropdown.Opponents_(Losers)"]
+        XCTAssertTrue(opponentsDropdown.waitForExistence(timeout: 5))
+        opponentsDropdown.tap()
+
+        let opponentRow = app.buttons["gamelog.participant.ui-opponent-1"]
+        XCTAssertTrue(opponentRow.waitForExistence(timeout: 5))
+        opponentRow.tap()
+
+        XCTAssertTrue(app.buttons["gamelog.submit"].exists)
+    }
+
+    @MainActor
+    func testBracketCriticalPath() throws {
+        let app = launchApp(scenario: "bracket")
+
+        let createBracketButton = app.buttons["community.createBracket"]
+        XCTAssertTrue(createBracketButton.waitForExistence(timeout: 5))
+        createBracketButton.tap()
+
+        let popupCreateButton = app.buttons["community.popup.createBracket"]
+        XCTAssertTrue(popupCreateButton.waitForExistence(timeout: 5))
+        popupCreateButton.tap()
+
+        let createdBracketRow = app.buttons["community.bracket.ui-bracket-1"]
+        XCTAssertTrue(createdBracketRow.waitForExistence(timeout: 5))
+        createdBracketRow.tap()
+
+        XCTAssertTrue(app.staticTexts["Bracket"].waitForExistence(timeout: 5))
+    }
+
+    @discardableResult
+    private func launchApp(scenario: String) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments += ["UI_TESTING"]
+        app.launchEnvironment["UI_TEST_SCENARIO"] = scenario
+        app.launchEnvironment["UI_TEST_USER_ID"] = "ui-test-user"
+        app.launch()
+        return app
     }
 }
