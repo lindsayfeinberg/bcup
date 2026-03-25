@@ -35,6 +35,7 @@ protocol UserServiceProtocol {
 struct CommunityMemberRosterRow: Identifiable {
     let profileId: String
     let displayName: String
+    let profilePhotoUrl: String?
     let communityOdds: Double
     let communityGamesPlayed: Int
     var id: String { profileId }
@@ -47,6 +48,7 @@ protocol CommunityServiceProtocol {
         pageSize: Int
     ) async throws -> PagedResponse<[(communityId: String, name: String)], CommunitiesPageCursor>
     func fetchMembers(communityId: String) async throws -> [CommunityMemberRosterRow]
+    func fetchBrackets(communityId: String) async throws -> [BracketListItem]
     func createCommunity(name: String) async throws -> (communityId: String, inviteCode: String, inviteLink: String)
     func joinCommunity(inviteCode: String) async throws -> String
     func previewJoinCommunity(inviteCode: String) async throws -> CommunityJoinPreview
@@ -208,6 +210,17 @@ protocol BracketServiceProtocol {
         bracketId: String,
         teams: [[String]]
     ) async throws
+}
+
+struct BracketListItem: Identifiable, Hashable {
+    let bracketId: String
+    let communityId: String
+    let seedMethod: SeedMethod
+    let status: String
+    let teamSize: Int
+    let createdAt: Date?
+
+    var id: String { bracketId }
 }
 // MARK: - Container
 
@@ -540,10 +553,12 @@ final class CommunityService: CommunityServiceProtocol {
                 ?? 0
 
             let displayNameFromMembership = membershipData["displayName"] as? String
+            let profilePhotoUrlFromMembership = membershipData["profilePhotoUrl"] as? String
             if let displayNameFromMembership, !displayNameFromMembership.isEmpty {
                 members.append(CommunityMemberRosterRow(
                     profileId: profileId,
                     displayName: displayNameFromMembership,
+                    profilePhotoUrl: profilePhotoUrlFromMembership,
                     communityOdds: communityOdds,
                     communityGamesPlayed: communityGamesPlayed
                 ))
@@ -557,9 +572,11 @@ final class CommunityService: CommunityServiceProtocol {
                     .document(profileId)
                     .getDocument()
                 let displayName = profileDoc.data()?["displayName"] as? String ?? ""
+                let profilePhotoUrl = profileDoc.data()?["profilePhotoUrl"] as? String
                 members.append(CommunityMemberRosterRow(
                     profileId: profileId,
                     displayName: displayName,
+                    profilePhotoUrl: profilePhotoUrl,
                     communityOdds: communityOdds,
                     communityGamesPlayed: communityGamesPlayed
                 ))
@@ -567,12 +584,45 @@ final class CommunityService: CommunityServiceProtocol {
                 members.append(CommunityMemberRosterRow(
                     profileId: profileId,
                     displayName: "",
+                    profilePhotoUrl: profilePhotoUrlFromMembership,
                     communityOdds: communityOdds,
                     communityGamesPlayed: communityGamesPlayed
                 ))
             }
         }
         return members
+    }
+
+    func fetchBrackets(communityId: String) async throws -> [BracketListItem] {
+        let db = AppFirestore.db()
+        let snapshot = try await db
+            .collection("brackets")
+            .whereField("communityId", isEqualTo: communityId)
+            .order(by: "createdAt", descending: true)
+            .getDocuments()
+
+        return snapshot.documents.compactMap { doc in
+            let d = doc.data()
+            guard let seedMethodRaw = d["seedMethod"] as? String,
+                  let seedMethod = SeedMethod(rawValue: seedMethodRaw),
+                  let status = d["status"] as? String
+            else {
+                return nil
+            }
+
+            let teamSize = (d["teamSize"] as? Int)
+                ?? (d["teamSize"] as? Double).map(Int.init)
+                ?? 1
+            let createdAt = (d["createdAt"] as? Timestamp)?.dateValue()
+            return BracketListItem(
+                bracketId: doc.documentID,
+                communityId: communityId,
+                seedMethod: seedMethod,
+                status: status,
+                teamSize: teamSize,
+                createdAt: createdAt
+            )
+        }
     }
 
     func createCommunity(name: String) async throws -> (communityId: String, inviteCode: String, inviteLink: String) {

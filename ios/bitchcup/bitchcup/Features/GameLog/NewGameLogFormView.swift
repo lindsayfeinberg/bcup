@@ -3,11 +3,14 @@ import FirebaseAuth
 import FirebaseFirestore
 import UIKit
 
-/// Brand reds for the game log form. `formLightRed` is a softer tint than join-flow coral for headers and chips.
+/// Brand colors for the game log form.
 private enum GameLogBrandColor {
-    static let red = Color(red: 180.0 / 255.0, green: 61.0 / 255.0, blue: 37.0 / 255.0)
-    /// Section headers above widgets, in-widget coral labels, league picker accents, opponent chip text/stroke/fill tint.
-    static let formLightRed = Color(red: 232.0 / 255.0, green: 162.0 / 255.0, blue: 145.0 / 255.0)
+    static let red = Color.black
+    static let formLightRed = Color.black
+    static let pillDark = Color(red: 8.0 / 255.0, green: 56.0 / 255.0, blue: 84.0 / 255.0)
+    static let pillBackground = Color(red: 62.0 / 255.0, green: 132.0 / 255.0, blue: 173.0 / 255.0)
+    static let wonGreen = Color(red: 0.0, green: 128.0 / 255.0, blue: 0.0)
+    static let lostRed = Color(red: 180.0 / 255.0, green: 61.0 / 255.0, blue: 37.0 / 255.0)
 }
 
 /// When non-nil, `NewGameLogFormView` is driven by a specific bracket match.
@@ -35,7 +38,7 @@ struct NewGameLogFormView: View {
 
     /// Background behind the form.
     private static let formBackgroundSoftRed = Color.white
-    private static let widgetOutlineColor = GameLogBrandColor.red
+    private static let widgetOutlineColor = Color(.systemGray4)
 
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var container: DependencyContainer
@@ -144,12 +147,6 @@ struct NewGameLogFormView: View {
                 Form {
                     Section {
                         VStack(alignment: .leading, spacing: 12) {
-                            Text("Game Photos")
-                                .font(AppFont.title)
-                                .foregroundStyle(GameLogBrandColor.red)
-                                .frame(maxWidth: .infinity)
-                                .multilineTextAlignment(.center)
-
                             concatenatedPhotoStrip(front: frontPhotoData, back: backPhotoData)
 
                             HStack {
@@ -174,6 +171,10 @@ struct NewGameLogFormView: View {
                                 Spacer()
                             }
                         }
+                    } header: {
+                        Text("Game Photos")
+                            .font(Self.widgetTitleFont)
+                            .foregroundStyle(.black)
                     }
                     .listRowBackground(widgetOutlineBackground)
 
@@ -182,7 +183,7 @@ struct NewGameLogFormView: View {
                             ForEach(communities, id: \.communityId) { community in
                                 Text(community.name)
                                     .font(AppFont.body)
-                                    .foregroundStyle(GameLogBrandColor.formLightRed)
+                                    .foregroundStyle(.black)
                                     .tag(community.communityId)
                             }
                         } label: {
@@ -230,15 +231,15 @@ struct NewGameLogFormView: View {
                                     .font(AppFont.buttonProminent)
                                     .frame(maxWidth: .infinity)
                             }
-                            .foregroundStyle(outcome == .won ? .white : GameLogBrandColor.red)
+                            .foregroundStyle(outcome == .won ? .white : GameLogBrandColor.wonGreen)
                             .padding(.vertical, 10)
                             .background(
                                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .fill(outcome == .won ? GameLogBrandColor.red : .white)
+                                    .fill(outcome == .won ? GameLogBrandColor.wonGreen : .white)
                             )
                             .overlay(
                                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .stroke(GameLogBrandColor.red, lineWidth: 2)
+                                    .stroke(GameLogBrandColor.wonGreen, lineWidth: 2)
                             )
                             .buttonStyle(.plain)
                             .disabled(isBracketLinked && !currentUserIsGameMember)
@@ -251,15 +252,15 @@ struct NewGameLogFormView: View {
                                     .font(AppFont.buttonProminent)
                                     .frame(maxWidth: .infinity)
                             }
-                            .foregroundStyle(outcome == .lost ? .white : GameLogBrandColor.red)
+                            .foregroundStyle(outcome == .lost ? .white : GameLogBrandColor.lostRed)
                             .padding(.vertical, 10)
                             .background(
                                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .fill(outcome == .lost ? GameLogBrandColor.red : .white)
+                                    .fill(outcome == .lost ? GameLogBrandColor.lostRed : .white)
                             )
                             .overlay(
                                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .stroke(GameLogBrandColor.red, lineWidth: 2)
+                                    .stroke(GameLogBrandColor.lostRed, lineWidth: 2)
                             )
                             .buttonStyle(.plain)
                             .disabled(isBracketLinked && !currentUserIsGameMember)
@@ -276,7 +277,7 @@ struct NewGameLogFormView: View {
                         Stepper(value: $teamSize, in: range, step: 1) {
                             Text("\(teamSize)")
                                 .font(AppFont.headline)
-                                .foregroundStyle(GameLogBrandColor.red)
+                                .foregroundStyle(.black)
                         }
                         .disabled(isBracketLinked)
                     } header: {
@@ -372,12 +373,12 @@ struct NewGameLogFormView: View {
                         }
                         if let statsError = currentStatsValidationError {
                             Text(statsError)
-                                .foregroundStyle(.red)
+                                .foregroundStyle(.black)
                                 .font(AppFont.footnote)
                         }
                         if let submitErrorMessage {
                             Text(submitErrorMessage)
-                                .foregroundStyle(.red)
+                                .foregroundStyle(.black)
                                 .font(AppFont.footnote)
                             if showOpenSettingsAction {
                                 Button {
@@ -496,7 +497,7 @@ struct NewGameLogFormView: View {
                     Section {
                         Text("League doesn’t have enough members for a team of size \(teamSize).")
                             .font(AppFont.subheadline)
-                            .foregroundStyle(.red)
+                            .foregroundStyle(.black)
                     }
                     .listRowBackground(widgetOutlineBackground)
                 }
@@ -525,7 +526,7 @@ struct NewGameLogFormView: View {
                     dropdownBlock(
                         title: "Opponents (\(isMySideWinners ? "Losers" : "Winners"))",
                         includeTitleAboveButton: false,
-                        buttonTitleForeground: GameLogBrandColor.red,
+                        buttonTitleForeground: .black,
                         selectedCount: opponentSet.count,
                         query: $opponentQuery,
                         isOpen: $isOpponentDropdownOpen,
@@ -576,16 +577,16 @@ struct NewGameLogFormView: View {
                     ForEach(selectedParticipants, id: \.profileId) { member in
                         Text(member.displayName.isEmpty ? "Unknown" : member.displayName)
                             .font(AppFont.subheadlineBold)
-                            .foregroundStyle(GameLogBrandColor.formLightRed)
+                            .foregroundStyle(GameLogBrandColor.pillDark)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 7)
                             .background(
                                 Capsule(style: .continuous)
-                                    .fill(GameLogBrandColor.formLightRed.opacity(0.22))
+                                    .fill(GameLogBrandColor.pillBackground.opacity(0.22))
                             )
                             .overlay(
                                 Capsule(style: .continuous)
-                                    .strokeBorder(GameLogBrandColor.formLightRed, lineWidth: 1)
+                                    .strokeBorder(GameLogBrandColor.pillDark, lineWidth: 1)
                             )
                     }
                 }
@@ -628,9 +629,9 @@ struct NewGameLogFormView: View {
                     Spacer()
                     Text("\(selectedCount)/\(teamSize)")
                         .font(AppFont.subheadline)
-                        .foregroundStyle(GameLogBrandColor.red)
+                        .foregroundStyle(.black)
                     Image(systemName: isOpen.wrappedValue ? "chevron.up" : "chevron.down")
-                        .foregroundStyle(GameLogBrandColor.red)
+                        .foregroundStyle(.black)
                 }
             }
             .disabled(!hasEnoughMembers)
@@ -664,7 +665,7 @@ struct NewGameLogFormView: View {
                                     if onOppositeSide {
                                         HStack(spacing: 12) {
                                             Image(systemName: "xmark.circle.fill")
-                                                .foregroundStyle(.red)
+                                                .foregroundStyle(.black)
                                             Text(member.displayName.isEmpty ? "Unknown" : member.displayName)
                                                 .font(Self.participantPickerRowNameFont)
                                                 .foregroundStyle(.primary)
@@ -676,7 +677,7 @@ struct NewGameLogFormView: View {
                                     } else {
                                         Text(member.displayName.isEmpty ? "Unknown" : member.displayName)
                                             .font(Self.participantPickerRowNameFont)
-                                            .foregroundStyle(isSelected ? GameLogBrandColor.formLightRed : .primary)
+                                            .foregroundStyle(isSelected ? GameLogBrandColor.pillDark : .black)
                                             .frame(maxWidth: .infinity, alignment: .leading)
                                     }
                                 }
@@ -686,13 +687,13 @@ struct NewGameLogFormView: View {
                                 .background {
                                     if !onOppositeSide, isSelected {
                                         RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                            .fill(GameLogBrandColor.formLightRed.opacity(0.22))
+                                            .fill(GameLogBrandColor.pillBackground.opacity(0.22))
                                     }
                                 }
                                 .overlay {
                                     if !onOppositeSide, isSelected {
                                         RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                            .strokeBorder(GameLogBrandColor.formLightRed, lineWidth: 1)
+                                            .strokeBorder(GameLogBrandColor.pillDark, lineWidth: 1)
                                     }
                                 }
                             }
@@ -729,7 +730,7 @@ struct NewGameLogFormView: View {
 
             summaryStatsDetailContent
         }
-        .foregroundStyle(GameLogBrandColor.red)
+        .foregroundStyle(.black)
     }
 
     @ViewBuilder
@@ -852,7 +853,7 @@ struct NewGameLogFormView: View {
                 let total = pongTotalCups
                 Text("Pong total: \(total) / \(pongCupMode.rawValue)")
                     .font(AppFont.footnote)
-                    .foregroundColor(total == pongCupMode.rawValue ? .secondary : .red)
+                    .foregroundColor(total == pongCupMode.rawValue ? .secondary : .black)
             }
         }
     }
@@ -1541,9 +1542,11 @@ struct NewGameLogFormView: View {
 
 /// White fill, red label and border — primary action on the game log form.
 private struct SubmitGameButtonStyle: ButtonStyle {
+    private static let submitRed = Color(red: 180.0 / 255.0, green: 61.0 / 255.0, blue: 37.0 / 255.0)
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .foregroundStyle(GameLogBrandColor.red)
+            .foregroundStyle(Self.submitRed)
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
             .background(
@@ -1552,7 +1555,7 @@ private struct SubmitGameButtonStyle: ButtonStyle {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(GameLogBrandColor.red, lineWidth: 2)
+                    .stroke(Self.submitRed, lineWidth: 2)
             )
             .opacity(configuration.isPressed ? 0.85 : 1.0)
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
@@ -1561,18 +1564,20 @@ private struct SubmitGameButtonStyle: ButtonStyle {
 
 /// Same treatment as `FeedPrimaryActionButtonStyle` (feed bottom actions).
 private struct BrandPrimaryButtonStyle: ButtonStyle {
+    private static let retakeRed = Color(red: 180.0 / 255.0, green: 61.0 / 255.0, blue: 37.0 / 255.0)
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .foregroundStyle(.white)
+            .foregroundStyle(Self.retakeRed)
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
             .background(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(GameLogBrandColor.red)
+                    .fill(Color.white)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(Color.white, lineWidth: 2)
+                    .stroke(Self.retakeRed, lineWidth: 2)
             )
             .opacity(configuration.isPressed ? 0.85 : 1.0)
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)

@@ -3,16 +3,25 @@ import FirebaseAuth
 import FirebaseFirestore
 
 struct BracketsView: View {
+    private enum BracketViewMode {
+        case rounds
+        case bracket
+    }
+
     let bracketId: String
-    let seedMethod: SeedMethod
-    let teamSize: Int
+    let seedMethod: SeedMethod?
+    let teamSize: Int?
     let members: [CommunityMemberRosterRow]
 
     @EnvironmentObject private var container: DependencyContainer
+    @State private var viewMode: BracketViewMode = .rounds
     @State private var bracketStatus: String = "DRAFT"
     @State private var bracketRounds: [BracketRoundSnapshot] = []
     @State private var bracketCommunityId: String = ""
     @State private var bracketTeamSize: Int = 1
+    @State private var bracketSeedMethod: SeedMethod?
+    @State private var bracketMembers: [CommunityMemberRosterRow]
+    @State private var isLoadingBracketMembers = false
     @State private var showManualSeed = false
     @State private var isFinalized = false
     @State private var listener: ListenerRegistration?
@@ -29,69 +38,48 @@ struct BracketsView: View {
         return dict
     }
 
+    private var resolvedSeedMethod: SeedMethod? {
+        bracketSeedMethod ?? seedMethod
+    }
+
+    init(
+        bracketId: String,
+        seedMethod: SeedMethod? = nil,
+        teamSize: Int? = nil,
+        members: [CommunityMemberRosterRow] = []
+    ) {
+        self.bracketId = bracketId
+        self.seedMethod = seedMethod
+        self.teamSize = teamSize
+        self.members = members
+        _bracketSeedMethod = State(initialValue: seedMethod)
+        _bracketTeamSize = State(initialValue: teamSize ?? 1)
+        _bracketMembers = State(initialValue: members)
+    }
+
     var body: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "trophy.fill")
-                .font(.system(size: 48))
-                .foregroundStyle(.yellow)
+        VStack(spacing: 12) {
+            toggleRow
 
-            Text("Bracket Created!")
-                .font(.title2)
-                .fontWeight(.bold)
-
-            if seedMethod == .manual && !isFinalized {
-                Text("Assign players to each team to activate this bracket.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal)
-
-                Button {
-                    showManualSeed = true
-                } label: {
-                    Text("Assign teams")
-                        .fontWeight(.semibold)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                        .background(Color.black)
-                        .foregroundStyle(.white)
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
+            if viewMode == .bracket {
+                VStack(spacing: 8) {
+                    Spacer(minLength: 0)
+                    Text("Coming soon :)")
+                        .font(AppFont.emptyStateTitle)
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
                 }
-                .padding(.horizontal)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                if bracketStatus == "ACTIVE" {
-                    bracketMatchesSection
-                } else if bracketStatus == "COMPLETE" {
-                    bracketMatchesSection
-                        .overlay(
-                            Text("Complete")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 6),
-                            alignment: .topTrailing
-                        )
+                if resolvedSeedMethod == .manual && !isFinalized {
+                    manualSeedCta
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 } else {
-                    Text("Bracket status: \(bracketStatus)")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-
-                if seedMethod == .random {
-                    Text("Players were randomly assigned to bracket positions (fixed for this bracket).")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal)
+                    bracketRoundsContent
                 }
             }
-
-            Text("ID: \(bracketId)")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-                .padding(.top, 8)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .navigationTitle("Bracket")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
@@ -104,27 +92,7 @@ struct BracketsView: View {
                     guard let snapshot, snapshot.exists else { return }
                     do {
                         let data = try snapshot.data(as: BracketSnapshot.self)
-                        
-                        print("""
-                            [BracketsView] decoded OK
-                            bracketId=\(bracketId)
-                            status=\(data.status)
-                            teamSize=\(data.teamSize)
-                            roundsCount=\(data.rounds.count)
-                            round1MatchIds=\(data.rounds.first(where: { $0.roundNumber == 1 })?.matches.map { $0.matchId } ?? [])
-                            round1WinnerProfileCounts=\(data.rounds
-                                .first(where: { $0.roundNumber == 1 })?.matches
-                                .map { ($0.matchId, ($0.winnerProfileIds ?? []).count) } ?? [])
-                            round2PlaceholderMatchIds=\(data.rounds
-                                .first(where: { $0.roundNumber == 2 })?.matches
-                                .filter { $0.feederMatchIds != nil }
-                                .map { $0.matchId } ?? [])
-                            round2PlaceholderParticipantProfileIds=\(data.rounds
-                                .first(where: { $0.roundNumber == 2 })?.matches
-                                .filter { $0.feederMatchIds != nil }
-                                .map { ($0.matchId, $0.participantProfileIds ?? []) } ?? [])
-                        """)
-                        
+
                         bracketStatus = data.status
                         if data.status != "DRAFT" {
                             isFinalized = true
@@ -132,48 +100,14 @@ struct BracketsView: View {
                         bracketRounds = data.rounds
                         bracketCommunityId = data.communityId
                         bracketTeamSize = data.teamSize
+                        bracketSeedMethod = data.seedMethod
                     } catch {
-                        // Temporary diagnostics: if decoding fails, we want to know which key shape
-                        // is causing the issue (bye match often differs: winner-only).
-                        let bracketIdLocal = bracketId
-                        print("""
-                        [BracketsView] FAILED to decode BracketSnapshot
-                        bracketId=\(bracketIdLocal)
-                        error=\(error)
-                        """)
-
-                        if let decoding = error as? DecodingError {
-                            switch decoding {
-                            case .dataCorrupted(let context):
-                                print("[BracketsView] dataCorrupted codingPath=\(context.codingPath) debug=\(context.debugDescription)")
-                            case .keyNotFound(let key, let context):
-                                print("[BracketsView] keyNotFound key=\(key) codingPath=\(context.codingPath) debug=\(context.debugDescription)")
-                            case .typeMismatch(_, let context):
-                                print("[BracketsView] typeMismatch codingPath=\(context.codingPath) debug=\(context.debugDescription)")
-                            case .valueNotFound(_, let context):
-                                print("[BracketsView] valueNotFound codingPath=\(context.codingPath) debug=\(context.debugDescription)")
-                            @unknown default:
-                                print("[BracketsView] DecodingError (unknown case)")
-                            }
-                        }
-
-                        if let raw = snapshot.data() {
-                            print("[BracketsView] Raw top-level keys=\(Array(raw.keys).sorted())")
-
-                            if let roundsRaw = raw["rounds"] {
-                                print("[BracketsView] Raw rounds type=\(type(of: roundsRaw))")
-
-                                if let roundsArray = roundsRaw as? [[String: Any]] {
-                                    print("[BracketsView] Raw rounds array count=\(roundsArray.count)")
-                                } else if let roundsArray = roundsRaw as? [Any] {
-                                    print("[BracketsView] Raw rounds array count=\(roundsArray.count)")
-                                } else {
-                                    // Don't spam; just show type if it isn't a simple array.
-                                }
-                            }
-                        }
+                        AppDebugLog.log("BracketsView: decode failed bracketId=\(bracketId) error=\(error.localizedDescription)")
                     }
                 }
+        }
+        .task(id: bracketCommunityId) {
+            await loadBracketMembersIfNeeded()
         }
         .onDisappear {
             listener?.remove()
@@ -182,8 +116,8 @@ struct BracketsView: View {
         .sheet(isPresented: $showManualSeed) {
             ManualSeedView(
                 bracketId: bracketId,
-                teamSize: teamSize,
-                members: members,
+                teamSize: bracketTeamSize,
+                members: bracketMembers,
                 onFinalized: {
                     // `ManualSeedView` no longer dismisses itself after finalizing;
                     // close this fallback sheet here so the bracket view can render.
@@ -200,39 +134,184 @@ struct BracketsView: View {
     }
 
     @ViewBuilder
-    private var bracketMatchesSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            ForEach(bracketRounds.sorted(by: { $0.roundNumber < $1.roundNumber }), id: \.roundNumber) { round in
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Round \(round.roundNumber)")
-                        .font(.headline)
-                        .foregroundStyle(.primary)
+    private var bracketRoundsContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if bracketStatus != "ACTIVE", bracketStatus != "COMPLETE" {
+                Text("Bracket status: \(bracketStatus)")
+                    .font(AppFont.footnote)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal)
+            }
 
-                    ForEach(round.matches) { match in
-                        BracketMatchRow(
-                            match: match,
-                            members: members,
-                            matchById: matchById,
-                            onLogResult: { effectiveParticipantProfileIds in
-                                logResultContext = GameLogBracketContext(
-                                    bracketId: bracketId,
-                                    bracketMatchId: match.matchId,
-                                    communityId: bracketCommunityId,
-                                    participantProfileIds: effectiveParticipantProfileIds,
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 14) {
+                    let sortedRounds = bracketRounds.sorted(by: { $0.roundNumber < $1.roundNumber })
+                    let finalRoundNumber = sortedRounds.last?.roundNumber
+
+                    ForEach(sortedRounds, id: \.roundNumber) { round in
+                        let visibleMatches = round.matches.filter { shouldShowMatchInRound($0) }
+
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                Text(round.roundNumber == finalRoundNumber ? "Final" : "Round \(round.roundNumber)")
+                                    .font(AppFont.headline)
+                                    .foregroundStyle(.primary)
+                                Spacer(minLength: 0)
+                                if bracketStatus == "COMPLETE", round.roundNumber == finalRoundNumber {
+                                    statusPill(text: "Complete", isActive: false)
+                                }
+                            }
+
+                            if visibleMatches.isEmpty {
+                                Text("No games in this round.")
+                                    .font(AppFont.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            ForEach(Array(visibleMatches.enumerated()), id: \.element.id) { index, match in
+                                BracketMatchRow(
+                                    matchIndex: index,
+                                    match: match,
+                                    members: bracketMembers,
+                                    matchById: matchById,
+                                    onLogResult: { effectiveParticipantProfileIds in
+                                        logResultContext = GameLogBracketContext(
+                                            bracketId: bracketId,
+                                            bracketMatchId: match.matchId,
+                                            communityId: bracketCommunityId,
+                                            participantProfileIds: effectiveParticipantProfileIds,
+                                            teamSize: bracketTeamSize
+                                        )
+                                    },
                                     teamSize: bracketTeamSize
                                 )
-                            },
-                            teamSize: bracketTeamSize
+                            }
+                        }
+                        .padding(14)
+                        .background(
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .fill(Color(.secondarySystemGroupedBackground))
                         )
                     }
+
+                    if resolvedSeedMethod == .random {
+                        Text("Players were randomly assigned to bracket positions (fixed for this bracket).")
+                            .font(AppFont.caption)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.leading)
+                            .padding(.top, 6)
+                    }
+
+                    Text("ID: \(bracketId)")
+                        .font(AppFont.caption)
+                        .foregroundStyle(.tertiary)
+                        .padding(.top, 10)
                 }
-                .padding(.horizontal)
+                .padding()
             }
+        }
+    }
+
+    private var manualSeedCta: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Manual bracket")
+                .font(AppFont.headline)
+                .foregroundStyle(.primary)
+
+            Text("Assign players to each team to activate this bracket.")
+                .font(AppFont.footnote)
+                .foregroundStyle(.secondary)
+
+            Button {
+                showManualSeed = true
+            } label: {
+                Text("Assign teams")
+                    .font(AppFont.buttonProminent)
+                    .frame(maxWidth: .infinity, minHeight: 48)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(Color.black)
+                    )
+                    .foregroundStyle(.white)
+            }
+            .buttonStyle(.plain)
+
+            Text("ID: \(bracketId)")
+                .font(AppFont.caption)
+                .foregroundStyle(.tertiary)
+                .padding(.top, 6)
+        }
+        .padding()
+    }
+
+    private var toggleRow: some View {
+        HStack(spacing: 10) {
+            toggleButton(title: "Rounds", isSelected: viewMode == .rounds) {
+                viewMode = .rounds
+            }
+            toggleButton(title: "Bracket", isSelected: viewMode == .bracket) {
+                viewMode = .bracket
+            }
+        }
+        .padding(.horizontal)
+        .padding(.top, 8)
+    }
+
+    private func toggleButton(title: String, isSelected: Bool, onTap: @escaping () -> Void) -> some View {
+        Button(action: onTap) {
+            Text(title)
+                .font(AppFont.button)
+                .frame(maxWidth: .infinity, minHeight: 40)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(isSelected ? Color.black : Color(.secondarySystemGroupedBackground))
+                )
+                .foregroundStyle(isSelected ? Color.white : Color.black)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func statusPill(text: String, isActive: Bool) -> some View {
+        Text(text)
+            .font(AppFont.caption)
+            .foregroundStyle(isActive ? Color.black : Color(.secondaryLabel))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(isActive ? Color(.systemYellow).opacity(0.45) : Color(.tertiarySystemFill))
+            )
+    }
+
+    private func shouldShowMatchInRound(_ match: BracketMatchSnapshot) -> Bool {
+        // Hide round matches that are auto-advanced byes (single side, winner-only),
+        // so users only see playable games in each round.
+        let participants = match.participantProfileIds ?? []
+        let winners = match.winnerProfileIds ?? []
+        let losers = match.loserProfileIds ?? []
+        let isWinnerOnlyBye = !winners.isEmpty &&
+            losers.isEmpty &&
+            participants.count == bracketTeamSize &&
+            winners.count == bracketTeamSize
+        return !isWinnerOnlyBye
+    }
+
+    private func loadBracketMembersIfNeeded() async {
+        guard !bracketCommunityId.isEmpty else { return }
+        if !bracketMembers.isEmpty { return }
+        guard !isLoadingBracketMembers else { return }
+        isLoadingBracketMembers = true
+        defer { isLoadingBracketMembers = false }
+        do {
+            bracketMembers = try await container.communityService.fetchMembers(communityId: bracketCommunityId)
+        } catch {
+            AppDebugLog.log("BracketsView: load members failed communityId=\(bracketCommunityId) error=\(error.localizedDescription)")
         }
     }
 }
 
 private struct BracketMatchRow: View {
+    let matchIndex: Int
     let match: BracketMatchSnapshot
     let members: [CommunityMemberRosterRow]
     let matchById: [String: BracketMatchSnapshot]
@@ -306,60 +385,67 @@ private struct BracketMatchRow: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if isPlayed {
-                Text("Finalized")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .center, spacing: 10) {
+                Text("Game \(matchIndex + 1)")
+                    .font(AppFont.subheadlineBold)
+                    .foregroundStyle(.primary)
+                Spacer(minLength: 0)
+                statusPill(text: isPlayed ? "Completed" : "Not completed", isActive: !isPlayed)
             }
 
             if isPlayed {
                 let winners = match.winnerProfileIds ?? []
                 let losers = match.loserProfileIds ?? []
-                VStack(alignment: .leading, spacing: 4) {
-                    if !winners.isEmpty {
-                        Text("Winners: \(names(winners))")
-                            .font(.subheadline)
-                            .foregroundStyle(.primary)
-                    }
-                    if !losers.isEmpty {
-                        Text("Losers: \(names(losers))")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
+
+                if !winners.isEmpty {
+                    Text("˗ˏˋ  \(names(winners))  ˎˊ˗")
+                        .font(AppFont.bodyMedium)
+                        .foregroundStyle(.primary)
+                        .lineLimit(3)
+                }
+
+                if !losers.isEmpty {
+                    Text("Loser: \(names(losers))")
+                        .font(AppFont.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(3)
                 }
             } else {
                 if effectiveParticipantProfileIds.isEmpty, match.feederMatchIds != nil {
                     Text("Waiting for previous matches...")
-                        .font(.subheadline)
+                        .font(AppFont.footnote)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                 } else {
                     Text(names(effectiveParticipantProfileIds))
-                        .font(.subheadline)
+                        .font(AppFont.bodyMedium)
                         .foregroundStyle(.primary)
-                        .lineLimit(2)
+                        .lineLimit(3)
                 }
-            }
 
-            if canLogResult {
-                Button {
-                    onLogResult(effectiveParticipantProfileIds)
-                } label: {
-                    Text("Log result")
-                        .font(.subheadline.weight(.semibold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .background(Color.black)
-                        .foregroundStyle(.white)
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                if canLogResult {
+                    Button {
+                        onLogResult(effectiveParticipantProfileIds)
+                    } label: {
+                        Text("Log result")
+                            .font(AppFont.buttonProminent)
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .fill(Color.black)
+                            )
+                            .foregroundStyle(.white)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
         }
-        .padding(12)
-        .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color.white)
+        )
     }
 
     private func names(_ ids: [String]) -> String {
@@ -368,13 +454,47 @@ private struct BracketMatchRow: View {
             .map { $0.displayName.isEmpty ? "Unknown" : $0.displayName }
         return mapped.isEmpty ? "—" : mapped.joined(separator: ", ")
     }
+
+    private func statusPill(text: String, isActive: Bool) -> some View {
+        Text(text)
+            .font(AppFont.caption)
+            .foregroundStyle(isActive ? Color.black : Color(.secondaryLabel))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(isActive ? Color(.systemYellow).opacity(0.45) : Color(.tertiarySystemFill))
+            )
+    }
 }
 
 private struct BracketSnapshot: Decodable {
     let communityId: String
+    let seedMethod: SeedMethod?
     let status: String
     let teamSize: Int
     let rounds: [BracketRoundSnapshot]
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        communityId = try c.decode(String.self, forKey: .communityId)
+        status = try c.decode(String.self, forKey: .status)
+        teamSize = try c.decode(Int.self, forKey: .teamSize)
+        rounds = try c.decode([BracketRoundSnapshot].self, forKey: .rounds)
+        if let rawSeedMethod = try c.decodeIfPresent(String.self, forKey: .seedMethod) {
+            seedMethod = SeedMethod(rawValue: rawSeedMethod)
+        } else {
+            seedMethod = nil
+        }
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case communityId
+        case seedMethod
+        case status
+        case teamSize
+        case rounds
+    }
 }
 
 private struct BracketRoundSnapshot: Decodable {

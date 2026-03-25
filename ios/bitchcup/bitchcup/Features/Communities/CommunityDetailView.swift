@@ -21,8 +21,11 @@ struct CommunityDetailView: View {
     @State private var selectedTeamSize: Int = 1
     @State private var isCreatingBracket = false
     @State private var bracketErrorMessage: String?
-    @State private var createdBracketId: String?
-    @State private var showBracketView = false
+    @State private var brackets: [BracketListItem] = []
+    @State private var isLoadingBrackets = false
+    @State private var bracketsErrorMessage: String?
+    @State private var selectedBracketForNavigation: BracketListItem?
+    @State private var pendingManualBracket: BracketListItem?
     @State private var showManualSeedFlow = false
     @State private var showCreateBracketPopup = false
     @State private var isLoadingFeed = false
@@ -194,7 +197,7 @@ struct CommunityDetailView: View {
                                                 ProgressView()
                                                     .scaleEffect(0.8)
                                             }
-                                            Text(isCreatingBracket ? "Creating..." : "Create Bracket")
+                                            Text(isCreatingBracket ? "Creating" : "Create ")
                                         }
                                     }
                                     .font(.custom("NeueHaasDisplay-Mediu", size: 22))
@@ -232,19 +235,34 @@ struct CommunityDetailView: View {
             await loadInitial()
         }
         .fullScreenCover(isPresented: $showManualSeedFlow) {
-            if let bracketId = createdBracketId {
+            if let pendingManualBracket {
                 ManualBracketSeedingFlowView(
-                    bracketId: bracketId,
-                    teamSize: selectedTeamSize,
+                    bracketId: pendingManualBracket.bracketId,
+                    teamSize: pendingManualBracket.teamSize,
                     members: members
                 ) {
                     showManualSeedFlow = false
-                    showBracketView = true
+                    selectedBracketForNavigation = BracketListItem(
+                        bracketId: pendingManualBracket.bracketId,
+                        communityId: pendingManualBracket.communityId,
+                        seedMethod: pendingManualBracket.seedMethod,
+                        status: "ACTIVE",
+                        teamSize: pendingManualBracket.teamSize,
+                        createdAt: pendingManualBracket.createdAt
+                    )
                 }
                 .environmentObject(container)
             } else {
                 EmptyView()
             }
+        }
+        .navigationDestination(item: $selectedBracketForNavigation) { bracket in
+            BracketsView(
+                bracketId: bracket.bracketId,
+                seedMethod: bracket.seedMethod,
+                teamSize: bracket.teamSize,
+                members: members
+            )
         }
     }
 
@@ -280,23 +298,50 @@ struct CommunityDetailView: View {
                 .font(sectionHeaderFont)
                 .foregroundStyle(.black)
 
+            if isLoadingBrackets {
+                ProgressView()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else if let bracketsErrorMessage {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(bracketsErrorMessage)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    Button("Retry") {
+                        Task { await loadBracketsSection() }
+                    }
+                    .buttonStyle(.bordered)
+                }
+            } else if activeBrackets.isEmpty {
+                Text("No active brackets yet.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(activeBrackets) { bracket in
+                    bracketRowButton(bracket)
+                }
+            }
+
             Text("Past Brackets")
                 .font(sectionHeaderFont)
                 .foregroundStyle(.black)
+
+            if !isLoadingBrackets, bracketsErrorMessage == nil {
+                if pastBrackets.isEmpty {
+                    Text("No past brackets yet.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(pastBrackets) { bracket in
+                        bracketRowButton(bracket)
+                    }
+                }
+            }
 
             if !canCreateBracket {
                 Text("Need at least \(minMembersForBracket) members for \(selectedTeamSize)v\(selectedTeamSize).")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-        }
-        .navigationDestination(isPresented: $showBracketView) {
-            BracketsView(
-                bracketId: createdBracketId ?? "",
-                seedMethod: selectedSeedMethod,
-                teamSize: selectedTeamSize,
-                members: members
-            )
         }
     }
 
@@ -319,9 +364,7 @@ struct CommunityDetailView: View {
                             .frame(minWidth: 36, alignment: .trailing)
                             .monospacedDigit()
 
-                        Circle()
-                            .frame(width: 36, height: 36)
-                            .foregroundStyle(Color(.systemGray4))
+                        memberAvatar(for: member)
 
                         VStack(alignment: .leading, spacing: 2) {
                             Text(member.displayName.isEmpty ? "Unknown" : member.displayName)
@@ -344,6 +387,30 @@ struct CommunityDetailView: View {
                     }
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private func memberAvatar(for member: CommunityMemberRosterRow) -> some View {
+        if let photoURLString = member.profilePhotoUrl,
+           let photoURL = URL(string: photoURLString) {
+            AsyncImage(url: photoURL) { phase in
+                switch phase {
+                case .success(let image):
+                    image
+                        .resizable()
+                        .scaledToFill()
+                default:
+                    Circle()
+                        .foregroundStyle(Color(.systemGray4))
+                }
+            }
+            .frame(width: 36, height: 36)
+            .clipShape(Circle())
+        } else {
+            Circle()
+                .frame(width: 36, height: 36)
+                .foregroundStyle(Color(.systemGray4))
         }
     }
 
@@ -386,6 +453,7 @@ struct CommunityDetailView: View {
         isLoading = true
         errorMessage = nil
         feedErrorMessage = nil
+        bracketsErrorMessage = nil
         do {
             try await fetchCommunityAndMembers()
         } catch {
@@ -395,6 +463,7 @@ struct CommunityDetailView: View {
         }
         isLoading = false
         await loadInitialFeedSection()
+        await loadBracketsSection()
     }
 
     private func fetchCommunityAndMembers() async throws {
@@ -429,6 +498,7 @@ struct CommunityDetailView: View {
     private func refreshAll() async {
         feedErrorMessage = nil
         errorMessage = nil
+        bracketsErrorMessage = nil
         do {
             try await fetchCommunityAndMembers()
         } catch {
@@ -436,6 +506,7 @@ struct CommunityDetailView: View {
             return
         }
         await loadInitialFeedSection()
+        await loadBracketsSection()
     }
 
     private func loadMoreFeedIfNeeded(currentRow: FeedRow) async {
@@ -472,18 +543,83 @@ struct CommunityDetailView: View {
                 seedMethod: selectedSeedMethod,
                 teamSize: selectedTeamSize
             )
-            createdBracketId = bracketId
+            let created = BracketListItem(
+                bracketId: bracketId,
+                communityId: communityId,
+                seedMethod: selectedSeedMethod,
+                status: selectedSeedMethod == .manual ? "DRAFT" : "ACTIVE",
+                teamSize: selectedTeamSize,
+                createdAt: Date()
+            )
             showCreateBracketPopup = false
             if selectedSeedMethod == .manual {
-                showBracketView = false
+                pendingManualBracket = created
                 showManualSeedFlow = true
             } else {
                 showManualSeedFlow = false
-                showBracketView = true
+                selectedBracketForNavigation = created
             }
+            await loadBracketsSection()
         } catch {
             bracketErrorMessage = error.localizedDescription
         }
+    }
+
+    private func loadBracketsSection() async {
+        isLoadingBrackets = true
+        defer { isLoadingBrackets = false }
+        do {
+            brackets = try await container.communityService.fetchBrackets(communityId: communityId)
+            bracketsErrorMessage = nil
+        } catch {
+            brackets = []
+            bracketsErrorMessage = error.localizedDescription
+        }
+    }
+
+    private var activeBrackets: [BracketListItem] {
+        brackets.filter { $0.status != "COMPLETE" }
+    }
+
+    private var pastBrackets: [BracketListItem] {
+        brackets.filter { $0.status == "COMPLETE" }
+    }
+
+    @ViewBuilder
+    private func bracketRowButton(_ bracket: BracketListItem) -> some View {
+        Button {
+            selectedBracketForNavigation = bracket
+        } label: {
+            HStack(alignment: .center, spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(bracket.seedMethod.displayName) • \(bracket.teamSize)v\(bracket.teamSize)")
+                        .font(.custom("NeueHaasDisplay-Mediu", size: 18))
+                        .foregroundStyle(.black)
+                    Text("Status: \(bracket.status)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if let createdAt = bracket.createdAt {
+                        Text(createdAt.formatted(date: .abbreviated, time: .shortened))
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    Text("ID: \(bracket.bracketId)")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color(.secondarySystemGroupedBackground))
+            )
+        }
+        .buttonStyle(.plain)
     }
 
     private static func mapFeedError(_ error: Error) -> String {
