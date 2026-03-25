@@ -273,7 +273,14 @@
 - **Auth:** Must be authenticated and a member of `communityId`
 - **Validation:**
   - `seedMethod` must be one of `COMMUNITY_ODDS`, `MANUAL`, `RANDOM`
-  - If `COMMUNITY_ODDS` and data is sparse, fall back to `overallOdds`
+  - `teamSize` must be an integer **1–4** (players per side)
+  - Community must have at least **`2 * teamSize`** members for a full opening match
+  - If `COMMUNITY_ODDS` and data is sparse, fall back to `overallOdds` (see odds seeding)
+
+**Behavior by `seedMethod`:**
+- `COMMUNITY_ODDS` — Server builds and validates `rounds`; `status` is **`ACTIVE`**.
+- `MANUAL` — `rounds` is `[]`; `status` is **`DRAFT`** until `finalizeManualBracket`.
+- `RANDOM` — Server deterministically shuffles the sorted participant list using **SHA-256** of the UTF-8 string `bracketId|id1|id2|…` (ids in lexicographic order as stored), then **Fisher–Yates** with a **Mulberry32** PRNG seeded from XOR of the digest’s eight little-endian uint32 words. Then `chunkIntoTeams` + standard bracket generation; `rounds` is filled and `status` is **`ACTIVE`**. Same inputs always yield the same bracket structure.
 
 **Request:**
 ```json
@@ -281,7 +288,8 @@
   "apiVersion": "v1",
   "data": {
     "communityId": "abc123",
-    "seedMethod": "COMMUNITY_ODDS"
+    "seedMethod": "COMMUNITY_ODDS",
+    "teamSize": 1
   }
 }
 ```
@@ -299,6 +307,64 @@
 ```
 
 **Errors:** `UNAUTHENTICATED`, `INVALID_ARGUMENT`, `PERMISSION_DENIED`
+
+---
+
+### `finalizeManualBracket`
+- **Trigger:** HTTPS callable
+- **Auth:** Must be authenticated and a member of the bracket’s community (`memberships/{communityId}_{uid}`)
+- **Purpose:** For brackets created with `seedMethod: MANUAL`, `createBracket` leaves `status: DRAFT` and `rounds: []`. This callable accepts the organizer’s **ordered list of teams** (each team is a roster drawn from the bracket’s participants), builds rounds server-side with standard single-elimination structure, validates them, and sets `rounds` plus `status: ACTIVE`. Team order is bracket seed order (team 1 gets best bye preference, same semantics as greedy chunking of a flat list).
+- **Validation:**
+  - `bracketId` (non-empty string) required
+  - `teams` must be a non-empty array of arrays; each inner array is a non-empty list of profile id strings
+  - Bracket must exist
+  - `seedMethod` must be `MANUAL`
+  - `status` must be `DRAFT`
+  - `rounds` must be empty (not already finalized)
+  - Row **sizes** must match the greedy partition of `(N, teamSize)` where `N = len(participantProfileIds)`: repeat `min(teamSize, remaining)` until no players left (e.g. N=5, teamSize=2 → team lengths `[2, 2, 1]`)
+  - Flattening `teams` in row order must be a **permutation** of `participantProfileIds` (no duplicates, no unknown ids)
+
+**Request (example: 2v2, four players):**
+```json
+{
+  "apiVersion": "v1",
+  "data": {
+    "bracketId": "bracket_xyz",
+    "teams": [
+      ["uid_1", "uid_2"],
+      ["uid_3", "uid_4"]
+    ]
+  }
+}
+```
+
+**Request (example: 1v1, four players):**
+```json
+{
+  "apiVersion": "v1",
+  "data": {
+    "bracketId": "bracket_xyz",
+    "teams": [
+      ["uid_4"],
+      ["uid_1"],
+      ["uid_3"],
+      ["uid_2"]
+    ]
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "ok": true,
+  "apiVersion": "v1",
+  "data": {},
+  "meta": { "requestId": "req_006b" }
+}
+```
+
+**Errors:** `UNAUTHENTICATED`, `NOT_FOUND`, `INVALID_ARGUMENT`, `PERMISSION_DENIED`, `INTERNAL`
 
 ---
 

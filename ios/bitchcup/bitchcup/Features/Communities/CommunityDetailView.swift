@@ -17,6 +17,12 @@ struct CommunityDetailView: View {
     @State private var errorMessage: String?
 
     @State private var feedRows: [FeedRow] = []
+    @State private var selectedSeedMethod: SeedMethod = .communityOdds
+    @State private var selectedTeamSize: Int = 1
+    @State private var isCreatingBracket = false
+    @State private var bracketErrorMessage: String?
+    @State private var createdBracketId: String?
+    @State private var showBracketView = false
     @State private var isLoadingFeed = false
     @State private var feedErrorMessage: String?
     @State private var feedCursor: FeedPageCursor?
@@ -27,6 +33,15 @@ struct CommunityDetailView: View {
     private var displayCommunityName: String {
         let trimmed = communityName.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? "League" : trimmed
+    }
+
+    /// Matches server rule: at least `2 * teamSize` members for one full match.
+    private var minMembersForBracket: Int {
+        2 * selectedTeamSize
+    }
+
+    private var canCreateBracket: Bool {
+        members.count >= minMembersForBracket
     }
 
     /// Highest `communityOdds` first (best → worst); ties broken by `profileId` for stable order.
@@ -85,13 +100,88 @@ struct CommunityDetailView: View {
     }
 
     private var bracketPlaceholder: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 16) {
             Text("Bracket")
                 .font(sectionHeaderFont)
                 .foregroundStyle(.black)
-            Text("Bracket entry will appear here (T10).")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+
+            // Seed method picker
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Seeding method")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+
+                Picker("Seeding", selection: $selectedSeedMethod) {
+                    ForEach(SeedMethod.allCases) { method in
+                        VStack(alignment: .leading) {
+                            Text(method.displayName)
+                        }
+                        .tag(method)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                Text(selectedSeedMethod.subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            // Team size picker
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Team size")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Picker("Team size", selection: $selectedTeamSize) {
+                    Text("1v1").tag(1)
+                    Text("2v2").tag(2)
+                    Text("3v3").tag(3)
+                    Text("4v4").tag(4)
+                }
+                .pickerStyle(.segmented)
+                Text("Players per side in each match")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            // Error
+            if let bracketErrorMessage {
+                Text(bracketErrorMessage)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+
+            // Create button
+            Button {
+                Task { await createBracket() }
+            } label: {
+                HStack {
+                    if isCreatingBracket {
+                        ProgressView()
+                            .scaleEffect(0.8)
+                    }
+                    Text(isCreatingBracket ? "Creating..." : "Create Bracket")
+                        .fontWeight(.semibold)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(canCreateBracket ? Color.black : Color(.systemGray4))
+                .foregroundStyle(.white)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+            .disabled(!canCreateBracket || isCreatingBracket)
+
+            if !canCreateBracket {
+                Text("Need at least \(minMembersForBracket) members for \(selectedTeamSize)v\(selectedTeamSize).")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .navigationDestination(isPresented: $showBracketView) {
+            BracketsView(
+                bracketId: createdBracketId ?? "",
+                seedMethod: selectedSeedMethod,
+                teamSize: selectedTeamSize,
+                members: members
+            )
         }
     }
 
@@ -259,6 +349,22 @@ struct CommunityDetailView: View {
             hasMoreFeed = page.hasMore
         } catch {
             loadMoreFeedErrorMessage = Self.mapFeedError(error)
+        }
+    }
+    private func createBracket() async {
+        isCreatingBracket = true
+        bracketErrorMessage = nil
+        defer { isCreatingBracket = false }
+        do {
+            let bracketId = try await container.bracketService.createBracket(
+                communityId: communityId,
+                seedMethod: selectedSeedMethod,
+                teamSize: selectedTeamSize
+            )
+            createdBracketId = bracketId
+            showBracketView = true
+        } catch {
+            bracketErrorMessage = error.localizedDescription
         }
     }
 

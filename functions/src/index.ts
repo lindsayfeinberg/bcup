@@ -18,3 +18,5 @@ export {
   onGameLogUpdated,
   onGameLogDeleted,
 } from "./gameLogTriggers.js";
+export {createBracket} from "./brackets.js";
+export {finalizeManualBracket} from "./bracketManualSeed.js";

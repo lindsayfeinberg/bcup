@@ -119,6 +119,7 @@ service cloud.firestore {
         "communityId",
         "participantProfileIds",
         "seedMethod",
+        "teamSize",
         "status",
         "rounds",
         "createdAt",
