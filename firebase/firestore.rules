@@ -83,6 +83,8 @@ service cloud.firestore {
       return keysOnly([
         "id",
         "communityId",
+        "bracketId",
+        "bracketMatchId",
         "gameType",
         "createdByProfileId",
         "participantProfileIds",
@@ -112,6 +114,30 @@ service cloud.firestore {
       let notSame = data.mvpProfileId == null || data.lvpProfileId == null ||
         data.mvpProfileId != data.lvpProfileId;
       return mvpOk && lvpOk && notSame;
+    }
+
+    // Optional bracket linkage:
+    // - either both keys are absent
+    // - or both keys are present as non-empty strings
+    // Client must not set only one of the two.
+    function gameLogBracketLinkValid(data) {
+      let hasBracketId = data.keys().hasAny(["bracketId"]);
+      let hasBracketMatchId = data.keys().hasAny(["bracketMatchId"]);
+      return (!hasBracketId && !hasBracketMatchId) ||
+        (hasBracketId && hasBracketMatchId &&
+          data.bracketId is string && data.bracketId != "" &&
+          data.bracketMatchId is string && data.bracketMatchId != "");
+    }
+
+    // V1 rule: bracket linkage is immutable after creation.
+    // Deny adding or removing bracket keys via update.
+    function gameLogBracketImmutabilityValid() {
+      let resourceHas = resource.data.keys().hasAny(["bracketId"]);
+      let requestHas = request.resource.data.keys().hasAny(["bracketId"]);
+      return resourceHas == requestHas &&
+        (!requestHas ||
+          (request.resource.data.bracketId == resource.data.bracketId &&
+            request.resource.data.bracketMatchId == resource.data.bracketMatchId));
     }
 
     function hasBracketKeys() {
@@ -189,6 +215,7 @@ service cloud.firestore {
 
       allow create: if signedIn() &&
         hasGameLogKeys() &&
+        gameLogBracketLinkValid(request.resource.data) &&
         gameLogMvpLvpValid(request.resource.data) &&
         request.resource.data.id == gameLogId &&
         request.resource.data.createdByProfileId == uid() &&
@@ -200,6 +227,8 @@ service cloud.firestore {
       // Only log creator can update/delete.
       allow update: if signedIn() &&
         hasGameLogKeys() &&
+        gameLogBracketLinkValid(request.resource.data) &&
+        gameLogBracketImmutabilityValid() &&
         gameLogMvpLvpValid(request.resource.data) &&
         isCommunityMember(resource.data.communityId) &&
         resource.data.createdByProfileId == uid() &&

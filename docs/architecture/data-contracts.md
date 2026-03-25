@@ -131,6 +131,8 @@ Canonical valid sample:
 |---|---|---|---|---|---|---|---|
 | `id` | string | yes | no | none | either | yes | Must equal `gameLogId`. |
 | `communityId` | string | yes | no | none | client | yes | Community where game occurred. |
+| `bracketId` | string | no | yes | `null` | client | yes | Optional; when set, `bracketMatchId` must also be set and both values are immutable. |
+| `bracketMatchId` | string | no | yes | `null` | client | yes | Optional; when set, `bracketId` must also be set and it must match a `matchId` within `brackets/{bracketId}`. |
 | `gameType` | string enum | yes | no | none | client | yes | `PONG \| BEER_BALL \| BATTLE_PONG \| BASEBALL`. |
 | `createdByProfileId` | string | yes | no | none | server | yes | Creator/owner of log. |
 | `participantProfileIds` | array<string> | yes | no | none | client | no | Must be unique IDs. |
@@ -190,6 +192,8 @@ Canonical valid sample:
 - `winnerProfileIds.length >= 1`
 - `loserProfileIds.length >= 1`
 - `photoUrls.length == 1` (single concatenated image URL)
+- `bracketId` and `bracketMatchId` are either both present (non-empty strings) or both absent.
+- when `bracketId` / `bracketMatchId` are set, the log’s `participantProfileIds`, `winnerProfileIds`, and `loserProfileIds` must partition the referenced bracket match’s `participantProfileIds` (server-enforced by bracket sync logic).
 - `winnerProfileIds` is a subset of `participantProfileIds`
 - `loserProfileIds` is a subset of `participantProfileIds`
 - No overlap between winners and losers

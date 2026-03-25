@@ -20,3 +20,4 @@ export {
 } from "./gameLogTriggers.js";
 export {createBracket} from "./brackets.js";
 export {finalizeManualBracket} from "./bracketManualSeed.js";
+export {updateMatchResult} from "./bracketGameLogSync.js";

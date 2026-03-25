@@ -10,6 +10,16 @@ private enum GameLogBrandColor {
     static let formLightRed = Color(red: 232.0 / 255.0, green: 162.0 / 255.0, blue: 145.0 / 255.0)
 }
 
+/// When non-nil, `NewGameLogFormView` is driven by a specific bracket match.
+/// The UI locks league + team size and restricts participant pickers to the match’s participants.
+struct GameLogBracketContext {
+    let bracketId: String
+    let bracketMatchId: String
+    let communityId: String
+    let participantProfileIds: [String]
+    let teamSize: Int
+}
+
 struct NewGameLogFormView: View {
     /// `FeedCardView` photo section height; form preview uses the same layout at a smaller scale.
     private static let feedCardPhotoHeight: CGFloat = 500
@@ -33,9 +43,23 @@ struct NewGameLogFormView: View {
     @State private var backPhotoData: Data?
     @State private var showDualCapture = false
 
-    init(frontPhotoData: Data? = nil, backPhotoData: Data? = nil) {
+    let bracketContext: GameLogBracketContext?
+
+    private var isBracketLinked: Bool { bracketContext != nil }
+    private var bracketScopedParticipantProfileIds: Set<String> {
+        Set(bracketContext?.participantProfileIds ?? [])
+    }
+
+    init(
+        frontPhotoData: Data? = nil,
+        backPhotoData: Data? = nil,
+        bracketContext: GameLogBracketContext? = nil
+    ) {
+        self.bracketContext = bracketContext
         _frontPhotoData = State(initialValue: frontPhotoData)
         _backPhotoData = State(initialValue: backPhotoData)
+        _selectedCommunityId = State(initialValue: bracketContext?.communityId ?? "")
+        _teamSize = State(initialValue: bracketContext?.teamSize ?? 1)
     }
 
     @State private var communities: [(communityId: String, name: String)] = []
@@ -162,6 +186,7 @@ struct NewGameLogFormView: View {
                             Text("League")
                                 .font(AppFont.headline)
                         }
+                        .disabled(isBracketLinked)
                     } header: {
                         Text("Choose league")
                             .font(Self.widgetTitleFont)
@@ -248,6 +273,7 @@ struct NewGameLogFormView: View {
                                 .font(AppFont.headline)
                                 .foregroundStyle(GameLogBrandColor.red)
                         }
+                        .disabled(isBracketLinked)
                     } header: {
                         Text("Team size")
                             .font(Self.widgetTitleFont)
@@ -452,7 +478,10 @@ struct NewGameLogFormView: View {
             }
             .listRowBackground(widgetOutlineBackground)
         } else {
-            let hasEnoughMembers = members.count >= (2 * teamSize)
+            let selectionPoolMembers = isBracketLinked
+                ? members.filter { bracketScopedParticipantProfileIds.contains($0.profileId) }
+                : members
+            let hasEnoughMembers = selectionPoolMembers.count >= (2 * teamSize)
             if let outcome, let myUserId = currentUserId {
                 let isMySideWinners = (outcome == .won)
                 let teammateSet = isMySideWinners ? selectedWinnerProfileIds : selectedLoserProfileIds
@@ -475,7 +504,7 @@ struct NewGameLogFormView: View {
                             selectedCount: teammateSet.count,
                             query: $teammateQuery,
                             isOpen: $isTeammateDropdownOpen,
-                            participants: members.filter { $0.profileId != myUserId },
+                            participants: selectionPoolMembers.filter { $0.profileId != myUserId },
                             onOpposite: opponentSet,
                             onCurrent: teammateSet,
                             oppositeLabel: "Opponents",
@@ -495,7 +524,7 @@ struct NewGameLogFormView: View {
                         selectedCount: opponentSet.count,
                         query: $opponentQuery,
                         isOpen: $isOpponentDropdownOpen,
-                        participants: members.filter { $0.profileId != myUserId },
+                        participants: selectionPoolMembers.filter { $0.profileId != myUserId },
                         onOpposite: teammateSet,
                         onCurrent: opponentSet,
                         oppositeLabel: "Teammates",
@@ -1104,6 +1133,12 @@ struct NewGameLogFormView: View {
         guard let myUserId = currentUserId else { return }
         selectedWinnerProfileIds.removeAll()
         selectedLoserProfileIds.removeAll()
+
+        if isBracketLinked && !bracketScopedParticipantProfileIds.contains(myUserId) {
+            // In bracket-linked flows, only auto-lock the user if they are actually one of the match participants.
+            return
+        }
+
         switch outcome {
         case .won:
             selectedWinnerProfileIds.insert(myUserId)
@@ -1214,6 +1249,8 @@ struct NewGameLogFormView: View {
             let payload = GameLogCreatePayload(
                 gameLogId: gameLogId,
                 communityId: communityId,
+                bracketId: bracketContext?.bracketId,
+                bracketMatchId: bracketContext?.bracketMatchId,
                 gameType: gameType.rawValue,
                 createdByProfileId: uid,
                 participantProfileIds: participants,
@@ -1383,7 +1420,9 @@ struct NewGameLogFormView: View {
         do {
             let page = try await container.communityService.fetchCommunitiesPage(cursor: nil, pageSize: 25)
             communities = page.items
-            selectedCommunityId = communities.first?.communityId ?? ""
+            if selectedCommunityId.isEmpty {
+                selectedCommunityId = communities.first?.communityId ?? ""
+            }
             isLoading = false
             if !selectedCommunityId.isEmpty {
                 Task { await loadMembers() }

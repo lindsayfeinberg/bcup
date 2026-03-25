@@ -257,6 +257,8 @@ struct CommunityJoinPreview {
 struct GameLogCreatePayload {
     let gameLogId: String
     let communityId: String
+    let bracketId: String?
+    let bracketMatchId: String?
     let gameType: String
     let createdByProfileId: String
     let participantProfileIds: [String]
@@ -798,6 +800,12 @@ final class GameLogService: GameLogServiceProtocol {
             "createdAt": now,
             "updatedAt": now
         ]
+        if let bracketId = payload.bracketId {
+            data["bracketId"] = bracketId
+        }
+        if let bracketMatchId = payload.bracketMatchId {
+            data["bracketMatchId"] = bracketMatchId
+        }
         if let pongStats = payload.pongStats {
             data["pongStats"] = pongStats
         } else {
