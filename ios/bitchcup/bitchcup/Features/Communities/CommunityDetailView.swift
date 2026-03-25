@@ -86,6 +86,7 @@ struct CommunityDetailView: View {
                         .padding(.horizontal)
                         .padding(.top, 24)
                         .padding(.bottom, 28)
+                        .accessibilityIdentifier("community.detail.title")
 
                     ScrollView {
                         VStack(alignment: .leading, spacing: 24) {
@@ -469,6 +470,12 @@ struct CommunityDetailView: View {
     }
 
     private func fetchCommunityAndMembers() async throws {
+        if UITestRuntime.participatesInUiTestHarness {
+            // Mocked UITest container must not hit real Firestore for community metadata (rules/permissions/crash risk).
+            communityName = "UI Test League"
+            members = try await container.communityService.fetchMembers(communityId: communityId)
+            return
+        }
         let db = AppFirestore.db()
         let communityDoc = try await db.collection("communities").document(communityId).getDocument()
         communityName = communityDoc.data()?["name"] as? String ?? "League"

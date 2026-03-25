@@ -959,7 +959,9 @@ struct NewGameLogFormView: View {
     }
 
     private var currentUserId: String? {
-        Auth.auth().currentUser?.uid ?? container.authService.currentUserId ?? UITestRuntime.currentUserIdFallback
+        container.authService.currentUserId
+            ?? UITestRuntime.currentUserIdFallback
+            ?? Auth.auth().currentUser?.uid
     }
 
     /// In bracket-linked flows, only a user who is actually one of the match participants may submit.

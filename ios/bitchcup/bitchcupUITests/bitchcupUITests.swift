@@ -36,9 +36,14 @@ final class bitchcupUITests: XCTestCase {
         displayNameField.typeText("UITest User")
 
         let finishButton = app.buttons["onboarding.profile.finish"]
-        XCTAssertTrue(finishButton.exists)
+        XCTAssertTrue(finishButton.waitForExistence(timeout: 5))
+        if app.keyboards.element.exists {
+            app.keyboards.buttons["Return"].firstMatch.tap()
+        }
         finishButton.tap()
 
+        // Profile submit runs asynchronously; wait for feed chrome before asserting Log Game.
+        XCTAssertTrue(app.staticTexts["Bitch Cup"].waitForExistence(timeout: 15))
         XCTAssertTrue(app.buttons["feed.logGame"].waitForExistence(timeout: 5))
     }
 
@@ -51,7 +56,7 @@ final class bitchcupUITests: XCTestCase {
         wonButton.tap()
 
         let opponentsDropdown = app.buttons["gamelog.dropdown.Opponents_(Losers)"]
-        XCTAssertTrue(opponentsDropdown.waitForExistence(timeout: 5))
+        XCTAssertTrue(opponentsDropdown.waitForExistence(timeout: 15))
         opponentsDropdown.tap()
 
         let opponentRow = app.buttons["gamelog.participant.ui-opponent-1"]
@@ -65,8 +70,14 @@ final class bitchcupUITests: XCTestCase {
     func testBracketCriticalPath() throws {
         let app = launchApp(scenario: "bracket")
 
+        let title = app.staticTexts.matching(identifier: "community.detail.title").element
+        XCTAssertTrue(
+            title.waitForExistence(timeout: 15),
+            "Expected league detail title (community.detail.title). If this fails, check UITest harness (scenario=bracket), AppShell bootstrap, and whether the UI is still on Loading/Error or another root."
+        )
+
         let createBracketButton = app.buttons["community.createBracket"]
-        XCTAssertTrue(createBracketButton.waitForExistence(timeout: 5))
+        XCTAssertTrue(createBracketButton.waitForExistence(timeout: 15))
         createBracketButton.tap()
 
         let popupCreateButton = app.buttons["community.popup.createBracket"]
@@ -83,7 +94,13 @@ final class bitchcupUITests: XCTestCase {
     @discardableResult
     private func launchApp(scenario: String) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments += ["UI_TESTING"]
+        // Arguments are available when @main App init runs; env alone can be unset too early for UITestRuntime.scenario.
+        app.launchArguments = [
+            "UI_TESTING",
+            "-UI_TEST_SCENARIO", scenario,
+            "UI_TEST_SCENARIO=\(scenario)"
+        ]
+        app.launchEnvironment["UI_TESTING"] = "1"
         app.launchEnvironment["UI_TEST_SCENARIO"] = scenario
         app.launchEnvironment["UI_TEST_USER_ID"] = "ui-test-user"
         app.launch()

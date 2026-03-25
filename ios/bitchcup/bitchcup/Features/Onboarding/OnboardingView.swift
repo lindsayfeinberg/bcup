@@ -120,7 +120,9 @@ struct OnboardingView: View {
 
     /// Align UI step with Firestore profile (T05.2 / T05.3 / T05.4).
     private func syncPhaseFromFirestore() async {
-        guard let uid = Auth.auth().currentUser?.uid ?? sessionManager.currentUserId else {
+        guard let uid = sessionManager.currentUserId
+            ?? UITestRuntime.currentUserIdFallback
+            ?? Auth.auth().currentUser?.uid else {
             phase = .signInWithGoogle
             return
         }
@@ -145,7 +147,9 @@ struct OnboardingView: View {
     }
 
     private func confirmAge() async {
-        guard let uid = Auth.auth().currentUser?.uid ?? sessionManager.currentUserId ?? UITestRuntime.currentUserIdFallback else { return }
+        guard let uid = sessionManager.currentUserId
+            ?? UITestRuntime.currentUserIdFallback
+            ?? Auth.auth().currentUser?.uid else { return }
         isBusy = true
         localError = nil
         do {
@@ -162,7 +166,9 @@ struct OnboardingView: View {
     }
 
     private func submitProfile() async {
-        guard let uid = Auth.auth().currentUser?.uid ?? sessionManager.currentUserId ?? UITestRuntime.currentUserIdFallback else { return }
+        guard let uid = sessionManager.currentUserId
+            ?? UITestRuntime.currentUserIdFallback
+            ?? Auth.auth().currentUser?.uid else { return }
         let name = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return }
 

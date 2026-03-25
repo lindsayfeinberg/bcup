@@ -8,8 +8,8 @@ struct ContentView: View {
 
     var body: some View {
         Group {
-            if UITestRuntime.isEnabled {
-                switch UITestRuntime.scenario {
+            if UITestRuntime.participatesInUiTestHarness {
+                switch UITestRuntime.harnessScenario {
                 case .gameLog:
                     NavigationStack {
                         NewGameLogFormView(
