@@ -10,7 +10,6 @@ struct FeedView: View {
     @State private var showGameLog = false
     @State private var showProfile = false
     @State private var showAccountMenu = false
-    @State private var showFeedFilter = false
     @State private var profilePhotoUrl: URL?
 
     private enum FeedState {
@@ -36,47 +35,9 @@ struct FeedView: View {
         return []
     }
 
-    private struct FilterOption: Identifiable, Hashable {
-        let communityId: String
-        let displayName: String
-        var id: String { communityId }
-    }
-
-    private var filterOptions: [FilterOption] {
-        var seen = Set<String>()
-        var options: [FilterOption] = []
-        for row in allRows {
-            if !seen.contains(row.communityId) {
-                seen.insert(row.communityId)
-                options.append(FilterOption(
-                    communityId: row.communityId,
-                    displayName: row.communityName ?? row.communityId
-                ))
-            }
-        }
-        return options.sorted { $0.displayName < $1.displayName }
-    }
-
     private var filteredRows: [FeedRow] {
         if selectedCommunityIds.isEmpty { return allRows }
         return allRows.filter { selectedCommunityIds.contains($0.communityId) }
-    }
-
-    /// Show beside the profile photo whenever the feed has loaded rows so filtering is always available (including a single league).
-    private var showCommunityFilterControl: Bool {
-        if case .content = feedState { return true }
-        return false
-    }
-
-    private var feedFilterAccessibilityLabel: String {
-        if selectedCommunityIds.isEmpty {
-            return "Filter feed, showing all leagues"
-        }
-        if selectedCommunityIds.count == 1, let onlyId = selectedCommunityIds.first {
-            let name = filterOptions.first { $0.communityId == onlyId }?.displayName ?? onlyId
-            return "Filter feed, \(name)"
-        }
-        return "Filter feed, \(selectedCommunityIds.count) leagues selected"
     }
 
     @ViewBuilder
@@ -121,6 +82,11 @@ struct FeedView: View {
                         .font(headerFont)
                     Spacer()
                     HStack(spacing: 12) {
+                        // Temporarily hidden filter control.
+                        // To re-enable: restore `showFeedFilter`, `showCommunityFilterControl`,
+                        // `feedFilterAccessibilityLabel`, and `feedFilterPopoverContent`, then
+                        // uncomment the button block below.
+                        /*
                         if showCommunityFilterControl {
                             Button {
                                 showFeedFilter = true
@@ -138,6 +104,7 @@ struct FeedView: View {
                             }
                             .accessibilityLabel(feedFilterAccessibilityLabel)
                         }
+                        */
 
                         Button {
                             showAccountMenu = true
@@ -331,57 +298,13 @@ struct FeedView: View {
     }
 
     @ViewBuilder
-    private var feedFilterPopoverContent: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Button {
-                selectedCommunityIds = []
-            } label: {
-                HStack(alignment: .center) {
-                    Text("All leagues")
-                        .font(.custom("NeueHaasDisplay-Mediu", size: 22))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    if selectedCommunityIds.isEmpty {
-                        Image(systemName: "checkmark")
-                            .font(.body.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-            }
-            .buttonStyle(.plain)
-
-            ForEach(filterOptions) { option in
-                Toggle(isOn: Binding(
-                    get: { selectedCommunityIds.contains(option.communityId) },
-                    set: { isOn in
-                        if isOn {
-                            selectedCommunityIds.insert(option.communityId)
-                        } else {
-                            selectedCommunityIds.remove(option.communityId)
-                        }
-                    }
-                )) {
-                    Text(option.displayName)
-                        .font(.custom("NeueHaasDisplay-Mediu", size: 22))
-                        .lineLimit(2)
-                        .multilineTextAlignment(.leading)
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-            }
-        }
-        .frame(width: 220)
-    }
-
-    @ViewBuilder
     private var accountMenuAvatar: some View {
         if let profilePhotoUrl {
             FeedToolbarResolvedAvatar(originalURL: profilePhotoUrl)
         } else {
-            Image(systemName: "person.circle.fill")
-                .font(.title)
-                .foregroundStyle(.primary)
+            Circle()
+                .fill(Color(.systemGray4))
+                .frame(width: 38, height: 38)
         }
     }
 }
@@ -398,8 +321,8 @@ private struct FeedToolbarResolvedAvatar: View {
                 AsyncImage(url: loadURL) { phase in
                     switch phase {
                     case .empty:
-                        ProgressView()
-                            .frame(width: 38, height: 38)
+                        Circle()
+                            .fill(Color(.systemGray4))
                     case .success(let image):
                         image
                             .resizable()
@@ -412,22 +335,18 @@ private struct FeedToolbarResolvedAvatar: View {
                                     .resizable()
                                     .scaledToFill()
                             default:
-                                Image(systemName: "person.circle.fill")
-                                    .resizable()
-                                    .scaledToFit()
-                                    .foregroundStyle(.primary)
+                                Circle()
+                                    .fill(Color(.systemGray4))
                             }
                         }
                     @unknown default:
-                        Image(systemName: "person.circle.fill")
-                            .resizable()
-                            .scaledToFit()
-                            .foregroundStyle(.primary)
+                        Circle()
+                            .fill(Color(.systemGray4))
                     }
                 }
             } else {
-                ProgressView()
-                    .frame(width: 38, height: 38)
+                Circle()
+                    .fill(Color(.systemGray4))
             }
         }
         .frame(width: 38, height: 38)

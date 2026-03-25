@@ -23,7 +23,7 @@ private enum ProfileTypography {
     static let statLabel = Font.custom("NeueHaasDisplay-Mediu", size: 17)
 }
 
-private let profileAvatarSize: CGFloat = 84
+private let profileAvatarSize: CGFloat = 168
 
 struct ProfileView: View {
     @EnvironmentObject private var container: DependencyContainer
@@ -541,7 +541,6 @@ private struct ProfileResolvedAvatarView: View {
         }
         .frame(width: size, height: size)
         .clipShape(Circle())
-        .overlay(Circle().stroke(ProfileTestStyle.ink, lineWidth: 1))
         .task(id: originalURL) {
             loadURL = await ImageVariantURLResolver.shared.resolveURL(originalURL: originalURL, variant: .avatar)
         }
