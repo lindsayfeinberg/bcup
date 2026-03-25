@@ -1,5 +1,6 @@
 import SwiftUI
 import FirebaseCore
+import FirebaseCrashlytics
 import FirebaseFirestore
 import GoogleSignIn
 
@@ -33,6 +34,12 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         UserDefaults.standard.set(true, forKey: "feature.image.transformedDelivery")
         #endif
         FirebaseApp.configure()
+
+        #if DEBUG
+        Crashlytics.crashlytics().setCrashlyticsCollectionEnabled(false)
+        #else
+        Crashlytics.crashlytics().setCrashlyticsCollectionEnabled(true)
+        #endif
 
         if let app = FirebaseApp.app() {
             AppDebugLog.log("Firebase configured — projectID=\(app.options.projectID ?? "?") bundleID=\(app.options.bundleID)")

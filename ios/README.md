@@ -14,8 +14,8 @@ This guide explains how to run the `bcup` iOS app locally.
 From the repo root:
 
 ```bash
-cd ios
-open bcup.xcodeproj
+cd ios/bitchcup
+open bitchcup.xcodeproj
 ```
 
 If the app is later migrated to a workspace, open:
@@ -45,8 +45,8 @@ xcodebuild -version
 In project directory:
 
 ```bash
-cd ios
-xcodebuild -resolvePackageDependencies -project bcup.xcodeproj
+cd ios/bitchcup
+xcodebuild -resolvePackageDependencies -project bitchcup.xcodeproj
 ```
 
 If package resolution fails in terminal, use Xcode:
@@ -72,23 +72,36 @@ The default Firebase project for CLI is `bitchcup-dev` (`.firebaserc` at the rep
 
 **Firestore database ID:** Rules and indexes deploy to the database named in `firebase.json` → `firestore.database`. The iOS app uses the same ID via `AppFirestore.databaseId` (currently **`(default)`** — the Standard database in Console, *not* a separate Enterprise database named `default`). On launch, Xcode logs a line like `Firestore fingerprint — projectID=… databaseId=(default) host=…`.
 
-**Analytics (T05.6):** The app includes **Firebase Analytics** and logs onboarding funnel events from `OnboardingAnalytics.swift` (`screen_view`, `login`, and custom `onb_*` events). Verify in Firebase Console → Analytics → DebugView when running with **-FIRAnalyticsDebugEnabled** (see Firebase docs).
+**Analytics & Crashlytics (T05.6, T11.4):** The app links **Firebase Analytics** and **Firebase Crashlytics** (SPM product on the `bitchcup` target). **Debug** builds disable Crashlytics collection in `AppDelegate` (`setCrashlyticsCollectionEnabled(false)`); **Release** enables it. The **Firebase Crashlytics** run script uploads dSYMs (input paths include the built app’s `GoogleService-Info.plist`, dSYM, and `Info.plist`).
+
+**Events we log** (custom names use a `bcup_` prefix; no PII in parameters):
+
+| Area | What |
+|------|------|
+| Onboarding | `OnboardingAnalytics`: `screen_view` with `bcup_onb_*` screen names, standard `login`, custom `bcup_onb_*` funnel events (`OnboardingAnalytics.swift`) |
+| Feed | `screen_view` (`bcup_feed`), `bcup_feed_load` (outcome + optional row count / error snippet), `bcup_feed_refresh` (`bcup_source=pull`), `bcup_feed_load_more_fail` |
+| Profile | `screen_view` (`bcup_profile`), `bcup_profile_load` (outcome + optional `bcup_history_count` / error), `bcup_profile_history_load_more_fail` |
+| Auth | `bcup_auth_sign_out` on successful log out (`AppSessionManager`) |
+
+Crashlytics **user id** is synced from `Auth.auth().currentUser?.uid` after session resolution and cleared on sign-out (`AppSessionManager`).
+
+Verify Analytics in Firebase Console → Analytics → DebugView with **-FIRAnalyticsDebugEnabled** (see Firebase docs).
 
 ## 5) Run locally
 
 In Xcode:
 
-- Select scheme: `bcup`
+- Select scheme: `bitchcup`
 - Select simulator: e.g. `iPhone 15`
 - Press Run (`Cmd+R`)
 
 Or via CLI:
 
 ```bash
-cd ios
+cd ios/bitchcup
 xcodebuild \
-  -project bcup.xcodeproj \
-  -scheme bcup \
+  -project bitchcup.xcodeproj \
+  -scheme bitchcup \
   -destination 'platform=iOS Simulator,name=iPhone 15' \
   -configuration Debug \
   build
@@ -102,10 +115,10 @@ In Xcode:
 Or via CLI:
 
 ```bash
-cd ios
+cd ios/bitchcup
 xcodebuild \
-  -project bcup.xcodeproj \
-  -scheme bcup \
+  -project bitchcup.xcodeproj \
+  -scheme bitchcup \
   -destination 'platform=iOS Simulator,name=iPhone 15' \
   -configuration Debug \
   test
@@ -136,7 +149,7 @@ rm -rf ~/Library/Developer/Xcode/DerivedData
 
 ### Scheme not found in CI
 - Xcode -> Product -> Scheme -> Manage Schemes
-- Ensure `bcup` is marked as **Shared**
+- Ensure `bitchcup` is marked as **Shared**
 
 ### Firebase not initializing
 - Confirm `GoogleService-Info.plist` exists in target resources

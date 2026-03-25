@@ -218,6 +218,7 @@ struct FeedView: View {
                                 }
                                 .scrollContentBackground(.hidden)
                                 .refreshable {
+                                    AppAnalytics.logFeedRefresh()
                                     await refreshFeed()
                                 }
                             }
@@ -252,6 +253,7 @@ struct FeedView: View {
                 ProfileView()
             }
             .task {
+                AppAnalytics.logFeedScreen()
                 await sessionManager.ensureOnboardingCompleteOrRouteToOnboarding()
                 await loadInitialFeed()
                 await loadProfilePhoto()
@@ -471,9 +473,15 @@ extension FeedView {
             homeFeedCursor = page.nextCursor
             hasMoreFeed = page.hasMore
             feedState = rows.isEmpty ? .empty : .content(rows)
+            if rows.isEmpty {
+                AppAnalytics.logFeedLoad(outcome: .successEmpty)
+            } else {
+                AppAnalytics.logFeedLoad(outcome: .successContent, rowCount: rows.count)
+            }
         } catch {
             feedState = .error(error.localizedDescription)
             AppDebugLog.log("FeedView.loadFeed error: \(error.localizedDescription)")
+            AppAnalytics.logFeedLoad(outcome: .failed, errorMessage: error.localizedDescription)
         }
     }
 
@@ -510,6 +518,7 @@ extension FeedView {
             hasMoreFeed = page.hasMore
         } catch {
             loadMoreErrorMessage = error.localizedDescription
+            AppAnalytics.logFeedLoadMoreFailed(message: error.localizedDescription)
         }
     }
 

@@ -16,11 +16,11 @@ private enum FeedCardLayout {
     /// Vertical padding around the caption below the photo.
     static let captionVerticalPadding: CGFloat = 4
     static let cardCornerRadius: CGFloat = 14
-    /// When the back face exceeds its allotted height, fields are omitted in this order (Stats first, Winners last).
-    static let backDetailOverflowDropOrder: [String] = ["Stats", "LVP", "MVP", "Losers", "Winners"]
+    /// Two points smaller than `AppFont.bodyMedium` (17) — back-of-card values only.
+    static let backDetailValueFont = Font.custom("NeueHaasDisplay-Mediu", size: 15)
     /// Protect against long league names / payloads pushing content outside the card.
     static let backHeaderLineLimit = 2
-    static let backDetailValueLineLimit = 3
+    static let backDetailValueLineLimit = 5
     /// Photo slot height uses **landscape** 4:3 (`width * 3/4`) capped by `photoMaxHeight` so loading, error, and loaded (crop-to-fill) states share the same frame.
     static func feedPhotoPlaceholderHeight(width: CGFloat, maxHeight: CGFloat) -> CGFloat {
         min(maxHeight, width * 3 / 4)
@@ -58,7 +58,7 @@ struct FeedCardView: View {
     @State private var photoAreaWidth: CGFloat = FeedCardLayout.assumedStripWidth
     @State private var isBackVisible = false
     @State private var flipFrontMeasuredHeight: CGFloat = 0
-    /// Fields hidden on the back face when intrinsic content height exceeds the flip area (see `FeedCardLayout.backDetailOverflowDropOrder`).
+    /// Fields hidden on the back face when intrinsic content height exceeds the flip area (see `trimBackFaceForOverflowIfNeeded`).
     @State private var droppedBackFieldTitles: Set<String> = []
 
     private static let dateFormatter: RelativeDateTimeFormatter = {
@@ -179,11 +179,44 @@ struct FeedCardView: View {
         guard allottedHeight > 0, intrinsicHeight > 0, intrinsicHeight > allottedHeight + 0.5 else { return }
         let allTitles = Set(row.backDetailRows().map(\.title))
         let visibleTitles = Set(displayedBackDetailRows.map(\.title))
-        for title in FeedCardLayout.backDetailOverflowDropOrder where allTitles.contains(title) {
-            if droppedBackFieldTitles.contains(title) { continue }
-            if visibleTitles.count == 1, visibleTitles.contains(title) { return }
+        guard visibleTitles.count > 1 else { return }
+
+        func drop(_ title: String) {
+            guard allTitles.contains(title), visibleTitles.contains(title) else { return }
+            guard !droppedBackFieldTitles.contains(title) else { return }
             droppedBackFieldTitles.insert(title)
+        }
+
+        // 1) Stats (largest block)
+        if visibleTitles.contains("Stats") {
+            drop("Stats")
             return
+        }
+
+        // 2) MVP + LVP always trimmed together when both exist (avoids half-visible LVP)
+        let showsMvp = visibleTitles.contains("MVP")
+        let showsLvp = visibleTitles.contains("LVP")
+        if showsMvp && showsLvp {
+            droppedBackFieldTitles.insert("MVP")
+            droppedBackFieldTitles.insert("LVP")
+            return
+        }
+        if showsMvp {
+            drop("MVP")
+            return
+        }
+        if showsLvp {
+            drop("LVP")
+            return
+        }
+
+        // 3) Losers, then Winners
+        if visibleTitles.contains("Losers") {
+            drop("Losers")
+            return
+        }
+        if visibleTitles.contains("Winners") {
+            drop("Winners")
         }
     }
 
@@ -298,7 +331,7 @@ struct FeedCardView: View {
                         .font(AppFont.caption)
                         .foregroundStyle(.secondary)
                     Text(item.value)
-                        .font(AppFont.bodyMedium)
+                        .font(FeedCardLayout.backDetailValueFont)
                         .foregroundStyle(.primary)
                         .multilineTextAlignment(.leading)
                         .lineSpacing(isStats ? FeedCardLayout.statsSummaryLineSpacing : 0)
@@ -310,10 +343,38 @@ struct FeedCardView: View {
             }
 
             if let mvpItem, let lvpItem {
-                HStack(alignment: .top, spacing: 12) {
-                    backDetailCell(title: mvpItem.title, value: mvpItem.value)
-                    backDetailCell(title: lvpItem.title, value: lvpItem.value)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(alignment: .firstTextBaseline, spacing: 12) {
+                        Text("MVP")
+                            .font(AppFont.caption)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Text("LVP")
+                            .font(AppFont.caption)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.trailing)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                    }
+                    HStack(alignment: .top, spacing: 12) {
+                        Text(mvpItem.value)
+                            .font(FeedCardLayout.backDetailValueFont)
+                            .foregroundStyle(.primary)
+                            .multilineTextAlignment(.leading)
+                            .lineLimit(4)
+                            .minimumScaleFactor(0.86)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Text(lvpItem.value)
+                            .font(FeedCardLayout.backDetailValueFont)
+                            .foregroundStyle(.primary)
+                            .multilineTextAlignment(.trailing)
+                            .lineLimit(4)
+                            .minimumScaleFactor(0.86)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                    }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel("MVP: \(mvpItem.value). LVP: \(lvpItem.value)")
             } else if let mvpItem {
@@ -336,7 +397,7 @@ struct FeedCardView: View {
                 .font(AppFont.caption)
                 .foregroundStyle(.secondary)
             Text(value)
-                .font(AppFont.bodyMedium)
+                .font(FeedCardLayout.backDetailValueFont)
                 .foregroundStyle(.primary)
                 .multilineTextAlignment(.leading)
                 .lineLimit(FeedCardLayout.backDetailValueLineLimit)

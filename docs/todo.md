@@ -139,11 +139,11 @@ This plan is sequenced to let two developers work in parallel with clear handoff
 **Depends on:** `[T08, T09, T10]`
 
 - [x] `T11.1` Add unit tests for odds and seeding logic.
-- `T11.2` Add integration tests for Firestore/Storage security rules.
+- [x] `T11.2` Add integration tests for Firestore/Storage security rules.
 - `T11.3` Add UI tests for onboarding, game logging, and bracket critical paths.
-- `T11.4` Add Firebase Analytics and Crashlytics instrumentation to major flows.
-- `T11.5` Run performance pass (indexes, query costs, payload size).
-- `T11.6` Run lightweight threat modeling for unauthorized access and abuse risks.
+- [x] `T11.4` Add Firebase Analytics and Crashlytics instrumentation to major flows.
+- [x] `T11.5` Run performance pass (indexes, query costs, payload size).
+- [x] `T11.6` Run lightweight threat modeling for unauthorized access and abuse risks.
 
 ### [ ] T12. Release Preparation and Launch
 

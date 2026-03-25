@@ -1,4 +1,5 @@
 import FirebaseAuth
+import FirebaseCrashlytics
 import Foundation
 
 @MainActor
@@ -36,6 +37,7 @@ final class AppSessionManager: ObservableObject {
             sessionState = .unauthenticated
             router.showOnboarding()
             AppDebugLog.log("ensureOnboardingCompleteOrRouteToOnboarding: no uid → onboarding")
+            syncCrashlyticsUserFromAuth()
             return
         }
         currentUserId = userId
@@ -65,6 +67,7 @@ final class AppSessionManager: ObservableObject {
             isOnboardingComplete = false
             sessionState = .unauthenticated
             router.showOnboarding()
+            syncCrashlyticsUserFromAuth()
             return
         }
 
@@ -96,6 +99,7 @@ final class AppSessionManager: ObservableObject {
             sessionState = .unauthenticated
             router.showOnboarding()
             errorMessage = error.localizedDescription
+            syncCrashlyticsUserFromAuth()
         }
     }
 
@@ -103,10 +107,12 @@ final class AppSessionManager: ObservableObject {
         AppDebugLog.log("signOut: begin")
         do {
             try authService.signOut()
+            AppAnalytics.logSignOut()
             currentUserId = nil
             isOnboardingComplete = false
             sessionState = .unauthenticated
             router.showOnboarding()
+            Crashlytics.crashlytics().setUserID("")
             AppDebugLog.log("signOut: success — route onboarding")
         } catch {
             AppDebugLog.log("signOut: FAILED — \(error.localizedDescription)")
@@ -140,6 +146,13 @@ final class AppSessionManager: ObservableObject {
             router.showOnboarding()
             errorMessage = FirestoreErrorMapper.userFacingMessage(for: error)
         }
+        syncCrashlyticsUserFromAuth()
+    }
+
+    /// Aligns Crashlytics with `Auth.auth().currentUser` (no routing through `DependencyContainer`).
+    private func syncCrashlyticsUserFromAuth() {
+        let uid = Auth.auth().currentUser?.uid
+        Crashlytics.crashlytics().setUserID(uid ?? "")
     }
 
     /// Ensures an ID token is available so Firestore requests aren’t sent before Auth finished restoring credentials.
