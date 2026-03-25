@@ -138,7 +138,7 @@ This plan is sequenced to let two developers work in parallel with clear handoff
 
 **Depends on:** `[T08, T09, T10]`
 
-- `T11.1` Add unit tests for odds and seeding logic.
+- [x] `T11.1` Add unit tests for odds and seeding logic.
 - `T11.2` Add integration tests for Firestore/Storage security rules.
 - `T11.3` Add UI tests for onboarding, game logging, and bracket critical paths.
 - `T11.4` Add Firebase Analytics and Crashlytics instrumentation to major flows.
