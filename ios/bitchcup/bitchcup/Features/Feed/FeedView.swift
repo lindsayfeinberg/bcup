@@ -10,6 +10,7 @@ struct FeedView: View {
     @State private var showGameLog = false
     @State private var showProfile = false
     @State private var showAccountMenu = false
+    @State private var showFeedFilter = false
     @State private var profilePhotoUrl: URL?
 
     private enum FeedState {
@@ -19,7 +20,8 @@ struct FeedView: View {
         case content([FeedRow])
     }
     @State private var feedState: FeedState = .loading
-    @State private var selectedCommunityId: String? = nil  // nil = All leagues
+    /// Empty set = show all leagues; otherwise only rows whose `communityId` is in the set.
+    @State private var selectedCommunityIds: Set<String> = []
     @State private var homeFeedCursor: HomeFeedPageCursor?
     @State private var hasMoreFeed = false
     @State private var isLoadingMoreFeed = false
@@ -56,13 +58,25 @@ struct FeedView: View {
     }
 
     private var filteredRows: [FeedRow] {
-        guard let selectedCommunityId else { return allRows }
-        return allRows.filter { $0.communityId == selectedCommunityId }
+        if selectedCommunityIds.isEmpty { return allRows }
+        return allRows.filter { selectedCommunityIds.contains($0.communityId) }
     }
 
-    private var currentFilterLabel: String {
-        guard let selectedCommunityId else { return "All leagues" }
-        return filterOptions.first { $0.communityId == selectedCommunityId }?.displayName ?? selectedCommunityId
+    /// Show beside the profile photo whenever the feed has loaded rows so filtering is always available (including a single league).
+    private var showCommunityFilterControl: Bool {
+        if case .content = feedState { return true }
+        return false
+    }
+
+    private var feedFilterAccessibilityLabel: String {
+        if selectedCommunityIds.isEmpty {
+            return "Filter feed, showing all leagues"
+        }
+        if selectedCommunityIds.count == 1, let onlyId = selectedCommunityIds.first {
+            let name = filterOptions.first { $0.communityId == onlyId }?.displayName ?? onlyId
+            return "Filter feed, \(name)"
+        }
+        return "Filter feed, \(selectedCommunityIds.count) leagues selected"
     }
 
     @ViewBuilder
@@ -104,16 +118,36 @@ struct FeedView: View {
                     Text("Bitch Cup")
                         .font(headerFont)
                     Spacer()
-                    Button {
-                        showAccountMenu = true
-                    } label: {
-                        accountMenuAvatar
+                    HStack(spacing: 12) {
+                        if showCommunityFilterControl {
+                            Button {
+                                showFeedFilter = true
+                            } label: {
+                                Image(systemName: "line.3.horizontal.decrease.circle")
+                                    .font(.system(size: 28))
+                                    .imageScale(.large)
+                                    .foregroundStyle(.primary)
+                                    .frame(width: 38, height: 38)
+                            }
+                            .buttonStyle(.plain)
+                            .popover(isPresented: $showFeedFilter, attachmentAnchor: .rect(.bounds), arrowEdge: .top) {
+                                feedFilterPopoverContent
+                                    .presentationCompactAdaptation(.popover)
+                            }
+                            .accessibilityLabel(feedFilterAccessibilityLabel)
+                        }
+
+                        Button {
+                            showAccountMenu = true
+                        } label: {
+                            accountMenuAvatar
+                        }
+                        .popover(isPresented: $showAccountMenu, attachmentAnchor: .rect(.bounds), arrowEdge: .top) {
+                            accountMenuPopoverContent
+                                .presentationCompactAdaptation(.popover)
+                        }
+                        .accessibilityLabel("Account menu")
                     }
-                    .popover(isPresented: $showAccountMenu, attachmentAnchor: .rect(.bounds), arrowEdge: .top) {
-                        accountMenuPopoverContent
-                            .presentationCompactAdaptation(.popover)
-                    }
-                    .accessibilityLabel("Account menu")
                 }
                 .padding(.horizontal)
                 .padding(.top, 18)
@@ -144,37 +178,11 @@ struct FeedView: View {
                                 .padding(.horizontal, 20)
                             Spacer()
                         }
-                        .offset(y: -22)
+                        .offset(y: -160)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                     case .content:
                         VStack(spacing: 0) {
-
-                            // MARK: Filter bar
-                            if filterOptions.count > 1 {
-                                ScrollView(.horizontal, showsIndicators: false) {
-                                    HStack(spacing: 8) {
-                                        FilterChip(
-                                            label: "All leagues",
-                                            isSelected: selectedCommunityId == nil
-                                        ) {
-                                            selectedCommunityId = nil
-                                        }
-                                        ForEach(filterOptions) { option in
-                                            FilterChip(
-                                                label: option.displayName,
-                                                isSelected: selectedCommunityId == option.communityId
-                                            ) {
-                                                selectedCommunityId = option.communityId
-                                            }
-                                        }
-                                    }
-                                    .padding(.horizontal)
-                                    .padding(.vertical, 8)
-                                }
-                                .scrollContentBackground(.hidden)
-                                .accessibilityLabel("Feed filter")
-                            }
 
                             // MARK: Feed list or filtered empty state
                             if filteredRows.isEmpty {
@@ -183,12 +191,11 @@ struct FeedView: View {
                                     Image(systemName: "tray")
                                         .font(.largeTitle)
                                         .foregroundStyle(.secondary)
-                                    Text("No games in this league yet.")
+                                    Text("No games match this filter.")
                                         .font(.subheadline)
                                         .foregroundStyle(.secondary)
                                 }
                                 .frame(maxWidth: .infinity)
-                                .padding(.top, 60)
                                 Spacer()
                             } else {
                                 ScrollView {
@@ -224,7 +231,7 @@ struct FeedView: View {
             }
             .background {
                 if case .empty = feedState {
-                    Image("blank_background")
+                    Image("no_leagues_background")
                         .resizable()
                         .scaledToFill()
                         .padding(.top, 136)
@@ -281,8 +288,8 @@ struct FeedView: View {
                 showAccountMenu = false
                 showProfile = true
             } label: {
-                Text("View profile")
-                    .font(AppFont.button)
+                Text("View Profile")
+                    .font(.custom("NeueHaasDisplay-Mediu", size: 22))
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 10)
@@ -293,8 +300,8 @@ struct FeedView: View {
                 showAccountMenu = false
                 showCommunitiesList = true
             } label: {
-                Text("View leagues")
-                    .font(AppFont.button)
+                Text("View Leagues")
+                    .font(.custom("NeueHaasDisplay-Mediu", size: 22))
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 10)
@@ -308,7 +315,7 @@ struct FeedView: View {
                 sessionManager.signOut()
             } label: {
                 Text("Log out")
-                    .font(AppFont.button)
+                    .font(.custom("NeueHaasDisplay-Mediu", size: 22))
                     .foregroundStyle(FeedBrand.primaryButtonRed)
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.horizontal, 12)
@@ -320,45 +327,109 @@ struct FeedView: View {
     }
 
     @ViewBuilder
-    private var accountMenuAvatar: some View {
-        if let profilePhotoUrl {
-            let transformedURL = ImageVariantURLBuilder.variantURL(from: profilePhotoUrl, variant: .avatar)
-            AsyncImage(url: transformedURL) { phase in
-                switch phase {
-                case .empty:
-                    ProgressView()
-                        .frame(width: 38, height: 38)
-                case .success(let image):
-                    image
-                        .resizable()
-                        .scaledToFill()
-                case .failure:
-                    AsyncImage(url: profilePhotoUrl) { fallbackPhase in
-                        switch fallbackPhase {
-                        case .success(let fallbackImage):
-                            fallbackImage
-                                .resizable()
-                                .scaledToFill()
-                        default:
-                            Image(systemName: "person.circle.fill")
-                                .resizable()
-                                .scaledToFit()
-                                .foregroundStyle(.primary)
+    private var feedFilterPopoverContent: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                selectedCommunityIds = []
+            } label: {
+                HStack(alignment: .center) {
+                    Text("All leagues")
+                        .font(.custom("NeueHaasDisplay-Mediu", size: 22))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    if selectedCommunityIds.isEmpty {
+                        Image(systemName: "checkmark")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+            }
+            .buttonStyle(.plain)
+
+            ForEach(filterOptions) { option in
+                Toggle(isOn: Binding(
+                    get: { selectedCommunityIds.contains(option.communityId) },
+                    set: { isOn in
+                        if isOn {
+                            selectedCommunityIds.insert(option.communityId)
+                        } else {
+                            selectedCommunityIds.remove(option.communityId)
                         }
                     }
-                @unknown default:
-                    Image(systemName: "person.circle.fill")
-                        .resizable()
-                        .scaledToFit()
-                        .foregroundStyle(.primary)
+                )) {
+                    Text(option.displayName)
+                        .font(.custom("NeueHaasDisplay-Mediu", size: 22))
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
                 }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
             }
-            .frame(width: 38, height: 38)
-            .clipShape(Circle())
+        }
+        .frame(width: 220)
+    }
+
+    @ViewBuilder
+    private var accountMenuAvatar: some View {
+        if let profilePhotoUrl {
+            FeedToolbarResolvedAvatar(originalURL: profilePhotoUrl)
         } else {
             Image(systemName: "person.circle.fill")
                 .font(.title)
                 .foregroundStyle(.primary)
+        }
+    }
+}
+
+/// Loads `400x400` Storage variant using a correct per-object download URL (token matches the variant file).
+private struct FeedToolbarResolvedAvatar: View {
+    let originalURL: URL
+
+    @State private var loadURL: URL?
+
+    var body: some View {
+        Group {
+            if let loadURL {
+                AsyncImage(url: loadURL) { phase in
+                    switch phase {
+                    case .empty:
+                        ProgressView()
+                            .frame(width: 38, height: 38)
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .scaledToFill()
+                    case .failure:
+                        AsyncImage(url: originalURL) { fallbackPhase in
+                            switch fallbackPhase {
+                            case .success(let fallbackImage):
+                                fallbackImage
+                                    .resizable()
+                                    .scaledToFill()
+                            default:
+                                Image(systemName: "person.circle.fill")
+                                    .resizable()
+                                    .scaledToFit()
+                                    .foregroundStyle(.primary)
+                            }
+                        }
+                    @unknown default:
+                        Image(systemName: "person.circle.fill")
+                            .resizable()
+                            .scaledToFit()
+                            .foregroundStyle(.primary)
+                    }
+                }
+            } else {
+                ProgressView()
+                    .frame(width: 38, height: 38)
+            }
+        }
+        .frame(width: 38, height: 38)
+        .clipShape(Circle())
+        .task(id: originalURL) {
+            loadURL = await ImageVariantURLResolver.shared.resolveURL(originalURL: originalURL, variant: .avatar)
         }
     }
 }
@@ -395,11 +466,8 @@ extension FeedView {
         do {
             let page = try await container.feedService.fetchFeedPage(cursor: nil, pageSize: 20)
             let rows = page.items
-            // After reload, keep selected filter only if still valid
-            if let selected = selectedCommunityId {
-                let stillValid = rows.contains { $0.communityId == selected }
-                if !stillValid { selectedCommunityId = nil }
-            }
+            let validIds = Set(rows.map(\.communityId))
+            selectedCommunityIds = selectedCommunityIds.intersection(validIds)
             homeFeedCursor = page.nextCursor
             hasMoreFeed = page.hasMore
             feedState = rows.isEmpty ? .empty : .content(rows)
@@ -417,10 +485,10 @@ extension FeedView {
         guard hasMoreFeed, !isLoadingMoreFeed else { return }
         guard case .content(let rows) = feedState else { return }
         let visibleRows: [FeedRow]
-        if let selectedCommunityId {
-            visibleRows = rows.filter { $0.communityId == selectedCommunityId }
-        } else {
+        if selectedCommunityIds.isEmpty {
             visibleRows = rows
+        } else {
+            visibleRows = rows.filter { selectedCommunityIds.contains($0.communityId) }
         }
         guard loadMoreTriggerRows(rows: visibleRows).contains(currentRow.id) else { return }
         await loadMoreFeed()
@@ -468,11 +536,8 @@ extension FeedView {
         for row in nextRows {
             let rawURLs = row.photoUrls.compactMap(URL.init(string:)).prefix(photosPerCard)
             for originalURL in rawURLs {
-                if ImageDeliveryConfig.isTransformedDeliveryEnabled {
-                    urlsToPrefetch.append(ImageVariantURLBuilder.variantURL(from: originalURL, variant: .feedThumb))
-                } else {
-                    urlsToPrefetch.append(originalURL)
-                }
+                let target = await ImageVariantURLResolver.shared.resolveURL(originalURL: originalURL, variant: .feedThumb)
+                urlsToPrefetch.append(target)
             }
         }
         await ImagePrefetcher.shared.prefetch(urls: urlsToPrefetch, limit: lookaheadCardCount * photosPerCard)
@@ -520,28 +585,5 @@ private extension FeedView {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 12)
         }
-    }
-}
-
-// MARK: - Filter Chip
-
-private struct FilterChip: View {
-    let label: String
-    let isSelected: Bool
-    let onTap: () -> Void
-
-    var body: some View {
-        Button(action: onTap) {
-            Text(label)
-                .font(.subheadline)
-                .fontWeight(isSelected ? .semibold : .regular)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 7)
-                .background(isSelected ? Color.primary : Color(.systemGray5))
-                .foregroundStyle(isSelected ? Color(.systemBackground) : Color.primary)
-                .clipShape(Capsule())
-        }
-        .accessibilityLabel("Filter by \(label)")
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }

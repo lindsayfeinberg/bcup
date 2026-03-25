@@ -1,7 +1,7 @@
 import SwiftUI
 
 private enum FeedCardLayout {
-    /// Matches `NewGameLogFormView.feedCardPhotoHeight` — max height for a fitted photo (no cropping).
+    /// Matches `NewGameLogFormView.feedCardPhotoHeight` — max height for the feed photo slot (crop-to-fill uses this cap).
     static let photoMaxHeight: CGFloat = 500
     /// Until the strip width is measured, avoid a zero-width layout pass.
     static let assumedStripWidth: CGFloat = 360
@@ -11,12 +11,17 @@ private enum FeedCardLayout {
     static let headerToFlipSpacing: CGFloat = 8
     /// Space between footer sections (winners vs losers).
     static let footerSectionSpacing: CGFloat = 16
+    /// Extra space between lines in the multi-line Stats block on the card back.
+    static let statsSummaryLineSpacing: CGFloat = 7
     /// Vertical padding around the caption below the photo.
     static let captionVerticalPadding: CGFloat = 4
     static let cardCornerRadius: CGFloat = 14
     /// When the back face exceeds its allotted height, fields are omitted in this order (Stats first, Winners last).
     static let backDetailOverflowDropOrder: [String] = ["Stats", "LVP", "MVP", "Losers", "Winners"]
-    /// Placeholder height uses **landscape** 4:3 (`width * 3/4`) so loading/error states match `scaledToFit` feed photos (wide combined shots). A portrait `4:3` box (`width * 4/3`) was much taller than typical images.
+    /// Protect against long league names / payloads pushing content outside the card.
+    static let backHeaderLineLimit = 2
+    static let backDetailValueLineLimit = 3
+    /// Photo slot height uses **landscape** 4:3 (`width * 3/4`) capped by `photoMaxHeight` so loading, error, and loaded (crop-to-fill) states share the same frame.
     static func feedPhotoPlaceholderHeight(width: CGFloat, maxHeight: CGFloat) -> CGFloat {
         min(maxHeight, width * 3 / 4)
     }
@@ -101,7 +106,7 @@ struct FeedCardView: View {
     private var gameTypeTimeHeaderRow: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             Text(gameTypeDisplay)
-                .font(AppFont.bodyMedium)
+                .font(.custom("NeueHaasDisplay-Mediu", size: 22))
                 .foregroundStyle(.primary)
 
             Text("•")
@@ -117,14 +122,14 @@ struct FeedCardView: View {
         .accessibilityLabel("\(gameTypeDisplay), \(relativeTimeStringAbbreviated)")
     }
 
-    /// Thin gray border on each face (photo vs details).
+    /// Gray border on each face (photo vs details); 2pt thicker than the previous hairline.
     private var flippableCardChromeBorder: some View {
         RoundedRectangle(cornerRadius: FeedCardLayout.photoClipCornerRadius, style: .continuous)
             .strokeBorder(
                 colorScheme == .dark
                     ? Color.white.opacity(0.14)
                     : Color.black.opacity(0.06),
-                lineWidth: 0.5
+                lineWidth: 2.5
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .allowsHitTesting(false)
@@ -146,6 +151,7 @@ struct FeedCardView: View {
                 .allowsHitTesting(isBackVisible)
         }
         .frame(height: flipFrontMeasuredHeight > 0 ? flipFrontMeasuredHeight : nil)
+        .clipShape(RoundedRectangle(cornerRadius: FeedCardLayout.photoClipCornerRadius, style: .continuous))
         .animation(.spring(response: 0.38, dampingFraction: 0.72), value: isBackVisible)
         .contentShape(Rectangle())
         .onTapGesture {
@@ -217,28 +223,32 @@ struct FeedCardView: View {
 
     @ViewBuilder
     private func photoSectionWithURL(_ photoURL: URL) -> some View {
-        let slotWidth = max(photoAreaWidth, 1)
-        RetryingPhotoView(
-            originalURL: photoURL,
-            variant: .feedThumb,
-            imageID: row.gameLogId,
-            surface: "feed",
-            width: slotWidth,
-            maxPhotoHeight: FeedCardLayout.photoMaxHeight,
-            placeholder: { isLoading in
-                photoPlaceholder(
-                    isLoading: isLoading,
-                    width: slotWidth,
-                    maxHeight: FeedCardLayout.photoMaxHeight
-                )
-            }
-        )
-        .fixedSize(horizontal: false, vertical: true)
-        .frame(maxWidth: .infinity)
-        .background(
-            GeometryReader { geo in
+        GeometryReader { geo in
+            let slotWidth = max(geo.size.width, 1)
+            RetryingPhotoView(
+                originalURL: photoURL,
+                variant: .feedThumb,
+                imageID: row.gameLogId,
+                surface: "feed",
+                width: slotWidth,
+                maxPhotoHeight: FeedCardLayout.photoMaxHeight,
+                placeholder: { isLoading in
+                    photoPlaceholder(
+                        isLoading: isLoading,
+                        width: slotWidth,
+                        maxHeight: FeedCardLayout.photoMaxHeight
+                    )
+                }
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(
                 Color.clear.preference(key: FeedPhotoAreaWidthKey.self, value: geo.size.width)
-            }
+            )
+        }
+        .frame(
+            maxWidth: .infinity,
+            minHeight: FeedCardLayout.feedPhotoPlaceholderHeight(width: max(photoAreaWidth, 1), maxHeight: FeedCardLayout.photoMaxHeight),
+            maxHeight: FeedCardLayout.feedPhotoPlaceholderHeight(width: max(photoAreaWidth, 1), maxHeight: FeedCardLayout.photoMaxHeight)
         )
         .onPreferenceChange(FeedPhotoAreaWidthKey.self) { w in
             if w > 0, abs(w - photoAreaWidth) > 0.5 {
@@ -277,9 +287,13 @@ struct FeedCardView: View {
 
     /// Winners, Losers, MVP, LVP, Stats (`FeedRow.backDetailRows()`, minus any `droppedBackFieldTitles`).
     private func cardBackDetailsSection(rows: [(title: String, value: String)]) -> some View {
-        VStack(alignment: .leading, spacing: FeedCardLayout.footerSectionSpacing) {
-            ForEach(Array(rows.enumerated()), id: \.offset) { _, item in
-                VStack(alignment: .leading, spacing: 4) {
+        let mvpItem = rows.first { $0.title == "MVP" }
+        let lvpItem = rows.first { $0.title == "LVP" }
+        let otherRows = rows.filter { $0.title != "MVP" && $0.title != "LVP" }
+        return VStack(alignment: .leading, spacing: FeedCardLayout.footerSectionSpacing) {
+            ForEach(Array(otherRows.enumerated()), id: \.offset) { _, item in
+                let isStats = item.title == "Stats"
+                VStack(alignment: .leading, spacing: isStats ? 8 : 4) {
                     Text(item.title)
                         .font(AppFont.caption)
                         .foregroundStyle(.secondary)
@@ -287,13 +301,48 @@ struct FeedCardView: View {
                         .font(AppFont.bodyMedium)
                         .foregroundStyle(.primary)
                         .multilineTextAlignment(.leading)
-                        .fixedSize(horizontal: false, vertical: true)
+                        .lineSpacing(isStats ? FeedCardLayout.statsSummaryLineSpacing : 0)
+                        .lineLimit(FeedCardLayout.backDetailValueLineLimit)
+                        .truncationMode(.tail)
                 }
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel("\(item.title): \(item.value)")
             }
+
+            if let mvpItem, let lvpItem {
+                HStack(alignment: .top, spacing: 12) {
+                    backDetailCell(title: mvpItem.title, value: mvpItem.value)
+                    backDetailCell(title: lvpItem.title, value: lvpItem.value)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("MVP: \(mvpItem.value). LVP: \(lvpItem.value)")
+            } else if let mvpItem {
+                backDetailCell(title: mvpItem.title, value: mvpItem.value)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("\(mvpItem.title): \(mvpItem.value)")
+            } else if let lvpItem {
+                backDetailCell(title: lvpItem.title, value: lvpItem.value)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("\(lvpItem.title): \(lvpItem.value)")
+            }
         }
         .padding(12)
+    }
+
+    @ViewBuilder
+    private func backDetailCell(title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(AppFont.caption)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(AppFont.bodyMedium)
+                .foregroundStyle(.primary)
+                .multilineTextAlignment(.leading)
+                .lineLimit(FeedCardLayout.backDetailValueLineLimit)
+                .truncationMode(.tail)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// Game type + league line (shown on the flip back).
@@ -302,8 +351,9 @@ struct FeedCardView: View {
             .font(AppFont.bodyMedium)
             .foregroundStyle(.primary)
             .multilineTextAlignment(.leading)
+            .lineLimit(FeedCardLayout.backHeaderLineLimit)
+            .truncationMode(.tail)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .fixedSize(horizontal: false, vertical: true)
             .accessibilityLabel(headerAccessibilitySummary)
             .padding(.horizontal, 12)
             .padding(.top, 12)
@@ -391,12 +441,7 @@ struct FeedCardView: View {
     }
 
     private func prefetchCardPhoto(url originalURL: URL) async {
-        let target: URL
-        if ImageDeliveryConfig.isTransformedDeliveryEnabled {
-            target = ImageVariantURLBuilder.variantURL(from: originalURL, variant: .feedThumb)
-        } else {
-            target = originalURL
-        }
+        let target = await ImageVariantURLResolver.shared.resolveURL(originalURL: originalURL, variant: .feedThumb)
         await ImagePrefetcher.shared.prefetch(urls: [target], limit: 1)
     }
 }
@@ -410,7 +455,7 @@ private struct RetryingPhotoView<Placeholder: View>: View {
     let maxPhotoHeight: CGFloat
     @ViewBuilder let placeholder: (Bool) -> Placeholder
 
-    @State private var activeURL: URL
+    @State private var activeURL: URL?
     @State private var reloadID = UUID()
     @State private var retryAttempt = 0
     @State private var exhaustedRetries = false
@@ -422,6 +467,11 @@ private struct RetryingPhotoView<Placeholder: View>: View {
 
     private let maxAutoRetries = 2
     private let retryDelayNanoseconds: UInt64 = 500_000_000
+
+    /// Same as `FeedCardLayout.feedPhotoPlaceholderHeight` — fixed slot for crop-to-fill so there are no side letterbox gaps.
+    private var photoSlotHeight: CGFloat {
+        min(maxPhotoHeight, width * 3 / 4)
+    }
 
     init(
         originalURL: URL,
@@ -439,46 +489,68 @@ private struct RetryingPhotoView<Placeholder: View>: View {
         self.width = width
         self.maxPhotoHeight = maxPhotoHeight
         self.placeholder = placeholder
-        _activeURL = State(initialValue: ImageVariantURLBuilder.variantURL(from: originalURL, variant: variant))
+        _activeURL = State(initialValue: nil)
+    }
+
+    private var resolutionTaskId: String {
+        "\(originalURL.absoluteString)|\(variant.rawValue)|\(imageID)"
     }
 
     var body: some View {
-        AsyncImage(url: activeURL) { phase in
-            switch phase {
-            case .empty:
+        Group {
+            if let activeURL {
+                AsyncImage(url: activeURL) { phase in
+                    switch phase {
+                    case .empty:
+                        placeholder(true)
+                            .onAppear {
+                                if startedAt == nil {
+                                    startedAt = Date()
+                                }
+                            }
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: width, height: photoSlotHeight)
+                            .clipped()
+                            .accessibilityLabel("Game photo")
+                            .onAppear {
+                                onImageSuccess()
+                            }
+                    case .failure:
+                        failureView
+                            .frame(maxHeight: maxPhotoHeight)
+                            .onAppear {
+                                onImageFailure()
+                            }
+                    @unknown default:
+                        failureView
+                            .frame(maxHeight: maxPhotoHeight)
+                            .onAppear {
+                                onImageFailure()
+                            }
+                    }
+                }
+                .frame(width: width)
+                .id(reloadID)
+            } else {
                 placeholder(true)
-                    .onAppear {
-                        if startedAt == nil {
-                            startedAt = Date()
-                        }
-                    }
-            case .success(let image):
-                image
-                    .resizable()
-                    .scaledToFit()
                     .frame(width: width)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxHeight: maxPhotoHeight)
-                    .accessibilityLabel("Game photo")
-                    .onAppear {
-                        onImageSuccess()
-                    }
-            case .failure:
-                failureView
-                    .frame(maxHeight: maxPhotoHeight)
-                    .onAppear {
-                        onImageFailure()
-                    }
-            @unknown default:
-                failureView
-                    .frame(maxHeight: maxPhotoHeight)
-                    .onAppear {
-                        onImageFailure()
-                    }
             }
         }
-        .frame(width: width)
-        .id(reloadID)
+        .task(id: resolutionTaskId) {
+            await MainActor.run {
+                if startedAt == nil {
+                    startedAt = Date()
+                }
+            }
+            let url = await ImageVariantURLResolver.shared.resolveURL(originalURL: originalURL, variant: variant)
+            await MainActor.run {
+                activeURL = url
+                reloadID = UUID()
+            }
+        }
     }
 
     @ViewBuilder
@@ -514,7 +586,7 @@ private struct RetryingPhotoView<Placeholder: View>: View {
                     surface: surface,
                     imageID: imageID,
                     attemptCount: retryAttempt + 1,
-                    urlHost: activeURL.host
+                    urlHost: activeURL?.host
                 )
             }
             return
@@ -526,7 +598,7 @@ private struct RetryingPhotoView<Placeholder: View>: View {
     }
 
     private func onImageFailure() {
-        if !hasSwitchedToOriginal && activeURL != originalURL {
+        if !hasSwitchedToOriginal, let u = activeURL, u != originalURL {
             hasSwitchedToOriginal = true
             activeURL = originalURL
             retryAttempt = 0
@@ -543,7 +615,7 @@ private struct RetryingPhotoView<Placeholder: View>: View {
                 surface: surface,
                 imageID: imageID,
                 attemptCount: retryAttempt + 1,
-                urlHost: activeURL.host
+                urlHost: activeURL?.host
             )
         }
     }
@@ -557,7 +629,7 @@ private struct RetryingPhotoView<Placeholder: View>: View {
                     surface: surface,
                     imageID: imageID,
                     attemptCount: retryAttempt + 1,
-                    urlHost: activeURL.host
+                    urlHost: activeURL?.host
                 )
             }
         } else if hasObservedFailure {
@@ -567,13 +639,25 @@ private struct RetryingPhotoView<Placeholder: View>: View {
                     surface: surface,
                     imageID: imageID,
                     attemptCount: retryAttempt + 1,
-                    urlHost: activeURL.host
+                    urlHost: activeURL?.host
                 )
             }
         }
 
         guard !successRecorded else { return }
         successRecorded = true
+        #if DEBUG
+        if surface == "feed", variant == .feedThumb, let loadedURL = activeURL {
+            let path = loadedURL.path.removingPercentEncoding ?? loadedURL.path
+            let file = (path as NSString).lastPathComponent
+            let expectedTransformed =
+                ImageDeliveryConfig.isTransformedDeliveryEnabled
+                && ImageVariantURLBuilder.transformedObjectPath(from: originalURL, variant: .feedThumb) != nil
+            AppDebugLog.log(
+                "feed_photo_delivery transformedFlag=\(ImageDeliveryConfig.isTransformedDeliveryEnabled) expectedVariantPath=\(expectedTransformed) loadedFile=\(file) is800x800Suffix=\(file.contains("_800x800")) usingOriginalURL=\(loadedURL == originalURL)"
+            )
+        }
+        #endif
         if let startedAt {
             let ms = Int(Date().timeIntervalSince(startedAt) * 1000.0)
             Task {
@@ -581,7 +665,7 @@ private struct RetryingPhotoView<Placeholder: View>: View {
                     surface: surface,
                     imageID: imageID,
                     attemptCount: retryAttempt + 1,
-                    urlHost: activeURL.host,
+                    urlHost: activeURL?.host,
                     milliseconds: ms
                 )
             }

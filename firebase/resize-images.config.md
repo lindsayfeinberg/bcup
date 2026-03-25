@@ -17,8 +17,8 @@ This project uses Firebase Storage originals as source of truth, then serves tra
 
 The iOS app expects Firebase-style resized object naming:
 
-- Feed thumbnail: `<originalName>_400x400.<ext>`
-- Avatar: `<originalName>_128x128.<ext>`
+- Feed thumbnail: `<originalName>_800x800.<ext>`
+- Avatar: `<originalName>_400x400.<ext>`
 
 Configured in:
 
@@ -27,5 +27,6 @@ Configured in:
 ## Notes
 
 - Originals remain the persisted `photoUrls` and `profilePhotoUrl` values.
-- UI computes variant URLs at render time and falls back to originals on failure.
+- The iOS client resolves variant object paths with `StorageReference.downloadURL()` so each file’s download token matches (path rewriting alone is not sufficient).
+- UI falls back to originals on failure.
 - Upload metadata sets `Cache-Control: public,max-age=31536000,immutable`.

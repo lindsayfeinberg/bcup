@@ -17,11 +17,14 @@ struct NewGameLogFormView: View {
 
     /// Teammate/opponent picker list; previously a fixed 260pt — that remains the cap when many people are available.
     private static let participantPickerListMaxHeight: CGFloat = 260
-    private static let participantPickerListRowStride: CGFloat = 52
-    private static let participantPickerListMinHeight: CGFloat = 52
+    private static let participantPickerListRowStride: CGFloat = 56
+    private static let participantPickerListMinHeight: CGFloat = 56
+    private static let widgetTitleFont = Font.custom("NeueHaasDisplay-Bold", size: 16)
+    /// One point larger than `AppFont.body` (17), medium weight — teammate/opponent picker rows.
+    private static let participantPickerRowNameFont = Font.custom("NeueHaasDisplay-Mediu", size: 18)
 
     /// Background behind the form.
-    private static let formBackgroundSoftRed = GameLogBrandColor.red
+    private static let formBackgroundSoftRed = Color.white
     private static let widgetOutlineColor = GameLogBrandColor.red
 
     @Environment(\.dismiss) private var dismiss
@@ -83,8 +86,17 @@ struct NewGameLogFormView: View {
     @State private var submitAfterCapture = false
 
     private var widgetOutlineBackground: some View {
-        RoundedRectangle(cornerRadius: 12, style: .continuous)
-            .fill(Color.white)
+        Color.clear
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.white)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .stroke(Self.widgetOutlineColor, lineWidth: 2)
+                    )
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+            )
     }
 
     var body: some View {
@@ -152,8 +164,8 @@ struct NewGameLogFormView: View {
                         }
                     } header: {
                         Text("Choose league")
-                            .font(AppFont.sectionHeader)
-                            .foregroundStyle(GameLogBrandColor.formLightRed)
+                            .font(Self.widgetTitleFont)
+                            .foregroundStyle(GameLogBrandColor.red)
                     }
                     .listRowBackground(widgetOutlineBackground)
 
@@ -162,6 +174,9 @@ struct NewGameLogFormView: View {
                             ForEach(GameType.allCases) { type in
                                 Text(type.displayName)
                                     .font(AppFont.body)
+                                    .foregroundStyle(isGameTypeAvailable(type) ? Color.primary : Color.secondary)
+                                    .opacity(isGameTypeAvailable(type) ? 1.0 : 0.45)
+                                    .disabled(!isGameTypeAvailable(type))
                                     .tag(type)
                             }
                         } label: {
@@ -172,8 +187,8 @@ struct NewGameLogFormView: View {
                         .pickerStyle(.segmented)
                     } header: {
                         Text("Choose game type")
-                            .font(AppFont.sectionHeader)
-                            .foregroundStyle(GameLogBrandColor.formLightRed)
+                            .font(Self.widgetTitleFont)
+                            .foregroundStyle(GameLogBrandColor.red)
                     }
                     .listRowBackground(widgetOutlineBackground)
 
@@ -221,21 +236,22 @@ struct NewGameLogFormView: View {
                         }
                     } header: {
                         Text("Outcome")
-                            .font(AppFont.sectionHeader)
-                            .foregroundStyle(GameLogBrandColor.formLightRed)
+                            .font(Self.widgetTitleFont)
+                            .foregroundStyle(GameLogBrandColor.red)
                     }
                     .listRowBackground(widgetOutlineBackground)
 
                     Section {
-                        let range = teamSizeRange(for: selectedGameType)
+                        let range = validTeamSizeRange(for: selectedGameType)
                         Stepper(value: $teamSize, in: range, step: 1) {
                             Text("\(teamSize)")
                                 .font(AppFont.headline)
+                                .foregroundStyle(GameLogBrandColor.red)
                         }
                     } header: {
                         Text("Team size")
-                            .font(AppFont.sectionHeader)
-                            .foregroundStyle(GameLogBrandColor.formLightRed)
+                            .font(Self.widgetTitleFont)
+                            .foregroundStyle(GameLogBrandColor.red)
                     }
                     .listRowBackground(widgetOutlineBackground)
 
@@ -285,19 +301,19 @@ struct NewGameLogFormView: View {
                         }
                     } header: {
                         Text("Awards (Optional)")
-                            .font(AppFont.sectionHeader)
-                            .foregroundStyle(GameLogBrandColor.formLightRed)
+                            .font(Self.widgetTitleFont)
+                            .foregroundStyle(GameLogBrandColor.red)
                     }
                     .listRowBackground(widgetOutlineBackground)
 
                     Section {
                         TextField("Add a note", text: $gameLogNotes)
                             .font(AppFont.body)
-                            .textFieldStyle(.roundedBorder)
+                            .textFieldStyle(.plain)
                     } header: {
-                        Text("Notes")
-                            .font(AppFont.sectionHeader)
-                            .foregroundStyle(GameLogBrandColor.formLightRed)
+                        Text("Notes (optional)")
+                            .font(Self.widgetTitleFont)
+                            .foregroundStyle(GameLogBrandColor.red)
                     }
                     .listRowBackground(widgetOutlineBackground)
 
@@ -305,8 +321,8 @@ struct NewGameLogFormView: View {
                         summaryWidgetContent
                     } header: {
                         Text("Summary")
-                            .font(AppFont.sectionHeader)
-                            .foregroundStyle(GameLogBrandColor.formLightRed)
+                            .font(Self.widgetTitleFont)
+                            .foregroundStyle(GameLogBrandColor.red)
                     }
                     .listRowBackground(widgetOutlineBackground)
 
@@ -372,8 +388,8 @@ struct NewGameLogFormView: View {
             Task { await loadMembers() }
         }
         .onChange(of: selectedGameType) { _, _ in
-            let newRange = teamSizeRange(for: selectedGameType)
-            teamSize = newRange.lowerBound
+            let newRange = validTeamSizeRange(for: selectedGameType)
+            teamSize = min(max(teamSize, newRange.lowerBound), newRange.upperBound)
             resetSelectionForScopeChange()
             syncStatsWithParticipants()
         }
@@ -525,7 +541,7 @@ struct NewGameLogFormView: View {
                 HStack(spacing: 8) {
                     ForEach(selectedParticipants, id: \.profileId) { member in
                         Text(member.displayName.isEmpty ? "Unknown" : member.displayName)
-                            .font(AppFont.footnote)
+                            .font(AppFont.subheadlineBold)
                             .foregroundStyle(GameLogBrandColor.formLightRed)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 7)
@@ -561,8 +577,8 @@ struct NewGameLogFormView: View {
         VStack(alignment: .leading, spacing: 12) {
             if !title.isEmpty, includeTitleAboveButton {
                 Text(title)
-                    .font(AppFont.sectionHeader)
-                    .foregroundStyle(GameLogBrandColor.formLightRed)
+                    .font(Self.widgetTitleFont)
+                    .foregroundStyle(GameLogBrandColor.red)
             }
 
             Button {
@@ -610,29 +626,40 @@ struct NewGameLogFormView: View {
                                 guard !rowDisabled else { return }
                                 onToggle(profileId, isSelected)
                             } label: {
-                                HStack(spacing: 12) {
+                                Group {
                                     if onOppositeSide {
-                                        Image(systemName: "xmark.circle.fill")
-                                            .foregroundStyle(.red)
-                                    } else {
-                                        if isSelected {
-                                            Image(systemName: "checkmark.circle.fill")
-                                                .symbolRenderingMode(.palette)
-                                                .foregroundStyle(GameLogBrandColor.red, .white)
-                                        } else {
-                                            Image(systemName: "circle")
+                                        HStack(spacing: 12) {
+                                            Image(systemName: "xmark.circle.fill")
+                                                .foregroundStyle(.red)
+                                            Text(member.displayName.isEmpty ? "Unknown" : member.displayName)
+                                                .font(Self.participantPickerRowNameFont)
+                                                .foregroundStyle(.primary)
+                                            Text(oppositeLabel)
+                                                .font(AppFont.footnote)
                                                 .foregroundStyle(.secondary)
+                                            Spacer(minLength: 0)
                                         }
+                                    } else {
+                                        Text(member.displayName.isEmpty ? "Unknown" : member.displayName)
+                                            .font(Self.participantPickerRowNameFont)
+                                            .foregroundStyle(isSelected ? GameLogBrandColor.formLightRed : .primary)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
                                     }
-                                    Text(member.displayName.isEmpty ? "Unknown" : member.displayName)
-                                        .font(AppFont.body)
-                                        .foregroundStyle(.primary)
-                                    if onOppositeSide {
-                                        Text(oppositeLabel)
-                                            .font(AppFont.footnote)
-                                            .foregroundStyle(.secondary)
+                                }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 10)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background {
+                                    if !onOppositeSide, isSelected {
+                                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                            .fill(GameLogBrandColor.formLightRed.opacity(0.22))
                                     }
-                                    Spacer()
+                                }
+                                .overlay {
+                                    if !onOppositeSide, isSelected {
+                                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                            .strokeBorder(GameLogBrandColor.formLightRed, lineWidth: 1)
+                                    }
                                 }
                             }
                             .buttonStyle(.plain)
@@ -952,13 +979,34 @@ struct NewGameLogFormView: View {
         return nil
     }
 
-    private func teamSizeRange(for gameType: GameType) -> ClosedRange<Int> {
+    private var leagueTeamSizeCap: Int {
+        max(1, members.count / 2)
+    }
+
+    private func baseTeamSizeRange(for gameType: GameType) -> ClosedRange<Int> {
         switch gameType {
         case .pong, .beerBall:
             return 1...10
         case .battlePong, .baseball:
             return 3...20
         }
+    }
+
+    private func validTeamSizeRange(for gameType: GameType) -> ClosedRange<Int> {
+        let base = baseTeamSizeRange(for: gameType)
+        let upperBound = min(base.upperBound, leagueTeamSizeCap)
+        if upperBound < base.lowerBound {
+            return base.lowerBound...base.lowerBound
+        }
+        return base.lowerBound...upperBound
+    }
+
+    private func isGameTypeAvailable(_ gameType: GameType) -> Bool {
+        leagueTeamSizeCap >= baseTeamSizeRange(for: gameType).lowerBound
+    }
+
+    private func firstAvailableGameType() -> GameType {
+        GameType.allCases.first(where: isGameTypeAvailable) ?? .pong
     }
 
     private func resetSelectionForScopeChange() {
@@ -1352,6 +1400,11 @@ struct NewGameLogFormView: View {
         membersErrorMessage = nil
         do {
             members = try await container.communityService.fetchMembers(communityId: selectedCommunityId)
+            if !isGameTypeAvailable(selectedGameType) {
+                selectedGameType = firstAvailableGameType()
+            }
+            let range = validTeamSizeRange(for: selectedGameType)
+            teamSize = min(max(teamSize, range.lowerBound), range.upperBound)
             syncStatsWithParticipants()
         } catch {
             membersErrorMessage = error.localizedDescription

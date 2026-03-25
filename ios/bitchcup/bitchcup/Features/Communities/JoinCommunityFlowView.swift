@@ -145,13 +145,13 @@ struct JoinCommunityFlowView: View {
                             Text("Do you want to join ")
                                 .foregroundStyle(.black)
                             + Text(previewLeagueName).foregroundStyle(.black)
-                            + Text(" league with ")
+                            + Text(" with ")
                                 .foregroundStyle(.black)
                             + Text(previewMemberCount).foregroundStyle(.black)
                             + Text(" members?")
                                 .foregroundStyle(.black)
                         )
-                        .font(.custom("NeueHaasDisplay-Bold", size: 30))
+                        .font(.custom("NeueHaasDisplay-Mediu", size: 30))
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: .infinity, alignment: .center)
 
@@ -160,11 +160,15 @@ struct JoinCommunityFlowView: View {
                                 showJoinConfirmation = false
                             }
                             .font(.custom("NeueHaasDisplay-Mediu", size: 22))
-                            .foregroundStyle(Color(red: 41.0 / 255.0, green: 0.0 / 255.0, blue: 3.0 / 255.0))
+                            .foregroundStyle(fieldAccentColor)
                             .frame(maxWidth: .infinity, minHeight: 48)
                             .background(
                                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .fill(Color(red: 207.0 / 255.0, green: 106.0 / 255.0, blue: 84.0 / 255.0))
+                                    .fill(Color.white)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .stroke(fieldAccentColor, lineWidth: 2)
                             )
                             .buttonStyle(.plain)
 
@@ -188,7 +192,7 @@ struct JoinCommunityFlowView: View {
                             .frame(maxWidth: .infinity, minHeight: 48)
                             .background(
                                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .fill(Color(red: 180.0 / 255.0, green: 61.0 / 255.0, blue: 37.0 / 255.0))
+                                    .fill(fieldAccentColor)
                             )
                             .buttonStyle(.plain)
                         }
@@ -200,7 +204,7 @@ struct JoinCommunityFlowView: View {
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .stroke(.black, lineWidth: 2)
+                            .stroke(.white, lineWidth: 2)
                     )
                     .padding(.horizontal, 24)
                 }

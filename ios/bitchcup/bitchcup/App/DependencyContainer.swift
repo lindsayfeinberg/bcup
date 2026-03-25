@@ -973,18 +973,18 @@ extension GameLogService: FeedServiceProtocol {
     private static func formatPongStats(_ pong: [String: Any], resolveName: (String) -> String) -> String? {
         var lines: [String] = []
         if let mode = pong["cupMode"] as? Int {
-            lines.append("Cup mode: \(mode)-cup")
+            lines.append("Playing \(mode)-cup pong")
         } else if let n = pong["cupMode"] as? NSNumber {
-            lines.append("Cup mode: \(n.intValue)-cup")
+            lines.append("Playing \(n.intValue)-cup pong")
         }
         let cups = stringIntMap(from: pong["playerCupsHit"])
         if !cups.isEmpty {
             for id in cups.keys.sorted(by: { resolveName($0) < resolveName($1) }) {
-                lines.append("\(resolveName(id)): \(cups[id] ?? 0) cups")
+                lines.append("\(resolveName(id)) made \(cups[id] ?? 0) shots")
             }
         }
         if let last = pong["lastCupByProfileId"] as? String, !last.isEmpty {
-            lines.append("Last cup: \(resolveName(last))")
+            lines.append("\(resolveName(last)) hit the last cup!")
         }
         return lines.isEmpty ? nil : lines.joined(separator: "\n")
     }
@@ -994,11 +994,11 @@ extension GameLogService: FeedServiceProtocol {
         let cans = stringIntMap(from: bb["newCanCountByProfileId"])
         if !cans.isEmpty {
             for id in cans.keys.sorted(by: { resolveName($0) < resolveName($1) }) {
-                lines.append("\(resolveName(id)): \(cans[id] ?? 0) new cans")
+                lines.append("\(resolveName(id)) had to drink \(cans[id] ?? 0) extra drinks")
             }
         }
         if let first = bb["firstFinishedByProfileId"] as? String, !first.isEmpty {
-            lines.append("Finished first: \(resolveName(first))")
+            lines.append("\(resolveName(first)) finished their drink first!")
         }
         return lines.isEmpty ? nil : lines.joined(separator: "\n")
     }
@@ -1008,7 +1008,7 @@ extension GameLogService: FeedServiceProtocol {
         guard !cups.isEmpty else { return nil }
         var lines: [String] = []
         for id in cups.keys.sorted(by: { resolveName($0) < resolveName($1) }) {
-            lines.append("\(resolveName(id)): \(cups[id] ?? 0) cups")
+            lines.append("\(resolveName(id)) made \(cups[id] ?? 0) shots!")
         }
         return lines.joined(separator: "\n")
     }
@@ -1018,7 +1018,7 @@ extension GameLogService: FeedServiceProtocol {
         guard !hits.isEmpty else { return nil }
         var lines: [String] = []
         for id in hits.keys.sorted(by: { resolveName($0) < resolveName($1) }) {
-            lines.append("\(resolveName(id)): \(hits[id] ?? 0) hits")
+            lines.append("\(resolveName(id)) had \(hits[id] ?? 0) hits!")
         }
         return lines.joined(separator: "\n")
     }
