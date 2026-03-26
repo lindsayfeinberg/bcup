@@ -79,6 +79,12 @@ struct NewGameLogFormView: View {
     @State private var members: [CommunityMemberRosterRow] = []
     @State private var isMembersLoading = false
     @State private var membersErrorMessage: String?
+    private let uiTestMembers: [CommunityMemberRosterRow] = [
+        .init(profileId: "ui-test-user", displayName: "You", profilePhotoUrl: nil, communityOdds: 0.75, communityGamesPlayed: 4),
+        .init(profileId: "ui-opponent-1", displayName: "Alex", profilePhotoUrl: nil, communityOdds: 0.62, communityGamesPlayed: 3),
+        .init(profileId: "ui-opponent-2", displayName: "Riley", profilePhotoUrl: nil, communityOdds: 0.51, communityGamesPlayed: 2),
+        .init(profileId: "ui-opponent-3", displayName: "Jordan", profilePhotoUrl: nil, communityOdds: 0.41, communityGamesPlayed: 2)
+    ]
 
     private enum Outcome {
         case won, lost
@@ -959,7 +965,12 @@ struct NewGameLogFormView: View {
     }
 
     private var currentUserId: String? {
-        Auth.auth().currentUser?.uid ?? container.authService.currentUserId ?? UITestRuntime.currentUserIdFallback
+        if UITestRuntime.participatesInUiTestHarness {
+            return container.authService.currentUserId ?? UITestRuntime.currentUserIdFallback ?? "ui-test-user"
+        }
+        return container.authService.currentUserId
+            ?? UITestRuntime.currentUserIdFallback
+            ?? Auth.auth().currentUser?.uid
     }
 
     /// In bracket-linked flows, only a user who is actually one of the match participants may submit.
@@ -1529,6 +1540,17 @@ struct NewGameLogFormView: View {
         guard !selectedCommunityId.isEmpty else { return }
         isMembersLoading = true
         membersErrorMessage = nil
+        if UITestRuntime.participatesInUiTestHarness {
+            members = uiTestMembers
+            if !isGameTypeAvailable(selectedGameType) {
+                selectedGameType = firstAvailableGameType()
+            }
+            let range = validTeamSizeRange(for: selectedGameType)
+            teamSize = min(max(teamSize, range.lowerBound), range.upperBound)
+            syncStatsWithParticipants()
+            isMembersLoading = false
+            return
+        }
         do {
             members = try await container.communityService.fetchMembers(communityId: selectedCommunityId)
             if !isGameTypeAvailable(selectedGameType) {

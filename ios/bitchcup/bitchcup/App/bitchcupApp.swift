@@ -80,31 +80,10 @@ class AppDelegate: NSObject, UIApplicationDelegate {
 @main
 struct bitchcupApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
-    @StateObject private var router = AppRouter()
-    @StateObject private var container: DependencyContainer
-    @StateObject private var sessionManager: AppSessionManager
+    @StateObject private var appShell = AppShell()
 
     init() {
-        AppDebugLog.log("bitchcupApp.init: creating router, container, sessionManager")
-        if let scenario = UITestRuntime.scenario {
-            let (container, router, sessionManager) = UITestContainerFactory.makeContainer(for: scenario)
-            _router = StateObject(wrappedValue: router)
-            _container = StateObject(wrappedValue: container)
-            _sessionManager = StateObject(wrappedValue: sessionManager)
-            return
-        }
-
-        let router = AppRouter()
-        let container = DependencyContainer()
-        _router = StateObject(wrappedValue: router)
-        _container = StateObject(wrappedValue: container)
-        _sessionManager = StateObject(
-            wrappedValue: AppSessionManager(
-                router: router,
-                authService: container.authService,
-                userService: container.userService
-            )
-        )
+        AppDebugLog.log("bitchcupApp.init")
     }
 
     var body: some Scene {
@@ -112,16 +91,24 @@ struct bitchcupApp: App {
             ZStack {
                 Color(red: 254.0 / 255.0, green: 254.0 / 255.0, blue: 254.0 / 255.0)
                     .ignoresSafeArea()
-                ContentView()
+                if appShell.hasAttachedUi,
+                   let router = appShell.router,
+                   let container = appShell.container,
+                   let sessionManager = appShell.sessionManager {
+                    ContentView()
+                        .environmentObject(router)
+                        .environmentObject(container)
+                        .environmentObject(sessionManager)
+                        .task {
+                            AppDebugLog.log("WindowGroup.task: calling restoreSession()")
+                            await sessionManager.restoreSession()
+                            AppDebugLog.log("WindowGroup.task: restoreSession() finished — sessionState=\(String(describing: sessionManager.sessionState)) route=\(String(describing: router.route))")
+                        }
+                }
             }
             .font(.custom("NeueHaasDisplay-Roman", size: 16))
-            .environmentObject(router)
-            .environmentObject(container)
-            .environmentObject(sessionManager)
             .task {
-                AppDebugLog.log("WindowGroup.task: calling restoreSession()")
-                await sessionManager.restoreSession()
-                AppDebugLog.log("WindowGroup.task: restoreSession() finished — sessionState=\(String(describing: sessionManager.sessionState)) route=\(String(describing: router.route))")
+                await appShell.prepareFirstFrame()
             }
         }
     }

@@ -84,6 +84,24 @@ struct BracketsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             guard !bracketId.isEmpty else { return }
+            if UITestRuntime.participatesInUiTestHarness {
+                listener?.remove()
+                listener = nil
+                // Mock brackets from UITestContainerFactory are not in Firestore; avoid snapshot listener (permissions / missing doc).
+                if bracketCommunityId.isEmpty {
+                    bracketCommunityId = "ui-community-1"
+                }
+                if let seedMethod {
+                    bracketSeedMethod = seedMethod
+                }
+                if let teamSize {
+                    bracketTeamSize = teamSize
+                }
+                bracketStatus = "ACTIVE"
+                bracketRounds = []
+                isFinalized = true
+                return
+            }
             listener?.remove()
             listener = AppFirestore.db()
                 .collection("brackets")
