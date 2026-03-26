@@ -159,6 +159,14 @@ This plan is sequenced to let two developers work in parallel with clear handoff
 - `T12.3` Finalize App Store metadata and policy wording for alcohol context.
 - `T12.4` Create incident response and rollback runbooks.
 - `T12.5` Deploy production Firebase configuration and create release tag.
+  - Pre-Connect prep runbook: `docs/runbooks/T12.5/release-cutover-runbook.md`.
+  - App Store Connect gate (must be true before prod cutover): release build/status ready, release SHA frozen, release owner approval captured.
+  - Once Connect is set, execute in order:
+    - Freeze release SHA and verify explicit prod target (`bitchcup-prod`) for all Firebase commands.
+    - Deploy: `firestore:rules` -> `firestore:indexes` -> `storage:rules` -> `functions`.
+    - Run prod smoke checks (auth, community read, game log + photo, feed read, bracket-linked path where applicable).
+    - Create annotated final release tag from deployed SHA.
+    - Start T12.6 72-hour monitoring window.
 - `T12.6` Monitor first 72 hours for crashes, auth issues, and rule denials.
 
 ## Parallel Work Allocation

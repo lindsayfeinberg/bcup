@@ -1,5 +1,7 @@
 {
   "projects": {
-    "default": "bitchcup-dev"
+    "default": "bitchcup-dev",
+    "dev": "bitchcup-dev",
+    "prod": "bitchcup-prod"
   }
 }
