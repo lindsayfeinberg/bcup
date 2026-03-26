@@ -91,7 +91,8 @@ struct bitchcupApp: App {
             ZStack {
                 Color(red: 254.0 / 255.0, green: 254.0 / 255.0, blue: 254.0 / 255.0)
                     .ignoresSafeArea()
-                if let router = appShell.router,
+                if appShell.hasAttachedUi,
+                   let router = appShell.router,
                    let container = appShell.container,
                    let sessionManager = appShell.sessionManager {
                     ContentView()
@@ -106,8 +107,8 @@ struct bitchcupApp: App {
                 }
             }
             .font(.custom("NeueHaasDisplay-Roman", size: 16))
-            .onAppear {
-                appShell.bootstrapIfNeeded()
+            .task {
+                await appShell.prepareFirstFrame()
             }
         }
     }

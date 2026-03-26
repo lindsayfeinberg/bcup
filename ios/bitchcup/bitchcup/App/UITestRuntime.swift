@@ -45,8 +45,10 @@ enum UITestRuntime {
         return nil
     }
 
+    /// Prefer this for “who am I?” in forms when `Auth` may be nil (UI tests always set `UI_TEST_USER_ID`).
     static var currentUserIdFallback: String? {
-        guard participatesInUiTestHarness else { return nil }
-        return ProcessInfo.processInfo.environment["UI_TEST_USER_ID"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let v = ProcessInfo.processInfo.environment["UI_TEST_USER_ID"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let v, !v.isEmpty else { return nil }
+        return v
     }
 }

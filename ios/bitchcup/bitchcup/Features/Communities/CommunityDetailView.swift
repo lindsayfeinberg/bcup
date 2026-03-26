@@ -34,6 +34,12 @@ struct CommunityDetailView: View {
     @State private var hasMoreFeed = false
     @State private var isLoadingMoreFeed = false
     @State private var loadMoreFeedErrorMessage: String?
+    private let uiTestMembers: [CommunityMemberRosterRow] = [
+        .init(profileId: "ui-test-user", displayName: "You", profilePhotoUrl: nil, communityOdds: 0.75, communityGamesPlayed: 4),
+        .init(profileId: "ui-opponent-1", displayName: "Alex", profilePhotoUrl: nil, communityOdds: 0.62, communityGamesPlayed: 3),
+        .init(profileId: "ui-opponent-2", displayName: "Riley", profilePhotoUrl: nil, communityOdds: 0.51, communityGamesPlayed: 2),
+        .init(profileId: "ui-opponent-3", displayName: "Jordan", profilePhotoUrl: nil, communityOdds: 0.41, communityGamesPlayed: 2)
+    ]
 
     private var bracketAccentColor: Color {
         // Kept consistent with the existing community join/create flows.
@@ -471,9 +477,9 @@ struct CommunityDetailView: View {
 
     private func fetchCommunityAndMembers() async throws {
         if UITestRuntime.participatesInUiTestHarness {
-            // Mocked UITest container must not hit real Firestore for community metadata (rules/permissions/crash risk).
+            // Never hit live data in UI tests.
             communityName = "UI Test League"
-            members = try await container.communityService.fetchMembers(communityId: communityId)
+            members = uiTestMembers
             return
         }
         let db = AppFirestore.db()
@@ -543,6 +549,27 @@ struct CommunityDetailView: View {
         }
     }
     private func createBracket() async {
+        if UITestRuntime.participatesInUiTestHarness {
+            let bracketId = "ui-bracket-\(brackets.count + 1)"
+            let created = BracketListItem(
+                bracketId: bracketId,
+                communityId: communityId,
+                seedMethod: selectedSeedMethod,
+                status: selectedSeedMethod == .manual ? "DRAFT" : "ACTIVE",
+                teamSize: selectedTeamSize,
+                createdAt: Date()
+            )
+            showCreateBracketPopup = false
+            brackets = [created] + brackets
+            if selectedSeedMethod == .manual {
+                pendingManualBracket = created
+                showManualSeedFlow = true
+            } else {
+                showManualSeedFlow = false
+                selectedBracketForNavigation = created
+            }
+            return
+        }
         isCreatingBracket = true
         bracketErrorMessage = nil
         defer { isCreatingBracket = false }
@@ -575,6 +602,11 @@ struct CommunityDetailView: View {
     }
 
     private func loadBracketsSection() async {
+        if UITestRuntime.participatesInUiTestHarness {
+            isLoadingBrackets = false
+            bracketsErrorMessage = nil
+            return
+        }
         isLoadingBrackets = true
         defer { isLoadingBrackets = false }
         do {

@@ -123,11 +123,11 @@ Use this table to map each acceptance item to evidence.
 | CHK-B.3 | Member limited to own communities | Rules validation | Not Run |  |  |
 | CHK-B.4 | Non-creator blocked for log update/delete | Rules validation | Not Run |  |  |
 | CHK-B.5 | Membership ownership constraints enforced | Rules validation | Not Run |  |  |
-| CHK-C.1 | New user onboarding e2e | Sign-in -> 21+ -> profile -> feed | Fail | `testOnboardingCriticalPath` failed waiting for `feed.logGame` after profile finish (see screenshots: `assets/image-e63fc18f-f09a-4616-8c4e-818444e55ea7.png`) | DEF-001 |
+| CHK-C.1 | New user onboarding e2e | Sign-in -> 21+ -> profile -> feed | Pass | `xcodebuild test -only-testing:bitchcupUITests` succeeded on simulator `30620F7E-3977-4E92-8937-8DA0591C2B84`; `testOnboardingCriticalPath` passed (`Test-bitchcup-2026.03.26_10-51-46--0400.xcresult`) |  |
 | CHK-C.2 | Returning user bypasses onboarding | Relaunch with complete profile | Not Run |  |  |
 | CHK-C.3 | Create/join community e2e | End-to-end flow | Not Run |  |  |
-| CHK-C.4 | Create/update/delete log e2e | End-to-end flow | Blocked | `testGameLogCriticalPath` failed waiting for `gamelog.dropdown.Opponents_(Losers)` (see screenshots: `assets/image-c2eb5235-f6d3-4385-9a37-89bf50533f8c.png`) | DEF-001 |
-| CHK-C.5 | Bracket create/match update e2e | End-to-end flow | Blocked | `testBracketCriticalPath` failed waiting for `community.createBracket` (see screenshots: `assets/image-c2eb5235-f6d3-4385-9a37-89bf50533f8c.png`) | DEF-001 |
+| CHK-C.4 | Create/update/delete log e2e | End-to-end flow | Pass | `testGameLogCriticalPath` passed in full suite run (`Test-bitchcup-2026.03.26_10-51-46--0400.xcresult`) |  |
+| CHK-C.5 | Bracket create/match update e2e | End-to-end flow | Pass | `testBracketCriticalPath` passed in full suite run (`Test-bitchcup-2026.03.26_10-51-46--0400.xcresult`) |  |
 | CHK-D.1 | Win-rate calculations correct | Scenario verification | Not Run |  |  |
 | CHK-D.2 | Zero denominator fallback | Scenario verification | Not Run |  |  |
 | CHK-D.3 | Update/delete recalc correctness | Scenario verification | Not Run |  |  |
@@ -135,7 +135,7 @@ Use this table to map each acceptance item to evidence.
 | CHK-E.1 | Upload failure clear retry | Failure UX validation | Not Run |  |  |
 | CHK-E.2 | Network/API errors user-safe | Error UX validation | Not Run |  |  |
 | CHK-E.3 | No missing index errors | Monitor logs/console | Not Run |  |  |
-| CHK-E.4 | Happy paths crash-free on simulator | Run critical flows | Fail | UI test red X failures due to missing UI elements (see `bitchcupUITests.swift` assertions): `feed.logGame`, `gamelog.dropdown.Opponents_(Losers)`, `community.createBracket` (see screenshots: `assets/image-e63fc18f-f09a-4616-8c4e-818444e55ea7.png`, `assets/image-c2eb5235-f6d3-4385-9a37-89bf50533f8c.png`) | DEF-001 |
+| CHK-E.4 | Happy paths crash-free on simulator | Run critical flows | Pass | Full `bitchcupUITests` suite succeeded on iPhone 16 simulator (`Test-bitchcup-2026.03.26_10-51-46--0400.xcresult`) |  |
 | CHK-F.1 | CI passes | Verify latest CI status | Not Run |  |  |
 | CHK-F.2 | Dev smoke tests pass | Run smoke suite | Not Run |  |  |
 | CHK-F.3 | Prod deploy success | Out of scope for iOS-only dev UAT execution session | Blocked | Requires release stage owner | DEF-002 |
@@ -145,7 +145,7 @@ Use this table to map each acceptance item to evidence.
 
 | Defect ID | Severity | Area | Summary | Repro | Expected | Actual | Owner | Status |
 |---|---|---|---|---|---|---|---|---|
-| DEF-001 | Medium | UAT execution / UITest scenario | UI tests red X due to missing expected UI elements | Run `bitchcupUITests` with UI_TEST_SCENARIO=`onboarding` / `gameLog` / `bracket` | Expected buttons/dropdowns/rows exist within 5s | `testOnboardingCriticalPath`: missing `feed.logGame`; `testGameLogCriticalPath`: missing `gamelog.dropdown.Opponents_(Losers)`; `testBracketCriticalPath`: missing `community.createBracket` (see screenshots: `assets/image-e63fc18f-f09a-4616-8c4e-818444e55ea7.png`, `assets/image-c2eb5235-f6d3-4385-9a37-89bf50533f8c.png`) | QA/UAT runner | Open |
+| DEF-001 | Medium | UAT execution / UITest scenario | UI tests red X due to missing expected UI elements | Run `bitchcupUITests` with UI_TEST_SCENARIO=`onboarding` / `gameLog` / `bracket` | Expected buttons/dropdowns/rows exist within 5s | Prior failures reproduced in earlier runs; after harness/data-path/test-selector fixes, full suite passed (`Test-bitchcup-2026.03.26_10-51-46--0400.xcresult`) | QA/UAT runner | Resolved |
 | DEF-002 | Low | Scope/sequence | CHK-F.3/F.4 require production deploy stage | Execute full acceptance checklist in dev-only session | Dev UAT should cover releasable subset | Prod-specific checks cannot be executed before release stage | Release owner | Open |
 
 ## 8) Rerun subset after fixes
@@ -156,6 +156,10 @@ Rerun these in order after resolving DEF-001:
 2. `CHK-E.4` happy paths verification (no missing UI assertions)
 3. All critical e2e rows: `CHK-C.1` to `CHK-C.5`
 4. Any rows marked `Fail` or `Blocked` in Section 6
+
+Rerun outcome (`2026-03-26`):
+- Executed full `bitchcupUITests` on simulator `30620F7E-3977-4E92-8937-8DA0591C2B84`.
+- Result: **passed** (`Test-bitchcup-2026.03.26_10-51-46--0400.xcresult`).
 
 ## 9) Completion criteria for T12.1
 

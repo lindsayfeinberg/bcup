@@ -5,23 +5,25 @@ struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject var router: AppRouter
     @EnvironmentObject var sessionManager: AppSessionManager
+    private var isHarness: Bool { UITestRuntime.participatesInUiTestHarness }
+    private var harnessScenario: UITestScenario? { UITestRuntime.harnessScenario }
 
     var body: some View {
         Group {
-            if UITestRuntime.participatesInUiTestHarness {
-                switch UITestRuntime.harnessScenario {
-                case .gameLog:
+            if isHarness {
+                // Explicit equality avoids any ambiguity switching on `UITestScenario?`.
+                if harnessScenario == .gameLog {
                     NavigationStack {
                         NewGameLogFormView(
                             frontPhotoData: UIImage(systemName: "photo")?.jpegData(compressionQuality: 0.8),
                             backPhotoData: UIImage(systemName: "photo")?.jpegData(compressionQuality: 0.8)
                         )
                     }
-                case .bracket:
+                } else if harnessScenario == .bracket {
                     NavigationStack {
                         CommunityDetailView(communityId: "ui-community-1")
                     }
-                default:
+                } else {
                     onboardingOrHomeContent
                 }
             } else {
@@ -29,6 +31,7 @@ struct ContentView: View {
             }
         }
         .onAppear {
+            AppDebugLog.log("ContentView: harness=\(isHarness) scenario=\(String(describing: harnessScenario))")
             AppDebugLog.log("ContentView: onAppear sessionState=\(String(describing: sessionManager.sessionState)) route=\(String(describing: router.route))")
         }
         .onChange(of: sessionManager.sessionState) { _, newValue in
