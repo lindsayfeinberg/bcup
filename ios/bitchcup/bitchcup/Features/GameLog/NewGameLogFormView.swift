@@ -198,7 +198,7 @@ struct NewGameLogFormView: View {
                         }
                         .disabled(isBracketLinked)
                     } header: {
-                        Text("Choose league")
+                        Text("Choose League")
                             .font(Self.widgetTitleFont)
                             .foregroundStyle(GameLogBrandColor.red)
                     }
@@ -221,7 +221,7 @@ struct NewGameLogFormView: View {
                         .font(AppFont.body)
                         .pickerStyle(.segmented)
                     } header: {
-                        Text("Choose game type")
+                        Text("Choose Game Type")
                             .font(Self.widgetTitleFont)
                             .foregroundStyle(GameLogBrandColor.red)
                     }
@@ -280,143 +280,151 @@ struct NewGameLogFormView: View {
                     }
                     .listRowBackground(widgetOutlineBackground)
 
-                    Section {
-                        let range = validTeamSizeRange(for: selectedGameType)
-                        Stepper(value: $teamSize, in: range, step: 1) {
-                            Text("\(teamSize)")
-                                .font(AppFont.headline)
-                                .foregroundStyle(.black)
-                        }
-                        .disabled(isBracketLinked)
-                    } header: {
-                        Text("Team size")
-                            .font(Self.widgetTitleFont)
-                            .foregroundStyle(GameLogBrandColor.red)
-                    }
-                    .listRowBackground(widgetOutlineBackground)
-
-                    fillSlotsFormSections
-
-                    Section {
-                        statsSectionContent
-                    }
-                    .listRowBackground(widgetOutlineBackground)
-
-                    Section {
-                        if participantProfileIds.isEmpty {
-                            Text("Select winners and losers to choose MVP/LVP.")
-                                .font(AppFont.subheadline)
-                                .foregroundStyle(.secondary)
-                        } else {
-                            VStack(alignment: .leading, spacing: 12) {
-                                Picker(selection: $selectedMVPProfileId) {
-                                    Text("None")
-                                        .font(AppFont.body)
-                                        .tag("")
-                                    ForEach(selectedParticipants, id: \.profileId) { participant in
-                                        Text(displayName(for: participant.profileId))
-                                            .font(AppFont.body)
-                                            .tag(participant.profileId)
-                                    }
-                                } label: {
-                                    Text("MVP   ˗ˏˋ ★ ˎˊ˗")
-                                        .font(AppFont.headline)
-                                }
-                                .font(AppFont.body)
-                                Picker(selection: $selectedLVPProfileId) {
-                                    Text("None")
-                                        .font(AppFont.body)
-                                        .tag("")
-                                    ForEach(selectedParticipants, id: \.profileId) { participant in
-                                        Text(displayName(for: participant.profileId))
-                                            .font(AppFont.body)
-                                            .tag(participant.profileId)
-                                    }
-                                } label: {
-                                    Text("LVP ")
-                                        .font(AppFont.headline)
-                                }
-                                .font(AppFont.body)
-                            }
-                        }
-                    } header: {
-                        Text("Awards (Optional)")
-                            .font(Self.widgetTitleFont)
-                            .foregroundStyle(GameLogBrandColor.red)
-                    }
-                    .listRowBackground(widgetOutlineBackground)
-
-                    Section {
-                        TextField("Add a note", text: $gameLogNotes)
-                            .font(AppFont.body)
-                            .textFieldStyle(.plain)
-                    } header: {
-                        Text("Notes (optional)")
-                            .font(Self.widgetTitleFont)
-                            .foregroundStyle(GameLogBrandColor.red)
-                    }
-                    .listRowBackground(widgetOutlineBackground)
-
-                    Section {
-                        summaryWidgetContent
-                    } header: {
-                        Text("Summary")
-                            .font(Self.widgetTitleFont)
-                            .foregroundStyle(GameLogBrandColor.red)
-                    }
-                    .listRowBackground(widgetOutlineBackground)
-
-                    Section {
-                        if !submitDisableReasons.isEmpty {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Missing before submit:")
-                                    .font(AppFont.subheadlineBold)
+                    if outcome != nil {
+                        Section {
+                            let range = validTeamSizeRange(for: selectedGameType)
+                            Stepper(value: $teamSize, in: range, step: 1) {
+                                Text("\(teamSize)")
+                                    .font(AppFont.headline)
                                     .foregroundStyle(.black)
-                                ForEach(submitDisableReasons, id: \.self) { reason in
-                                    Text("• \(reason)")
-                                        .font(AppFont.subheadlineBold)
-                                        .foregroundStyle(.black)
-                                }
                             }
+                            .disabled(isBracketLinked)
+                        } header: {
+                            Text("Team size")
+                                .font(Self.widgetTitleFont)
+                                .foregroundStyle(GameLogBrandColor.red)
                         }
-                        if let statsError = currentStatsValidationError {
-                            Text(statsError)
-                                .foregroundStyle(.black)
-                                .font(AppFont.footnote)
-                        }
-                        if let submitErrorMessage {
-                            Text(submitErrorMessage)
-                                .foregroundStyle(.black)
-                                .font(AppFont.footnote)
-                            if showOpenSettingsAction {
-                                Button {
-                                    guard let settingsURL = URL(string: UIApplication.openSettingsURLString) else { return }
-                                    UIApplication.shared.open(settingsURL)
-                                } label: {
-                                    Text("Open Settings")
-                                        .font(AppFont.button)
-                                }
-                                .buttonStyle(.bordered)
+                        .listRowBackground(widgetOutlineBackground)
+
+                        fillSlotsFormSections
+
+                        if shouldShowDetailsSection {
+                            Section {
+                                statsSectionContent
+                            } header: {
+                                Text("Details (Optional)")
+                                    .font(Self.widgetTitleFont)
+                                    .foregroundStyle(GameLogBrandColor.red)
                             }
+                            .listRowBackground(widgetOutlineBackground)
                         }
-                        if isSubmitting {
-                            HStack(spacing: 8) {
-                                ProgressView()
-                                Text("Submitting game log...")
-                                    .font(AppFont.footnote)
+
+                        Section {
+                            if participantProfileIds.isEmpty {
+                                Text("Select winners and losers to choose MVP/LVP.")
+                                    .font(AppFont.subheadline)
                                     .foregroundStyle(.secondary)
+                            } else {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    Picker(selection: $selectedMVPProfileId) {
+                                        Text("None")
+                                            .font(AppFont.body)
+                                            .tag("")
+                                        ForEach(selectedParticipants, id: \.profileId) { participant in
+                                            Text(displayName(for: participant.profileId))
+                                                .font(AppFont.body)
+                                                .tag(participant.profileId)
+                                        }
+                                    } label: {
+                                        Text("MVP   ˗ˏˋ ★ ˎˊ˗")
+                                            .font(AppFont.headline)
+                                    }
+                                    .font(AppFont.body)
+                                    Picker(selection: $selectedLVPProfileId) {
+                                        Text("None")
+                                            .font(AppFont.body)
+                                            .tag("")
+                                        ForEach(selectedParticipants, id: \.profileId) { participant in
+                                            Text(displayName(for: participant.profileId))
+                                                .font(AppFont.body)
+                                                .tag(participant.profileId)
+                                        }
+                                    } label: {
+                                        Text("LVP ")
+                                            .font(AppFont.headline)
+                                    }
+                                    .font(AppFont.body)
+                                }
                             }
+                        } header: {
+                            Text("Awards (Optional)")
+                                .font(Self.widgetTitleFont)
+                                .foregroundStyle(GameLogBrandColor.red)
                         }
-                        Button {
-                            Task { await handleSubmitTapped() }
-                        } label: {
-                            Text("Submit Game")
-                                .font(AppFont.buttonProminent)
-                                .frame(maxWidth: .infinity)
+                        .listRowBackground(widgetOutlineBackground)
+
+                        Section {
+                            TextField("Add a note", text: $gameLogNotes)
+                                .font(AppFont.body)
+                                .textFieldStyle(.plain)
+                        } header: {
+                            Text("Notes (Optional)")
+                                .font(Self.widgetTitleFont)
+                                .foregroundStyle(GameLogBrandColor.red)
                         }
-                        .buttonStyle(SubmitGameButtonStyle())
-                        .disabled(!canSubmitWithoutPhotos || isSubmitting)
-                        .accessibilityIdentifier("gamelog.submit")
+                        .listRowBackground(widgetOutlineBackground)
+
+                        Section {
+                            summaryWidgetContent
+                        } header: {
+                            Text("Summary")
+                                .font(Self.widgetTitleFont)
+                                .foregroundStyle(GameLogBrandColor.red)
+                        }
+                        .listRowBackground(widgetOutlineBackground)
+
+                        Section {
+                            if !submitDisableReasons.isEmpty {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Missing before submit:")
+                                        .font(AppFont.subheadlineBold)
+                                        .foregroundStyle(GameLogBrandColor.lostRed)
+                                    ForEach(submitDisableReasons, id: \.self) { reason in
+                                        Text("• \(reason)")
+                                            .font(AppFont.subheadlineBold)
+                                            .foregroundStyle(GameLogBrandColor.lostRed)
+                                    }
+                                }
+                            }
+                            if let statsError = currentStatsValidationError {
+                                Text(statsError)
+                                    .foregroundStyle(.black)
+                                    .font(AppFont.footnote)
+                            }
+                            if let submitErrorMessage {
+                                Text(submitErrorMessage)
+                                    .foregroundStyle(.black)
+                                    .font(AppFont.footnote)
+                                if showOpenSettingsAction {
+                                    Button {
+                                        guard let settingsURL = URL(string: UIApplication.openSettingsURLString) else { return }
+                                        UIApplication.shared.open(settingsURL)
+                                    } label: {
+                                        Text("Open Settings")
+                                            .font(AppFont.button)
+                                    }
+                                    .buttonStyle(.bordered)
+                                }
+                            }
+                            if isSubmitting {
+                                HStack(spacing: 8) {
+                                    ProgressView()
+                                    Text("Submitting game log...")
+                                        .font(AppFont.footnote)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            Button {
+                                Task { await handleSubmitTapped() }
+                            } label: {
+                                Text("Submit Game")
+                                    .font(AppFont.buttonProminent)
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(SubmitGameButtonStyle())
+                            .disabled(!canSubmitWithoutPhotos || isSubmitting)
+                            .accessibilityIdentifier("gamelog.submit")
+                        }
                     }
                 }
                 .scrollContentBackground(.hidden)
@@ -514,15 +522,15 @@ struct NewGameLogFormView: View {
                 if teamSize > 1 {
                     Section {
                         dropdownBlock(
-                            title: "Teammates (\(isMySideWinners ? "Winners" : "Losers"))",
-                            includeTitleAboveButton: true,
+                            title: "Choose team",
+                            includeTitleAboveButton: false,
                             selectedCount: teammateSet.count,
                             query: $teammateQuery,
                             isOpen: $isTeammateDropdownOpen,
                             participants: selectionPoolMembers.filter { $0.profileId != myUserId },
                             onOpposite: opponentSet,
                             onCurrent: teammateSet,
-                            oppositeLabel: "Opponents",
+                            oppositeLabel: "Choose Opponents",
                             hasEnoughMembers: hasEnoughMembers
                         ) { profileId, isSelected in
                             toggleTeammate(profileId: profileId, isSelected: isSelected)
@@ -533,7 +541,7 @@ struct NewGameLogFormView: View {
 
                 Section {
                     dropdownBlock(
-                        title: "Opponents (\(isMySideWinners ? "Losers" : "Winners"))",
+                        title: "Choose opponents",
                         includeTitleAboveButton: false,
                         buttonTitleForeground: .black,
                         selectedCount: opponentSet.count,
@@ -542,7 +550,7 @@ struct NewGameLogFormView: View {
                         participants: selectionPoolMembers.filter { $0.profileId != myUserId },
                         onOpposite: teammateSet,
                         onCurrent: opponentSet,
-                        oppositeLabel: "Teammates",
+                        oppositeLabel: "Choose Teammates",
                         hasEnoughMembers: hasEnoughMembers
                     ) { profileId, isSelected in
                         toggleOpponent(profileId: profileId, isSelected: isSelected)
@@ -630,7 +638,7 @@ struct NewGameLogFormView: View {
                 if isOpen.wrappedValue { query.wrappedValue = "" }
             } label: {
                 HStack {
-                    if !title.isEmpty {
+                    if !title.isEmpty, !includeTitleAboveButton {
                         Text(title)
                             .font(AppFont.headline)
                             .foregroundStyle(buttonTitleForeground ?? .primary)
@@ -828,7 +836,7 @@ struct NewGameLogFormView: View {
         if teamSize == 1 {
             EmptyView()
         } else {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 20) {
                 Picker("Cup game", selection: $pongCupMode) {
                     ForEach(PongCupMode.allCases) { mode in
                         Text(mode.displayName)
@@ -871,7 +879,7 @@ struct NewGameLogFormView: View {
 
     @ViewBuilder
     private var beerBallStatsView: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 20) {
             ForEach(selectedParticipants, id: \.profileId) { participant in
                 Stepper(
                     value: binding(for: participant.profileId, in: $beerBallNewCansByProfileId),
@@ -898,7 +906,7 @@ struct NewGameLogFormView: View {
 
     @ViewBuilder
     private var battlePongStatsView: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 20) {
             ForEach(selectedParticipants, id: \.profileId) { participant in
                 Stepper(
                     value: binding(for: participant.profileId, in: $battlePongCupsByProfileId),
@@ -913,7 +921,7 @@ struct NewGameLogFormView: View {
 
     @ViewBuilder
     private var baseballStatsView: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 20) {
             ForEach(selectedParticipants, id: \.profileId) { participant in
                 Stepper(
                     value: binding(for: participant.profileId, in: $baseballHitsByProfileId),
@@ -990,6 +998,13 @@ struct NewGameLogFormView: View {
 
     private var selectedParticipants: [CommunityMemberRosterRow] {
         members.filter { participantProfileIds.contains($0.profileId) }
+    }
+
+    private var shouldShowDetailsSection: Bool {
+        guard !participantProfileIds.isEmpty else { return false }
+        // Solo Pong has no editable details controls.
+        if selectedGameType == .pong && teamSize == 1 { return false }
+        return true
     }
 
     private var pongTotalCups: Int {

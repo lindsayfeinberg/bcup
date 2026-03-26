@@ -36,6 +36,8 @@ struct CommunityDetailView: View {
     @State private var hasMoreFeed = false
     @State private var isLoadingMoreFeed = false
     @State private var loadMoreFeedErrorMessage: String?
+    @State private var visibleActiveBracketsCount = 3
+    @State private var visiblePastBracketsCount = 3
     private let uiTestMembers: [CommunityMemberRosterRow] = [
         .init(profileId: "ui-test-user", displayName: "You", profilePhotoUrl: nil, communityOdds: 0.75, communityGamesPlayed: 4),
         .init(profileId: "ui-opponent-1", displayName: "Alex", profilePhotoUrl: nil, communityOdds: 0.62, communityGamesPlayed: 3),
@@ -328,8 +330,20 @@ struct CommunityDetailView: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(activeBrackets) { bracket in
+                ForEach(visibleActiveBrackets) { bracket in
                     bracketRowButton(bracket)
+                }
+                if hasMoreActiveBrackets {
+                    Button("Show more active brackets") {
+                        visibleActiveBracketsCount += 3
+                    }
+                    .buttonStyle(.plain)
+                    .font(Font.custom("NeueHaasDisplay-Light", size: 16))
+                    .foregroundStyle(.secondary)
+                    .underline()
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                    .background(Color.white)
                 }
             }
 
@@ -343,8 +357,20 @@ struct CommunityDetailView: View {
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 } else {
-                    ForEach(pastBrackets) { bracket in
+                    ForEach(visiblePastBrackets) { bracket in
                         bracketRowButton(bracket)
+                    }
+                    if hasMorePastBrackets {
+                        Button("Show more past brackets") {
+                            visiblePastBracketsCount += 3
+                        }
+                        .buttonStyle(.plain)
+                        .font(Font.custom("NeueHaasDisplay-Light", size: 16))
+                        .foregroundStyle(.secondary)
+                        .underline()
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .background(Color.white)
                     }
                 }
             }
@@ -414,20 +440,27 @@ struct CommunityDetailView: View {
 
     private var inviteCodeSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("League Code")
-                .font(sectionHeaderFont)
-                .foregroundStyle(.black)
+            Text("Invite Code")
+                .font(.custom("NeueHaasDisplay-Bold", size: 15))
+                .foregroundStyle(bracketAccentColor)
+                .frame(maxWidth: .infinity, alignment: .center)
 
             Text(inviteCodeDisplayText)
                 .font(.custom("NeueHaasDisplay-Bold", size: hasInviteCode ? 32 : 18))
-                .foregroundStyle(.white)
+                .foregroundStyle(bracketAccentColor)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(bracketAccentTextDisabledColor.opacity(0.28))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(bracketAccentColor.opacity(0.55), lineWidth: 1.5)
+                )
                 .frame(maxWidth: .infinity, alignment: .center)
-                .background(bracketAccentColor)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .accessibilityIdentifier("community.detail.inviteCode")
 
             Button {
@@ -441,9 +474,11 @@ struct CommunityDetailView: View {
                     .font(.custom("NeueHaasDisplay-Mediu", size: 22))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
-                    .background(Color(red: 180.0 / 255.0, green: 61.0 / 255.0, blue: 37.0 / 255.0))
-                    .foregroundStyle(.white)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(.white)
+                    )
+                    .foregroundStyle(bracketAccentColor)
             }
             .buttonStyle(.plain)
             .disabled(!hasInviteCode)
@@ -660,6 +695,8 @@ struct CommunityDetailView: View {
         if UITestRuntime.participatesInUiTestHarness {
             isLoadingBrackets = false
             bracketsErrorMessage = nil
+            visibleActiveBracketsCount = 3
+            visiblePastBracketsCount = 3
             return
         }
         isLoadingBrackets = true
@@ -667,9 +704,13 @@ struct CommunityDetailView: View {
         do {
             brackets = try await container.communityService.fetchBrackets(communityId: communityId)
             bracketsErrorMessage = nil
+            visibleActiveBracketsCount = 3
+            visiblePastBracketsCount = 3
         } catch {
             brackets = []
             bracketsErrorMessage = error.localizedDescription
+            visibleActiveBracketsCount = 3
+            visiblePastBracketsCount = 3
         }
     }
 
@@ -679,6 +720,22 @@ struct CommunityDetailView: View {
 
     private var pastBrackets: [BracketListItem] {
         brackets.filter { $0.status == "COMPLETE" }
+    }
+
+    private var visibleActiveBrackets: [BracketListItem] {
+        Array(activeBrackets.prefix(visibleActiveBracketsCount))
+    }
+
+    private var visiblePastBrackets: [BracketListItem] {
+        Array(pastBrackets.prefix(visiblePastBracketsCount))
+    }
+
+    private var hasMoreActiveBrackets: Bool {
+        activeBrackets.count > visibleActiveBrackets.count
+    }
+
+    private var hasMorePastBrackets: Bool {
+        pastBrackets.count > visiblePastBrackets.count
     }
 
     @ViewBuilder
