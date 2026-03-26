@@ -184,22 +184,24 @@ struct CommunityDetailView: View {
 
                                 // Footer buttons
                                 HStack(spacing: 12) {
-                                    Button("Cancel") {
+                                    Button {
                                         bracketErrorMessage = nil
                                         showCreateBracketPopup = false
+                                    } label: {
+                                        Text("Cancel")
+                                            .font(.custom("NeueHaasDisplay-Mediu", size: 22))
+                                            .foregroundStyle(bracketAccentColor)
+                                            .frame(maxWidth: .infinity, minHeight: 48)
+                                            .background(
+                                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                                    .fill(Color.white)
+                                            )
+                                            .overlay(
+                                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                                    .stroke(bracketAccentColor, lineWidth: 2)
+                                            )
+                                            .contentShape(Rectangle())
                                     }
-                                    .font(.custom("NeueHaasDisplay-Mediu", size: 22))
-                                    .foregroundStyle(bracketAccentColor)
-                                    .frame(maxWidth: .infinity, minHeight: 48)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                            .fill(Color.white)
-                                    )
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                            .stroke(bracketAccentColor, lineWidth: 2)
-                                    )
-                                    .contentShape(Rectangle())
                                     .buttonStyle(.plain)
 
                                     Button {
@@ -212,15 +214,15 @@ struct CommunityDetailView: View {
                                             }
                                             Text(isCreatingBracket ? "Creating" : "Create ")
                                         }
+                                        .font(.custom("NeueHaasDisplay-Mediu", size: 22))
+                                        .foregroundStyle(.white)
+                                        .frame(maxWidth: .infinity, minHeight: 48)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                                .fill(bracketAccentColor)
+                                        )
+                                        .contentShape(Rectangle())
                                     }
-                                    .font(.custom("NeueHaasDisplay-Mediu", size: 22))
-                                    .foregroundStyle(.white)
-                                    .frame(maxWidth: .infinity, minHeight: 48)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                            .fill(bracketAccentColor)
-                                    )
-                                    .contentShape(Rectangle())
                                     .buttonStyle(.plain)
                                     .disabled(!canCreateBracket || isCreatingBracket)
                                     .accessibilityIdentifier("community.popup.createBracket")
@@ -294,19 +296,19 @@ struct CommunityDetailView: View {
             } label: {
                 Text(isCreatingBracket ? "Creating..." : "Create Bracket")
                     .font(.custom("NeueHaasDisplay-Bold", size: 26))
+                    .foregroundStyle(
+                        canCreateBracket
+                            ? .white
+                            : bracketAccentTextDisabledColor
+                    )
                     .frame(maxWidth: .infinity, minHeight: 48)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(bracketAccentColor)
+                    )
+                    .contentShape(Rectangle())
             }
-            .contentShape(Rectangle())
             .buttonStyle(.plain)
-            .foregroundStyle(
-                canCreateBracket
-                    ? .white
-                    : bracketAccentTextDisabledColor
-            )
-            .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(bracketAccentColor)
-            )
             .disabled(!canCreateBracket || isCreatingBracket || showCreateBracketPopup)
             .opacity((isCreatingBracket || showCreateBracketPopup) ? 0.65 : 1.0)
             .accessibilityIdentifier("community.createBracket")
