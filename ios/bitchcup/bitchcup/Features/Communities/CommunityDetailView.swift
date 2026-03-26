@@ -12,9 +12,11 @@ struct CommunityDetailView: View {
 
     @EnvironmentObject private var container: DependencyContainer
     @State private var communityName: String = ""
+    @State private var inviteCode: String?
     @State private var members: [CommunityMemberRosterRow] = []
     @State private var isLoading = true
     @State private var errorMessage: String?
+    @State private var copiedInviteCode = false
 
     @State private var feedRows: [FeedRow] = []
     @State private var selectedSeedMethod: SeedMethod = .communityOdds
@@ -96,6 +98,7 @@ struct CommunityDetailView: View {
 
                     ScrollView {
                         VStack(alignment: .leading, spacing: 24) {
+                            inviteCodeSection
                             membersSection
                             recentGamesSection
                             bracketPlaceholder
@@ -399,6 +402,56 @@ struct CommunityDetailView: View {
         }
     }
 
+    private var inviteCodeDisplayText: String {
+        let trimmed = inviteCode?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? "League code unavailable" : trimmed
+    }
+
+    private var hasInviteCode: Bool {
+        let trimmed = inviteCode?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return !trimmed.isEmpty
+    }
+
+    private var inviteCodeSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("League Code")
+                .font(sectionHeaderFont)
+                .foregroundStyle(.black)
+
+            Text(inviteCodeDisplayText)
+                .font(.custom("NeueHaasDisplay-Bold", size: hasInviteCode ? 32 : 18))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .background(bracketAccentColor)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .accessibilityIdentifier("community.detail.inviteCode")
+
+            Button {
+                UIPasteboard.general.string = inviteCodeDisplayText
+                copiedInviteCode = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                    copiedInviteCode = false
+                }
+            } label: {
+                Label(copiedInviteCode ? "Copied!" : "Copy Code", systemImage: "doc.on.doc")
+                    .font(.custom("NeueHaasDisplay-Mediu", size: 22))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(Color(red: 180.0 / 255.0, green: 61.0 / 255.0, blue: 37.0 / 255.0))
+                    .foregroundStyle(.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .disabled(!hasInviteCode)
+            .opacity(hasInviteCode ? 1.0 : 0.65)
+            .accessibilityIdentifier("community.detail.copyInviteCode")
+        }
+    }
+
     @ViewBuilder
     private func memberAvatar(for member: CommunityMemberRosterRow) -> some View {
         if let photoURLString = member.profilePhotoUrl,
@@ -479,12 +532,14 @@ struct CommunityDetailView: View {
         if UITestRuntime.participatesInUiTestHarness {
             // Never hit live data in UI tests.
             communityName = "UI Test League"
+            inviteCode = "UI-TEST"
             members = uiTestMembers
             return
         }
         let db = AppFirestore.db()
         let communityDoc = try await db.collection("communities").document(communityId).getDocument()
         communityName = communityDoc.data()?["name"] as? String ?? "League"
+        inviteCode = communityDoc.data()?["inviteCode"] as? String
         members = try await container.communityService.fetchMembers(communityId: communityId)
     }
 
