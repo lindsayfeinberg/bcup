@@ -49,6 +49,7 @@ struct CommunitiesEntryView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
             }
+            .contentShape(Rectangle())
             .buttonStyle(.plain)
             .padding(.horizontal)
             .padding(.bottom, 12)

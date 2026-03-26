@@ -626,6 +626,7 @@ private struct RetryingPhotoView<Placeholder: View>: View {
             } label: {
                 placeholder(false)
             }
+            .contentShape(Rectangle())
             .buttonStyle(.plain)
             .accessibilityLabel("Photo unavailable. Tap to retry")
         } else {

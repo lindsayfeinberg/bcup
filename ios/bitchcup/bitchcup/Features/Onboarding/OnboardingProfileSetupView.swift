@@ -101,6 +101,7 @@ struct OnboardingProfileSetupView: View {
                         .stroke(fieldAccentColor, lineWidth: 2)
                 )
             }
+            .contentShape(Rectangle())
             .buttonStyle(.plain)
 
             if let errorMessage {
@@ -125,6 +126,7 @@ struct OnboardingProfileSetupView: View {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(fieldAccentColor)
             )
+            .contentShape(Rectangle())
             .buttonStyle(.plain)
             .disabled(isSaving || !isDisplayNameValid)
             .opacity(isSaving ? 0.65 : 1.0)

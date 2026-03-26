@@ -92,6 +92,7 @@ struct JoinCommunityFlowView: View {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(Color(red: 180.0 / 255.0, green: 61.0 / 255.0, blue: 37.0 / 255.0))
             )
+            .contentShape(Rectangle())
             .buttonStyle(.plain)
             .disabled(isWorking || !isInviteCodeValid)
             .opacity(isWorking ? 0.65 : 1.0)
@@ -119,6 +120,7 @@ struct JoinCommunityFlowView: View {
                         .minimumScaleFactor(0.75)
                         .fixedSize(horizontal: true, vertical: false)
                 }
+                .contentShape(Rectangle())
                 .buttonStyle(.plain)
             }
         }
@@ -170,6 +172,7 @@ struct JoinCommunityFlowView: View {
                                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                                     .stroke(fieldAccentColor, lineWidth: 2)
                             )
+                            .contentShape(Rectangle())
                             .buttonStyle(.plain)
 
                             Button("Join") {
@@ -194,6 +197,7 @@ struct JoinCommunityFlowView: View {
                                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                                     .fill(fieldAccentColor)
                             )
+                            .contentShape(Rectangle())
                             .buttonStyle(.plain)
                         }
                     }

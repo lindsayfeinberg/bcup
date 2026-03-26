@@ -252,6 +252,7 @@ struct BracketsView: View {
                     )
                     .foregroundStyle(.white)
             }
+            .contentShape(Rectangle())
             .buttonStyle(.plain)
 
             Text("ID: \(bracketId)")
@@ -286,6 +287,7 @@ struct BracketsView: View {
                 )
                 .foregroundStyle(isSelected ? Color.white : Color.black)
         }
+        .contentShape(Rectangle())
         .buttonStyle(.plain)
     }
 
@@ -455,6 +457,7 @@ private struct BracketMatchRow: View {
                             )
                             .foregroundStyle(.white)
                     }
+                    .contentShape(Rectangle())
                     .buttonStyle(.plain)
                 }
             }

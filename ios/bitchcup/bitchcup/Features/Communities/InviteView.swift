@@ -74,6 +74,7 @@ struct InviteView: View {
             .frame(maxWidth: .infinity)
             .padding()
             .foregroundColor(.black)
+            .contentShape(Rectangle())
             .buttonStyle(.plain)
         }
         .padding()
@@ -90,6 +91,7 @@ struct InviteView: View {
                         .minimumScaleFactor(0.75)
                         .fixedSize(horizontal: true, vertical: false)
                 }
+                .contentShape(Rectangle())
                 .buttonStyle(.plain)
             }
         }

@@ -50,6 +50,7 @@ struct CommunitiesListView: View {
                             RoundedRectangle(cornerRadius: 12, style: .continuous)
                                 .fill(Color(red: 180.0 / 255.0, green: 61.0 / 255.0, blue: 37.0 / 255.0))
                         )
+                        .contentShape(Rectangle())
                         .buttonStyle(.plain)
                         .padding(.horizontal, 32)
                         .padding(.top, 8)

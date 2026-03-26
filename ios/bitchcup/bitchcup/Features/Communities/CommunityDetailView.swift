@@ -199,6 +199,7 @@ struct CommunityDetailView: View {
                                         RoundedRectangle(cornerRadius: 12, style: .continuous)
                                             .stroke(bracketAccentColor, lineWidth: 2)
                                     )
+                                    .contentShape(Rectangle())
                                     .buttonStyle(.plain)
 
                                     Button {
@@ -219,6 +220,7 @@ struct CommunityDetailView: View {
                                         RoundedRectangle(cornerRadius: 12, style: .continuous)
                                             .fill(bracketAccentColor)
                                     )
+                                    .contentShape(Rectangle())
                                     .buttonStyle(.plain)
                                     .disabled(!canCreateBracket || isCreatingBracket)
                                     .accessibilityIdentifier("community.popup.createBracket")
@@ -294,6 +296,7 @@ struct CommunityDetailView: View {
                     .font(.custom("NeueHaasDisplay-Bold", size: 26))
                     .frame(maxWidth: .infinity, minHeight: 48)
             }
+            .contentShape(Rectangle())
             .buttonStyle(.plain)
             .foregroundStyle(
                 canCreateBracket
@@ -337,6 +340,7 @@ struct CommunityDetailView: View {
                     Button("Show more active brackets") {
                         visibleActiveBracketsCount += 3
                     }
+                    .contentShape(Rectangle())
                     .buttonStyle(.plain)
                     .font(Font.custom("NeueHaasDisplay-Light", size: 16))
                     .foregroundStyle(.secondary)
@@ -364,6 +368,7 @@ struct CommunityDetailView: View {
                         Button("Show more past brackets") {
                             visiblePastBracketsCount += 3
                         }
+                        .contentShape(Rectangle())
                         .buttonStyle(.plain)
                         .font(Font.custom("NeueHaasDisplay-Light", size: 16))
                         .foregroundStyle(.secondary)
@@ -480,6 +485,7 @@ struct CommunityDetailView: View {
                     )
                     .foregroundStyle(bracketAccentColor)
             }
+            .contentShape(Rectangle())
             .buttonStyle(.plain)
             .disabled(!hasInviteCode)
             .opacity(hasInviteCode ? 1.0 : 0.65)
@@ -772,6 +778,7 @@ struct CommunityDetailView: View {
                     .fill(Color(.secondarySystemGroupedBackground))
             )
         }
+        .contentShape(Rectangle())
         .buttonStyle(.plain)
         .accessibilityIdentifier("community.bracket.\(bracket.bracketId)")
     }
@@ -806,6 +813,7 @@ struct CommunityDetailView: View {
                         }
                     }
                 }
+                .contentShape(Rectangle())
                 .buttonStyle(.plain)
                 .font(sectionHeaderFont)
                 .foregroundStyle(.black)
@@ -822,6 +830,7 @@ struct CommunityDetailView: View {
                     }
                 }
             }
+            .contentShape(Rectangle())
             .buttonStyle(.plain)
             .font(Font.custom("NeueHaasDisplay-Light", size: 16))              // or Font.custom("NeueHaasDisplay-Light", size: 16)
             .foregroundStyle(.secondary)    // gray
