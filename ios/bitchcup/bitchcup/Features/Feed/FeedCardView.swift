@@ -13,13 +13,15 @@ private enum FeedCardLayout {
     static let footerSectionSpacing: CGFloat = 16
     /// Extra space between lines in the multi-line Stats block on the card back.
     static let statsSummaryLineSpacing: CGFloat = 7
+    /// Caption sits in a fixed-height strip under the flip card; text scales down to fit.
+    static let captionMaxHeight: CGFloat = 88
     /// Vertical padding around the caption below the photo.
     static let captionVerticalPadding: CGFloat = 4
     static let cardCornerRadius: CGFloat = 14
-    /// Two points smaller than `AppFont.bodyMedium` (17) — back-of-card values only.
-    static let backDetailValueFont = Font.custom("NeueHaasDisplay-Mediu", size: 15)
     /// Protect against long league names / payloads pushing content outside the card.
     static let backHeaderLineLimit = 2
+    /// Slightly below `AppFont.bodyMedium` (17) — back-of-card title line.
+    static let backHeaderTitleFont = Font.custom("NeueHaasDisplay-Mediu", size: 16)
     /// Photo slot height uses **landscape** 4:3 (`width * 3/4`) capped by `photoMaxHeight` so loading, error, and loaded (crop-to-fill) states share the same frame.
     static func feedPhotoPlaceholderHeight(width: CGFloat, maxHeight: CGFloat) -> CGFloat {
         min(maxHeight, width * 3 / 4)
@@ -33,20 +35,6 @@ private struct FeedPhotoAreaWidthKey: PreferenceKey {
     }
 }
 
-private struct FeedFlipFrontHeightKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
-    }
-}
-
-private struct FeedBackFaceIntrinsicHeightKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
-    }
-}
-
 /// Shared card for home feed and community detail; hide league row on detail where the title already names the league.
 struct FeedCardView: View {
     let row: FeedRow
@@ -56,8 +44,6 @@ struct FeedCardView: View {
 
     @State private var photoAreaWidth: CGFloat = FeedCardLayout.assumedStripWidth
     @State private var isBackVisible = false
-    @State private var flipFrontMeasuredHeight: CGFloat = 0
-    @State private var backFaceMeasuredHeight: CGFloat = 0
 
     private static let dateFormatter: RelativeDateTimeFormatter = {
         let f = RelativeDateTimeFormatter()
@@ -71,6 +57,11 @@ struct FeedCardView: View {
         f.unitsStyle = .abbreviated
         return f
     }()
+
+    /// Same height as the photo slot (front face); flip container does not grow with back-face text.
+    private var fixedFlipCardHeight: CGFloat {
+        FeedCardLayout.feedPhotoPlaceholderHeight(width: max(photoAreaWidth, 1), maxHeight: FeedCardLayout.photoMaxHeight)
+    }
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: FeedCardLayout.cardCornerRadius, style: .continuous)
@@ -98,14 +89,19 @@ struct FeedCardView: View {
             Text(gameTypeDisplay)
                 .font(.custom("NeueHaasDisplay-Mediu", size: 22))
                 .foregroundStyle(.primary)
+                .lineLimit(2)
+                .minimumScaleFactor(0.78)
+                .multilineTextAlignment(.leading)
 
             Text("•")
                 .font(.custom("NeueHaasDisplay-Roman", size: 15))
                 .foregroundStyle(.secondary)
+                .layoutPriority(1)
 
             Text(relativeTimeStringAbbreviated)
                 .font(.custom("NeueHaasDisplay-Roman", size: 15))
                 .foregroundStyle(.secondary)
+                .layoutPriority(1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
@@ -140,7 +136,7 @@ struct FeedCardView: View {
                 .opacity(isBackVisible ? 1 : 0)
                 .allowsHitTesting(isBackVisible)
         }
-        .frame(height: currentCardHeight)
+        .frame(height: fixedFlipCardHeight)
         .clipShape(RoundedRectangle(cornerRadius: FeedCardLayout.photoClipCornerRadius, style: .continuous))
         .animation(.spring(response: 0.38, dampingFraction: 0.72), value: isBackVisible)
         .contentShape(Rectangle())
@@ -151,16 +147,6 @@ struct FeedCardView: View {
         .accessibilityLabel(flipAccessibilityLabel)
         .accessibilityHint(isBackVisible ? "Tap to return to the photo." : "Tap to show winners, losers, and league.")
         .accessibilityAddTraits(.isButton)
-    }
-
-    private var currentCardHeight: CGFloat? {
-        let front = flipFrontMeasuredHeight
-        let back = backFaceMeasuredHeight
-        if isBackVisible {
-            let maxHeight = max(front, back)
-            return maxHeight > 0 ? maxHeight : nil
-        }
-        return front > 0 ? front : nil
     }
 
     private var flipAccessibilityLabel: String {
@@ -179,16 +165,6 @@ struct FeedCardView: View {
                 photoSectionWithURL(photoURL)
             } else {
                 noPhotoFrontPlaceholder
-            }
-        }
-        .background(
-            GeometryReader { geo in
-                Color.clear.preference(key: FeedFlipFrontHeightKey.self, value: geo.size.height)
-            }
-        )
-        .onPreferenceChange(FeedFlipFrontHeightKey.self) { height in
-            if height > 0, abs(height - flipFrontMeasuredHeight) > 0.5 {
-                flipFrontMeasuredHeight = height
             }
         }
     }
@@ -248,25 +224,21 @@ struct FeedCardView: View {
     private var cardBackFace: some View {
         VStack(alignment: .leading, spacing: 0) {
             headerTitleAbovePhoto
-            cardBackDetailsSection(rows: row.backDetailRows())
+            ViewThatFits(in: .vertical) {
+                cardBackDetailsSection(rows: row.backDetailRows(), detailValueSize: 15)
+                cardBackDetailsSection(rows: row.backDetailRows(), detailValueSize: 13)
+                cardBackDetailsSection(rows: row.backDetailRows(), detailValueSize: 11)
+                cardBackDetailsSection(rows: row.backDetailRows(), detailValueSize: 9)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(cardBackgroundColor)
-        .background(
-            GeometryReader { inner in
-                Color.clear.preference(key: FeedBackFaceIntrinsicHeightKey.self, value: inner.size.height)
-            }
-        )
-        .onPreferenceChange(FeedBackFaceIntrinsicHeightKey.self) { intrinsic in
-            if intrinsic > 0, abs(intrinsic - backFaceMeasuredHeight) > 0.5 {
-                backFaceMeasuredHeight = intrinsic
-            }
-        }
     }
 
     /// Winners, Losers, MVP, LVP, Stats (`FeedRow.backDetailRows()`).
-    private func cardBackDetailsSection(rows: [(title: String, value: String)]) -> some View {
+    private func cardBackDetailsSection(rows: [(title: String, value: String)], detailValueSize: CGFloat) -> some View {
+        let detailFont = Font.custom("NeueHaasDisplay-Mediu", size: detailValueSize)
         let mvpItem = rows.first { $0.title == "MVP" }
         let lvpItem = rows.first { $0.title == "LVP" }
         let otherRows = rows.filter { $0.title != "MVP" && $0.title != "LVP" }
@@ -278,11 +250,12 @@ struct FeedCardView: View {
                         .font(AppFont.caption)
                         .foregroundStyle(.secondary)
                     Text(item.value)
-                        .font(FeedCardLayout.backDetailValueFont)
+                        .font(detailFont)
                         .foregroundStyle(.primary)
                         .multilineTextAlignment(.leading)
                         .lineSpacing(isStats ? FeedCardLayout.statsSummaryLineSpacing : 0)
-                        .fixedSize(horizontal: false, vertical: true)
+                        .lineLimit(isStats ? 14 : 5)
+                        .minimumScaleFactor(0.72)
                 }
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel("\(item.title): \(item.value)")
@@ -303,18 +276,18 @@ struct FeedCardView: View {
                     }
                     HStack(alignment: .top, spacing: 12) {
                         Text(mvpItem.value)
-                            .font(FeedCardLayout.backDetailValueFont)
+                            .font(detailFont)
                             .foregroundStyle(.primary)
                             .multilineTextAlignment(.leading)
-                            .minimumScaleFactor(0.86)
-                            .fixedSize(horizontal: false, vertical: true)
+                            .lineLimit(4)
+                            .minimumScaleFactor(0.72)
                             .frame(maxWidth: .infinity, alignment: .leading)
                         Text(lvpItem.value)
-                            .font(FeedCardLayout.backDetailValueFont)
+                            .font(detailFont)
                             .foregroundStyle(.primary)
                             .multilineTextAlignment(.trailing)
-                            .minimumScaleFactor(0.86)
-                            .fixedSize(horizontal: false, vertical: true)
+                            .lineLimit(4)
+                            .minimumScaleFactor(0.72)
                             .frame(maxWidth: .infinity, alignment: .trailing)
                     }
                 }
@@ -322,11 +295,11 @@ struct FeedCardView: View {
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel("MVP: \(mvpItem.value). LVP: \(lvpItem.value)")
             } else if let mvpItem {
-                backDetailCell(title: mvpItem.title, value: mvpItem.value)
+                backDetailCell(title: mvpItem.title, value: mvpItem.value, detailFont: detailFont)
                     .accessibilityElement(children: .combine)
                     .accessibilityLabel("\(mvpItem.title): \(mvpItem.value)")
             } else if let lvpItem {
-                backDetailCell(title: lvpItem.title, value: lvpItem.value)
+                backDetailCell(title: lvpItem.title, value: lvpItem.value, detailFont: detailFont)
                     .accessibilityElement(children: .combine)
                     .accessibilityLabel("\(lvpItem.title): \(lvpItem.value)")
             }
@@ -335,16 +308,17 @@ struct FeedCardView: View {
     }
 
     @ViewBuilder
-    private func backDetailCell(title: String, value: String) -> some View {
+    private func backDetailCell(title: String, value: String, detailFont: Font) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
                 .font(AppFont.caption)
                 .foregroundStyle(.secondary)
             Text(value)
-                .font(FeedCardLayout.backDetailValueFont)
+                .font(detailFont)
                 .foregroundStyle(.primary)
                 .multilineTextAlignment(.leading)
-                .fixedSize(horizontal: false, vertical: true)
+                .lineLimit(5)
+                .minimumScaleFactor(0.72)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -352,10 +326,11 @@ struct FeedCardView: View {
     /// Game type + league line (shown on the flip back).
     private var headerTitleAbovePhoto: some View {
         Text(headerTitleLine1)
-            .font(AppFont.bodyMedium)
+            .font(FeedCardLayout.backHeaderTitleFont)
             .foregroundStyle(.primary)
             .multilineTextAlignment(.leading)
             .lineLimit(FeedCardLayout.backHeaderLineLimit)
+            .minimumScaleFactor(0.72)
             .truncationMode(.tail)
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityLabel(headerAccessibilitySummary)
@@ -376,7 +351,9 @@ struct FeedCardView: View {
                 .font(AppFont.body)
                 .foregroundStyle(.primary)
                 .multilineTextAlignment(.leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .lineLimit(5)
+                .minimumScaleFactor(0.55)
+                .frame(maxWidth: .infinity, maxHeight: FeedCardLayout.captionMaxHeight, alignment: .topLeading)
                 .accessibilityLabel("Caption")
                 .padding(.horizontal, 12)
                 .padding(.top, FeedCardLayout.captionVerticalPadding)

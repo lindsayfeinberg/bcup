@@ -3,6 +3,15 @@ import FirebaseAuth
 import FirebaseFirestore
 import UIKit
 
+/// Insets for the white stroked “widget” behind list rows — slightly larger horizontal inset reads better on narrow devices and TestFlight builds.
+private enum GameLogFormLayout {
+    static let widgetOutlineHorizontalPadding: CGFloat = 12
+    static let widgetOutlineVerticalPadding: CGFloat = 6
+    /// Extra breathing room inside the row for `UISegmentedControl` (avoids edge-hugging vs simulator).
+    static let gameTypeSegmentedInnerHorizontalPadding: CGFloat = 6
+    static let gameTypeSegmentedInnerVerticalPadding: CGFloat = 4
+}
+
 /// Brand colors for the game log form.
 private enum GameLogBrandColor {
     static let red = Color.black
@@ -138,9 +147,299 @@ struct NewGameLogFormView: View {
                         RoundedRectangle(cornerRadius: 12, style: .continuous)
                             .stroke(Self.widgetOutlineColor, lineWidth: 2)
                     )
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
+                    .padding(.horizontal, GameLogFormLayout.widgetOutlineHorizontalPadding)
+                    .padding(.vertical, GameLogFormLayout.widgetOutlineVerticalPadding)
             )
+    }
+
+    @ViewBuilder
+    private var gameLogFormSections: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 12) {
+                concatenatedPhotoStrip(front: frontPhotoData, back: backPhotoData)
+
+                HStack {
+                    Spacer()
+                    if frontPhotoData == nil && backPhotoData == nil {
+                        Button {
+                            showDualCapture = true
+                        } label: {
+                            Text("Capture both cameras")
+                                .font(AppFont.buttonProminent)
+                        }
+                        .buttonStyle(.borderedProminent)
+                    } else {
+                        Button {
+                            showDualCapture = true
+                        } label: {
+                            Text("Retake")
+                                .font(AppFont.buttonProminent)
+                        }
+                        .buttonStyle(BrandPrimaryButtonStyle())
+                    }
+                    Spacer()
+                }
+            }
+        } header: {
+            Text("Game Photos")
+                .font(Self.widgetTitleFont)
+                .foregroundStyle(.black)
+        }
+        .listRowBackground(widgetOutlineBackground)
+
+        Section {
+            Picker(selection: $selectedCommunityId) {
+                ForEach(communities, id: \.communityId) { community in
+                    Text(community.name)
+                        .font(AppFont.body)
+                        .foregroundStyle(.black)
+                        .tag(community.communityId)
+                }
+            } label: {
+                Text("League")
+                    .font(AppFont.headline)
+            }
+            .disabled(isBracketLinked)
+        } header: {
+            Text("Choose League")
+                .font(Self.widgetTitleFont)
+                .foregroundStyle(GameLogBrandColor.red)
+        }
+        .listRowBackground(widgetOutlineBackground)
+
+        Section {
+            // Section header already says “Choose Game Type”; use empty title + labelsHidden so segments aren’t squeezed.
+            Picker("", selection: $selectedGameType) {
+                ForEach(GameType.allCases) { type in
+                    Text(type.displayName)
+                        .font(AppFont.body)
+                        .foregroundStyle(isGameTypeAvailable(type) ? Color.primary : Color.secondary)
+                        .opacity(isGameTypeAvailable(type) ? 1.0 : 0.45)
+                        .disabled(!isGameTypeAvailable(type))
+                        .tag(type)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.segmented)
+            .padding(.horizontal, GameLogFormLayout.gameTypeSegmentedInnerHorizontalPadding)
+            .padding(.vertical, GameLogFormLayout.gameTypeSegmentedInnerVerticalPadding)
+            .accessibilityLabel("Game type")
+        } header: {
+            Text("Choose Game Type")
+                .font(Self.widgetTitleFont)
+                .foregroundStyle(GameLogBrandColor.red)
+        }
+        .id(Self.autoPeekChooseGameAnchor)
+        .listRowBackground(widgetOutlineBackground)
+
+        Section {
+            if isGameTypeAvailable(selectedGameType) {
+                HStack(spacing: 12) {
+                    Button {
+                        outcome = .won
+                        lockUserIntoOutcome()
+                    } label: {
+                        Text("I won")
+                            .font(AppFont.buttonProminent)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .fill(outcome == .won ? GameLogBrandColor.wonGreen : .white)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .stroke(GameLogBrandColor.wonGreen, lineWidth: 2)
+                            )
+                            .contentShape(Rectangle())
+                    }
+                    .foregroundStyle(outcome == .won ? .white : GameLogBrandColor.wonGreen)
+                    .frame(maxWidth: .infinity)
+                    .buttonStyle(.plain)
+                    .disabled(isBracketLinked && !currentUserIsGameMember)
+                    .accessibilityIdentifier("gamelog.outcome.won")
+
+                    Button {
+                        outcome = .lost
+                        lockUserIntoOutcome()
+                    } label: {
+                        Text("I lost")
+                            .font(AppFont.buttonProminent)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .fill(outcome == .lost ? GameLogBrandColor.lostRed : .white)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .stroke(GameLogBrandColor.lostRed, lineWidth: 2)
+                            )
+                            .contentShape(Rectangle())
+                    }
+                    .foregroundStyle(outcome == .lost ? .white : GameLogBrandColor.lostRed)
+                    .frame(maxWidth: .infinity)
+                    .buttonStyle(.plain)
+                    .disabled(isBracketLinked && !currentUserIsGameMember)
+                    .accessibilityIdentifier("gamelog.outcome.lost")
+                }
+            } else {
+                Text(unavailableGameTypeMessage)
+                    .font(AppFont.subheadline)
+                    .foregroundStyle(.black)
+            }
+        } header: {
+            Text("Outcome")
+                .font(Self.widgetTitleFont)
+                .foregroundStyle(GameLogBrandColor.red)
+        }
+        .listRowBackground(widgetOutlineBackground)
+
+        if outcome != nil {
+            Section {
+                let range = validTeamSizeRange(for: selectedGameType)
+                Stepper(value: $teamSize, in: range, step: 1) {
+                    Text("\(teamSize)")
+                        .font(AppFont.headline)
+                        .foregroundStyle(.black)
+                }
+                .disabled(isBracketLinked)
+            } header: {
+                Text("Team size")
+                    .font(Self.widgetTitleFont)
+                    .foregroundStyle(GameLogBrandColor.red)
+            }
+            .id(Self.autoPeekTeamSizeAnchor)
+            .listRowBackground(widgetOutlineBackground)
+
+            fillSlotsFormSections
+
+            if shouldShowPostSelectionSections {
+                    if shouldShowDetailsSection {
+                        Section {
+                            statsSectionContent
+                        } header: {
+                            Text("Details (Optional)")
+                                .font(Self.widgetTitleFont)
+                                .foregroundStyle(GameLogBrandColor.red)
+                        }
+                        .listRowBackground(widgetOutlineBackground)
+                    }
+
+                    Section {
+                        if participantProfileIds.isEmpty {
+                            Text("Select winners and losers to choose MVP/LVP.")
+                                .font(AppFont.subheadline)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Picker(selection: $selectedMVPProfileId) {
+                                    Text("None")
+                                        .font(AppFont.body)
+                                        .tag("")
+                                    ForEach(selectedParticipants, id: \.profileId) { participant in
+                                        Text(displayName(for: participant.profileId))
+                                            .font(AppFont.body)
+                                            .tag(participant.profileId)
+                                    }
+                                } label: {
+                                    Text("MVP   ˗ˏˋ ★ ˎˊ˗")
+                                        .font(AppFont.headline)
+                                }
+                                .font(AppFont.body)
+                                Picker(selection: $selectedLVPProfileId) {
+                                    Text("None")
+                                        .font(AppFont.body)
+                                        .tag("")
+                                    ForEach(selectedParticipants, id: \.profileId) { participant in
+                                        Text(displayName(for: participant.profileId))
+                                            .font(AppFont.body)
+                                            .tag(participant.profileId)
+                                    }
+                                } label: {
+                                    Text("LVP ")
+                                        .font(AppFont.headline)
+                                }
+                                .font(AppFont.body)
+                            }
+                        }
+                    } header: {
+                        Text("Awards (Optional)")
+                            .font(Self.widgetTitleFont)
+                            .foregroundStyle(GameLogBrandColor.red)
+                    }
+                    .id(Self.autoPeekPostSelectionAnchor)
+                    .listRowBackground(widgetOutlineBackground)
+
+                    Section {
+                        TextField("Add a note", text: $gameLogNotes)
+                            .font(AppFont.body)
+                            .textFieldStyle(.plain)
+                    } header: {
+                        Text("Notes (Optional)")
+                            .font(Self.widgetTitleFont)
+                            .foregroundStyle(GameLogBrandColor.red)
+                    }
+                    .listRowBackground(widgetOutlineBackground)
+
+                    Section {
+                        summaryWidgetContent
+                    } header: {
+                        Text("Summary")
+                            .font(Self.widgetTitleFont)
+                            .foregroundStyle(GameLogBrandColor.red)
+                    }
+                    .listRowBackground(widgetOutlineBackground)
+
+                    Section {
+                        if !submitDisableReasons.isEmpty {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Missing before submit:")
+                                    .font(AppFont.subheadlineBold)
+                                    .foregroundStyle(GameLogBrandColor.lostRed)
+                                ForEach(submitDisableReasons, id: \.self) { reason in
+                                    Text("• \(reason)")
+                                        .font(AppFont.subheadlineBold)
+                                        .foregroundStyle(GameLogBrandColor.lostRed)
+                                }
+                            }
+                        }
+                        if let submitErrorMessage {
+                            Text(submitErrorMessage)
+                                .foregroundStyle(.black)
+                                .font(AppFont.footnote)
+                            if showOpenSettingsAction {
+                                Button {
+                                    guard let settingsURL = URL(string: UIApplication.openSettingsURLString) else { return }
+                                    UIApplication.shared.open(settingsURL)
+                                } label: {
+                                    Text("Open Settings")
+                                        .font(AppFont.button)
+                                }
+                                .buttonStyle(.bordered)
+                            }
+                        }
+                        if isSubmitting {
+                            HStack(spacing: 8) {
+                                ProgressView()
+                                Text("Submitting game log...")
+                                    .font(AppFont.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        Button {
+                            Task { await handleSubmitTapped() }
+                        } label: {
+                            Text("Submit Game")
+                                .font(AppFont.buttonProminent)
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(SubmitGameButtonStyle())
+                        .disabled(!canSubmitWithoutPhotos || isSubmitting)
+                        .accessibilityIdentifier("gamelog.submit")
+                    }
+            }
+        }
     }
 
     var body: some View {
@@ -160,291 +459,7 @@ struct NewGameLogFormView: View {
             } else {
                 ScrollViewReader { proxy in
                     Form {
-                    Section {
-                        VStack(alignment: .leading, spacing: 12) {
-                            concatenatedPhotoStrip(front: frontPhotoData, back: backPhotoData)
-
-                            HStack {
-                                Spacer()
-                                if frontPhotoData == nil && backPhotoData == nil {
-                                    Button {
-                                        showDualCapture = true
-                                    } label: {
-                                        Text("Capture both cameras")
-                                            .font(AppFont.buttonProminent)
-                                    }
-                                    .buttonStyle(.borderedProminent)
-                                } else {
-                                    Button {
-                                        showDualCapture = true
-                                    } label: {
-                                        Text("Retake")
-                                            .font(AppFont.buttonProminent)
-                                    }
-                                    .buttonStyle(BrandPrimaryButtonStyle())
-                                }
-                                Spacer()
-                            }
-                        }
-                    } header: {
-                        Text("Game Photos")
-                            .font(Self.widgetTitleFont)
-                            .foregroundStyle(.black)
-                    }
-                    .listRowBackground(widgetOutlineBackground)
-
-                    Section {
-                        Picker(selection: $selectedCommunityId) {
-                            ForEach(communities, id: \.communityId) { community in
-                                Text(community.name)
-                                    .font(AppFont.body)
-                                    .foregroundStyle(.black)
-                                    .tag(community.communityId)
-                            }
-                        } label: {
-                            Text("League")
-                                .font(AppFont.headline)
-                        }
-                        .disabled(isBracketLinked)
-                    } header: {
-                        Text("Choose League")
-                            .font(Self.widgetTitleFont)
-                            .foregroundStyle(GameLogBrandColor.red)
-                    }
-                    .listRowBackground(widgetOutlineBackground)
-
-                    Section {
-                        Picker(selection: $selectedGameType) {
-                            ForEach(GameType.allCases) { type in
-                                Text(type.displayName)
-                                    .font(AppFont.body)
-                                    .foregroundStyle(isGameTypeAvailable(type) ? Color.primary : Color.secondary)
-                                    .opacity(isGameTypeAvailable(type) ? 1.0 : 0.45)
-                                    .disabled(!isGameTypeAvailable(type))
-                                    .tag(type)
-                            }
-                        } label: {
-                            Text("Game type")
-                                .font(AppFont.headline)
-                        }
-                        .font(AppFont.body)
-                        .pickerStyle(.segmented)
-                    } header: {
-                        Text("Choose Game Type")
-                            .font(Self.widgetTitleFont)
-                            .foregroundStyle(GameLogBrandColor.red)
-                    }
-                    .id(Self.autoPeekChooseGameAnchor)
-                    .listRowBackground(widgetOutlineBackground)
-
-                    Section {
-                        if isGameTypeAvailable(selectedGameType) {
-                            HStack(spacing: 12) {
-                                Button {
-                                    outcome = .won
-                                    lockUserIntoOutcome()
-                                } label: {
-                                    Text("I won")
-                                        .font(AppFont.buttonProminent)
-                                        .frame(maxWidth: .infinity)
-                                        .padding(.vertical, 10)
-                                        .background(
-                                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                                .fill(outcome == .won ? GameLogBrandColor.wonGreen : .white)
-                                        )
-                                        .overlay(
-                                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                                .stroke(GameLogBrandColor.wonGreen, lineWidth: 2)
-                                        )
-                                        .contentShape(Rectangle())
-                                }
-                                .foregroundStyle(outcome == .won ? .white : GameLogBrandColor.wonGreen)
-                                .frame(maxWidth: .infinity)
-                                .buttonStyle(.plain)
-                                .disabled(isBracketLinked && !currentUserIsGameMember)
-                                .accessibilityIdentifier("gamelog.outcome.won")
-
-                                Button {
-                                    outcome = .lost
-                                    lockUserIntoOutcome()
-                                } label: {
-                                    Text("I lost")
-                                        .font(AppFont.buttonProminent)
-                                        .frame(maxWidth: .infinity)
-                                        .padding(.vertical, 10)
-                                        .background(
-                                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                                .fill(outcome == .lost ? GameLogBrandColor.lostRed : .white)
-                                        )
-                                        .overlay(
-                                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                                .stroke(GameLogBrandColor.lostRed, lineWidth: 2)
-                                        )
-                                        .contentShape(Rectangle())
-                                }
-                                .foregroundStyle(outcome == .lost ? .white : GameLogBrandColor.lostRed)
-                                .frame(maxWidth: .infinity)
-                                .buttonStyle(.plain)
-                                .disabled(isBracketLinked && !currentUserIsGameMember)
-                                .accessibilityIdentifier("gamelog.outcome.lost")
-                            }
-                        } else {
-                            Text(unavailableGameTypeMessage)
-                                .font(AppFont.subheadline)
-                                .foregroundStyle(.black)
-                        }
-                    } header: {
-                        Text("Outcome")
-                            .font(Self.widgetTitleFont)
-                            .foregroundStyle(GameLogBrandColor.red)
-                    }
-                    .listRowBackground(widgetOutlineBackground)
-
-                    if outcome != nil {
-                        Section {
-                            let range = validTeamSizeRange(for: selectedGameType)
-                            Stepper(value: $teamSize, in: range, step: 1) {
-                                Text("\(teamSize)")
-                                    .font(AppFont.headline)
-                                    .foregroundStyle(.black)
-                            }
-                            .disabled(isBracketLinked)
-                        } header: {
-                            Text("Team size")
-                                .font(Self.widgetTitleFont)
-                                .foregroundStyle(GameLogBrandColor.red)
-                        }
-                        .id(Self.autoPeekTeamSizeAnchor)
-                        .listRowBackground(widgetOutlineBackground)
-
-                        fillSlotsFormSections
-
-                        if shouldShowPostSelectionSections {
-                                if shouldShowDetailsSection {
-                                    Section {
-                                        statsSectionContent
-                                    } header: {
-                                        Text("Details (Optional)")
-                                            .font(Self.widgetTitleFont)
-                                            .foregroundStyle(GameLogBrandColor.red)
-                                    }
-                                    .listRowBackground(widgetOutlineBackground)
-                                }
-
-                                Section {
-                                    if participantProfileIds.isEmpty {
-                                        Text("Select winners and losers to choose MVP/LVP.")
-                                            .font(AppFont.subheadline)
-                                            .foregroundStyle(.secondary)
-                                    } else {
-                                        VStack(alignment: .leading, spacing: 12) {
-                                            Picker(selection: $selectedMVPProfileId) {
-                                                Text("None")
-                                                    .font(AppFont.body)
-                                                    .tag("")
-                                                ForEach(selectedParticipants, id: \.profileId) { participant in
-                                                    Text(displayName(for: participant.profileId))
-                                                        .font(AppFont.body)
-                                                        .tag(participant.profileId)
-                                                }
-                                            } label: {
-                                                Text("MVP   ˗ˏˋ ★ ˎˊ˗")
-                                                    .font(AppFont.headline)
-                                            }
-                                            .font(AppFont.body)
-                                            Picker(selection: $selectedLVPProfileId) {
-                                                Text("None")
-                                                    .font(AppFont.body)
-                                                    .tag("")
-                                                ForEach(selectedParticipants, id: \.profileId) { participant in
-                                                    Text(displayName(for: participant.profileId))
-                                                        .font(AppFont.body)
-                                                        .tag(participant.profileId)
-                                                }
-                                            } label: {
-                                                Text("LVP ")
-                                                    .font(AppFont.headline)
-                                            }
-                                            .font(AppFont.body)
-                                        }
-                                    }
-                                } header: {
-                                    Text("Awards (Optional)")
-                                        .font(Self.widgetTitleFont)
-                                        .foregroundStyle(GameLogBrandColor.red)
-                                }
-                                .id(Self.autoPeekPostSelectionAnchor)
-                                .listRowBackground(widgetOutlineBackground)
-
-                                Section {
-                                    TextField("Add a note", text: $gameLogNotes)
-                                        .font(AppFont.body)
-                                        .textFieldStyle(.plain)
-                                } header: {
-                                    Text("Notes (Optional)")
-                                        .font(Self.widgetTitleFont)
-                                        .foregroundStyle(GameLogBrandColor.red)
-                                }
-                                .listRowBackground(widgetOutlineBackground)
-
-                                Section {
-                                    summaryWidgetContent
-                                } header: {
-                                    Text("Summary")
-                                        .font(Self.widgetTitleFont)
-                                        .foregroundStyle(GameLogBrandColor.red)
-                                }
-                                .listRowBackground(widgetOutlineBackground)
-
-                                Section {
-                                    if !submitDisableReasons.isEmpty {
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            Text("Missing before submit:")
-                                                .font(AppFont.subheadlineBold)
-                                                .foregroundStyle(GameLogBrandColor.lostRed)
-                                            ForEach(submitDisableReasons, id: \.self) { reason in
-                                                Text("• \(reason)")
-                                                    .font(AppFont.subheadlineBold)
-                                                    .foregroundStyle(GameLogBrandColor.lostRed)
-                                            }
-                                        }
-                                    }
-                                    if let submitErrorMessage {
-                                        Text(submitErrorMessage)
-                                            .foregroundStyle(.black)
-                                            .font(AppFont.footnote)
-                                        if showOpenSettingsAction {
-                                            Button {
-                                                guard let settingsURL = URL(string: UIApplication.openSettingsURLString) else { return }
-                                                UIApplication.shared.open(settingsURL)
-                                            } label: {
-                                                Text("Open Settings")
-                                                    .font(AppFont.button)
-                                            }
-                                            .buttonStyle(.bordered)
-                                        }
-                                    }
-                                    if isSubmitting {
-                                        HStack(spacing: 8) {
-                                            ProgressView()
-                                            Text("Submitting game log...")
-                                                .font(AppFont.footnote)
-                                                .foregroundStyle(.secondary)
-                                        }
-                                    }
-                                    Button {
-                                        Task { await handleSubmitTapped() }
-                                    } label: {
-                                        Text("Submit Game")
-                                            .font(AppFont.buttonProminent)
-                                            .frame(maxWidth: .infinity)
-                                    }
-                                    .buttonStyle(SubmitGameButtonStyle())
-                                    .disabled(!canSubmitWithoutPhotos || isSubmitting)
-                                    .accessibilityIdentifier("gamelog.submit")
-                                }
-                        }
-                    }
+                        gameLogFormSections
                     }
                     .scrollContentBackground(.hidden)
                     .background(Self.formBackgroundSoftRed)
@@ -456,19 +471,11 @@ struct NewGameLogFormView: View {
                             }
                         }
                     }
-                    .onChange(of: shouldShowPostSelectionSections) { oldValue, newValue in
-                        guard !oldValue, newValue else { return }
-                        DispatchQueue.main.async {
-                            withAnimation(.easeInOut(duration: 0.99)) {
-                                proxy.scrollTo(Self.autoPeekChooseGameAnchor, anchor: .top)
-                            }
-                        }
-                    }
                     .onChange(of: isTeammateDropdownOpen) { _, isOpen in
                         guard isOpen else { return }
                         DispatchQueue.main.async {
                             withAnimation(.easeOut(duration: 0.32)) {
-                                proxy.scrollTo(Self.autoPeekTeamSizeAnchor, anchor: .top)
+                                proxy.scrollTo(Self.autoPeekTeammatesAnchor, anchor: .top)
                             }
                         }
                     }
@@ -476,7 +483,7 @@ struct NewGameLogFormView: View {
                         guard isOpen else { return }
                         DispatchQueue.main.async {
                             withAnimation(.easeOut(duration: 0.32)) {
-                                proxy.scrollTo(Self.autoPeekTeamSizeAnchor, anchor: .top)
+                                proxy.scrollTo(Self.autoPeekOpponentsAnchor, anchor: .top)
                             }
                         }
                     }
