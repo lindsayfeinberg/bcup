@@ -878,15 +878,10 @@ struct NewGameLogFormView: View {
                     }
                 }
             case .beerBall:
-                ForEach(participantProfileIds.sorted(), id: \.self) { profileId in
-                    let n = beerBallNewCansByProfileId[profileId] ?? 0
-                    if n > 0 {
-                        Text("\(displayName(for: profileId)): \(n) new cans")
-                            .font(AppFont.subheadlineBold)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
+                Text("Beer Ball: \(totalBeerBallNewCans) new cans")
+                    .font(AppFont.subheadlineBold)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
                 if !beerBallFirstFinishedByProfileId.isEmpty {
                     Text("Finished first: \(displayName(for: beerBallFirstFinishedByProfileId))")
                         .font(AppFont.subheadlineBold)
@@ -894,25 +889,15 @@ struct NewGameLogFormView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             case .battlePong:
-                ForEach(participantProfileIds.sorted(), id: \.self) { profileId in
-                    let n = battlePongCupsByProfileId[profileId] ?? 0
-                    if n > 0 {
-                        Text("\(displayName(for: profileId)): \(n) cups made")
-                            .font(AppFont.subheadlineBold)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
+                Text("Battle Pong: \(totalBattlePongCupsMade) cups made")
+                    .font(AppFont.subheadlineBold)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
             case .baseball:
-                ForEach(participantProfileIds.sorted(), id: \.self) { profileId in
-                    let n = baseballHitsByProfileId[profileId] ?? 0
-                    if n > 0 {
-                        Text("\(displayName(for: profileId)): \(n) hits")
-                            .font(AppFont.subheadlineBold)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
+                Text("Baseball: \(totalBaseballHits) hits")
+                    .font(AppFont.subheadlineBold)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -1532,6 +1517,18 @@ struct NewGameLogFormView: View {
 
     private var selectedLeagueNameForSummary: String {
         communities.first { $0.communityId == selectedCommunityId }?.name ?? "—"
+    }
+
+    private var totalBeerBallNewCans: Int {
+        beerBallNewCansByProfileId.values.reduce(0, +)
+    }
+
+    private var totalBattlePongCupsMade: Int {
+        battlePongCupsByProfileId.values.reduce(0, +)
+    }
+
+    private var totalBaseballHits: Int {
+        baseballHitsByProfileId.values.reduce(0, +)
     }
 
     /// Shown in Summary when at least one capture or linked photo exists.
