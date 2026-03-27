@@ -404,11 +404,6 @@ struct NewGameLogFormView: View {
                                             }
                                         }
                                     }
-                                    if let statsError = currentStatsValidationError {
-                                        Text(statsError)
-                                            .foregroundStyle(.black)
-                                            .font(AppFont.footnote)
-                                    }
                                     if let submitErrorMessage {
                                         Text(submitErrorMessage)
                                             .foregroundStyle(.black)
@@ -587,6 +582,11 @@ struct NewGameLogFormView: View {
                         ) { profileId, isSelected in
                             toggleTeammate(profileId: profileId, isSelected: isSelected)
                         }
+                    } header: {
+                        participantSectionHeaderPills(
+                            selectedProfileIds: teammateSet.subtracting([myUserId]),
+                            members: members.filter { $0.profileId != myUserId }
+                        )
                     }
                     .id(Self.autoPeekTeammatesAnchor)
                     .listRowBackground(widgetOutlineBackground)
@@ -609,7 +609,7 @@ struct NewGameLogFormView: View {
                         toggleOpponent(profileId: profileId, isSelected: isSelected)
                     }
                 } header: {
-                    opponentSectionHeaderPills(
+                    participantSectionHeaderPills(
                         selectedProfileIds: opponentSet,
                         members: members.filter { $0.profileId != myUserId }
                     )
@@ -631,7 +631,7 @@ struct NewGameLogFormView: View {
 
     /// Selected opponent chips above the white widget; title lives in the dropdown row next to the count.
     @ViewBuilder
-    private func opponentSectionHeaderPills(
+    private func participantSectionHeaderPills(
         selectedProfileIds: Set<String>,
         members: [CommunityMemberRosterRow]
     ) -> some View {
@@ -789,20 +789,32 @@ struct NewGameLogFormView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("League: \(selectedLeagueNameForSummary)")
                 .font(AppFont.subheadlineBold)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
             Text("Game: \(selectedGameType.displayName)")
                 .font(AppFont.subheadlineBold)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
             Text("Winners: \(namesList(for: selectedWinnerProfileIds))")
                 .font(AppFont.subheadlineBold)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
             Text("Losers: \(namesList(for: selectedLoserProfileIds))")
                 .font(AppFont.subheadlineBold)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
 
             if !selectedMVPProfileId.isEmpty {
                 Text("MVP: \(displayName(for: selectedMVPProfileId))")
                     .font(AppFont.subheadlineBold)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             if !selectedLVPProfileId.isEmpty {
                 Text("LVP: \(displayName(for: selectedLVPProfileId))")
                     .font(AppFont.subheadlineBold)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             summaryStatsDetailContent
@@ -818,23 +830,33 @@ struct NewGameLogFormView: View {
                 if teamSize > 1 {
                     Text("Cup game: \(pongCupMode.displayName)")
                         .font(AppFont.subheadlineBold)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .fixedSize(horizontal: false, vertical: true)
                     ForEach(participantProfileIds.sorted(), id: \.self) { profileId in
                         let cups = pongCupsByProfileId[profileId] ?? 0
                         if cups > 0 {
                             Text("\(displayName(for: profileId)): \(cups) cups")
                                 .font(AppFont.subheadlineBold)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                     }
                     if !pongLastCupByProfileId.isEmpty {
                         Text("Last cup: \(displayName(for: pongLastCupByProfileId))")
                             .font(AppFont.subheadlineBold)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 } else if soloWinnerProfileId != nil {
                     Text("Pong: Solo \(pongCupMode.displayName)")
                         .font(AppFont.subheadlineBold)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .fixedSize(horizontal: false, vertical: true)
                     if !pongLastCupByProfileId.isEmpty {
                         Text("Last cup: \(displayName(for: pongLastCupByProfileId))")
                             .font(AppFont.subheadlineBold)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
             case .beerBall:
@@ -843,11 +865,15 @@ struct NewGameLogFormView: View {
                     if n > 0 {
                         Text("\(displayName(for: profileId)): \(n) new cans")
                             .font(AppFont.subheadlineBold)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 if !beerBallFirstFinishedByProfileId.isEmpty {
                     Text("Finished first: \(displayName(for: beerBallFirstFinishedByProfileId))")
                         .font(AppFont.subheadlineBold)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             case .battlePong:
                 ForEach(participantProfileIds.sorted(), id: \.self) { profileId in
@@ -855,6 +881,8 @@ struct NewGameLogFormView: View {
                     if n > 0 {
                         Text("\(displayName(for: profileId)): \(n) cups made")
                             .font(AppFont.subheadlineBold)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
             case .baseball:
@@ -863,6 +891,8 @@ struct NewGameLogFormView: View {
                     if n > 0 {
                         Text("\(displayName(for: profileId)): \(n) hits")
                             .font(AppFont.subheadlineBold)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
             }
@@ -904,15 +934,61 @@ struct NewGameLogFormView: View {
                 }
                 .font(AppFont.body)
                 .pickerStyle(.segmented)
+                .onChange(of: pongCupMode) { _, _ in
+                    normalizePongCupsToMode()
+                }
 
-                ForEach(selectedParticipants, id: \.profileId) { participant in
-                    Stepper(
-                        value: binding(for: participant.profileId, in: $pongCupsByProfileId),
-                        in: 0...pongCupMode.rawValue
-                    ) {
-                        Text("\(displayName(for: participant.profileId)): \(pongCupsByProfileId[participant.profileId] ?? 0) cups")
-                            .font(AppFont.body)
+                Text("Cups made")
+                    .font(AppFont.subheadlineBold)
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Winning team")
+                        .font(AppFont.subheadlineBold)
+                    ForEach(sortedProfileIds(for: selectedWinnerProfileIds), id: \.self) { profileId in
+                        HStack(alignment: .center, spacing: 12) {
+                            Text("\(displayName(for: profileId)): \(pongCupsByProfileId[profileId] ?? 0) cups")
+                                .font(AppFont.body)
+                                .lineLimit(2)
+                                .multilineTextAlignment(.leading)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Spacer(minLength: 0)
+                            Stepper(
+                                "",
+                                value: pongCupsBinding(for: profileId),
+                                in: 0...pongCupMode.rawValue
+                            )
+                            .labelsHidden()
+                            .frame(minWidth: 126, alignment: .trailing)
+                        }
                     }
+                    Text("Team total: \(pongWinnersTotalCups) / \(pongCupMode.rawValue)")
+                        .font(AppFont.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Losing team")
+                        .font(AppFont.subheadlineBold)
+                    ForEach(sortedProfileIds(for: selectedLoserProfileIds), id: \.self) { profileId in
+                        HStack(alignment: .center, spacing: 12) {
+                            Text("\(displayName(for: profileId)): \(pongCupsByProfileId[profileId] ?? 0) cups")
+                                .font(AppFont.body)
+                                .lineLimit(2)
+                                .multilineTextAlignment(.leading)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Spacer(minLength: 0)
+                            Stepper(
+                                "",
+                                value: pongCupsBinding(for: profileId),
+                                in: 0...pongCupMode.rawValue
+                            )
+                            .labelsHidden()
+                            .frame(minWidth: 126, alignment: .trailing)
+                        }
+                    }
+                    Text("Team total: \(pongLosersTotalCups) / \(pongCupMode.rawValue)")
+                        .font(AppFont.footnote)
+                        .foregroundStyle(.secondary)
                 }
 
                 Picker("Last cup by", selection: $pongLastCupByProfileId) {
@@ -926,12 +1002,72 @@ struct NewGameLogFormView: View {
                     }
                 }
                 .font(AppFont.body)
-
-                let total = pongTotalCups
-                Text("Pong total: \(total) / \(pongCupMode.rawValue)")
-                    .font(AppFont.footnote)
-                    .foregroundColor(total == pongCupMode.rawValue ? .secondary : .black)
             }
+        }
+    }
+
+    private func pongCupsBinding(for profileId: String) -> Binding<Int> {
+        Binding<Int>(
+            get: { pongCupsByProfileId[profileId] ?? 0 },
+            set: { newValue in
+                let clamped = max(0, newValue)
+                let totalOther = pongTeamTotal(excluding: profileId)
+                let cap = pongCupMode.rawValue
+                let remaining = max(0, cap - totalOther)
+                let allowedMaxForThisPlayer = min(cap, remaining)
+                let finalValue = min(clamped, allowedMaxForThisPlayer)
+                pongCupsByProfileId[profileId] = finalValue
+            }
+        )
+    }
+
+    private func pongTeamTotal(excluding profileId: String) -> Int {
+        let teamIds: Set<String>
+        if selectedWinnerProfileIds.contains(profileId) {
+            teamIds = selectedWinnerProfileIds
+        } else if selectedLoserProfileIds.contains(profileId) {
+            teamIds = selectedLoserProfileIds
+        } else {
+            teamIds = []
+        }
+        return teamIds.reduce(0) { total, id in
+            if id == profileId { return total }
+            return total + (pongCupsByProfileId[id] ?? 0)
+        }
+    }
+
+    private func normalizePongCupsToMode() {
+        let cap = pongCupMode.rawValue
+        // 1) Clamp each player to [0, cap]
+        for id in participantProfileIds {
+            pongCupsByProfileId[id] = min(max(0, pongCupsByProfileId[id] ?? 0), cap)
+        }
+        normalizePongTeamToMode(teamIds: selectedWinnerProfileIds, cap: cap)
+        normalizePongTeamToMode(teamIds: selectedLoserProfileIds, cap: cap)
+    }
+
+    private func normalizePongTeamToMode(teamIds: Set<String>, cap: Int) {
+        var total = teamIds.reduce(0) { $0 + (pongCupsByProfileId[$1] ?? 0) }
+        guard total > cap else { return }
+        let ids = teamIds.sorted()
+        // Reduce from the end (stable, deterministic) until the team total fits.
+        while total > cap {
+            var reducedAny = false
+            for id in ids.reversed() {
+                let v = pongCupsByProfileId[id] ?? 0
+                guard v > 0, total > cap else { continue }
+                pongCupsByProfileId[id] = v - 1
+                total -= 1
+                reducedAny = true
+                if total <= cap { break }
+            }
+            if !reducedAny { break }
+        }
+    }
+
+    private func sortedProfileIds(for ids: Set<String>) -> [String] {
+        ids.sorted { lhs, rhs in
+            displayName(for: lhs).localizedCaseInsensitiveCompare(displayName(for: rhs)) == .orderedAscending
         }
     }
 
@@ -1019,8 +1155,16 @@ struct NewGameLogFormView: View {
         if selectedWinnerProfileIds.count != teamSize || selectedLoserProfileIds.count != teamSize {
             reasons.append("Winners and losers must each equal team size")
         }
-        if selectedGameType == .pong, teamSize > 1, pongTotalCups != pongCupMode.rawValue {
-            reasons.append("Pong total must equal selected cup mode")
+        if selectedGameType == .pong, teamSize > 1 {
+            let hasAnyPongCups = pongTotalCups > 0
+            if hasAnyPongCups {
+                if pongWinnersTotalCups != pongCupMode.rawValue {
+                    reasons.append("Winning team cups must equal \(pongCupMode.rawValue)")
+                }
+                if pongLosersTotalCups != pongCupMode.rawValue {
+                    reasons.append("Losing team cups must equal \(pongCupMode.rawValue)")
+                }
+            }
         }
         if !selectedMVPProfileId.isEmpty &&
             !selectedLVPProfileId.isEmpty &&
@@ -1087,6 +1231,14 @@ struct NewGameLogFormView: View {
         participantProfileIds.reduce(0) { $0 + (pongCupsByProfileId[$1] ?? 0) }
     }
 
+    private var pongWinnersTotalCups: Int {
+        selectedWinnerProfileIds.reduce(0) { $0 + (pongCupsByProfileId[$1] ?? 0) }
+    }
+
+    private var pongLosersTotalCups: Int {
+        selectedLoserProfileIds.reduce(0) { $0 + (pongCupsByProfileId[$1] ?? 0) }
+    }
+
     private var currentStatsValidationError: String? {
         let participantSet = Set(participantProfileIds)
         guard !participantSet.isEmpty else { return nil }
@@ -1103,8 +1255,15 @@ struct NewGameLogFormView: View {
                 }
                 break
             }
-            if pongTotalCups != pongCupMode.rawValue {
-                return "Pong cups must add up to \(pongCupMode.rawValue)."
+            // Allow "unset" cup counts (all zeros). Once the user enters any cups,
+            // require each team's total to match the selected cup mode.
+            if pongTotalCups > 0 {
+                if pongWinnersTotalCups != pongCupMode.rawValue {
+                    return "Winning team cups must add up to \(pongCupMode.rawValue)."
+                }
+                if pongLosersTotalCups != pongCupMode.rawValue {
+                    return "Losing team cups must add up to \(pongCupMode.rawValue)."
+                }
             }
             if !pongLastCupByProfileId.isEmpty && !selectedWinnerProfileIds.contains(pongLastCupByProfileId) {
                 return "Last cup must be selected from the winning team."
@@ -1733,8 +1892,8 @@ private enum GameType: String, CaseIterable, Identifiable {
 }
 
 private enum PongCupMode: Int, CaseIterable, Identifiable {
-    case six = 6
     case ten = 10
+    case six = 6
 
     var id: Int { rawValue }
 
