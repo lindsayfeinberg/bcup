@@ -210,14 +210,9 @@ struct FeedCardView: View {
             return
         }
 
-        // 3) Losers, then Winners
-        if visibleTitles.contains("Losers") {
-            drop("Losers")
-            return
-        }
-        if visibleTitles.contains("Winners") {
-            drop("Winners")
-        }
+        // 3) Preserve Winners/Losers for context — do not trim further.
+        // If content still overflows after Stats and MVP/LVP are removed,
+        // keep team results visible rather than dropping them.
     }
 
     @ViewBuilder
