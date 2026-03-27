@@ -20,7 +20,11 @@ enum ImageVariant: String {
 enum ImageDeliveryConfig {
     // Feature flag: enable transformed URL usage (Firebase Resize Images convention).
     static var isTransformedDeliveryEnabled: Bool {
-        UserDefaults.standard.bool(forKey: "feature.image.transformedDelivery")
+        let key = "feature.image.transformedDelivery"
+        let defaults = UserDefaults.standard
+        // If unset, default to ON (so TestFlight/Release uses resized variants).
+        guard defaults.object(forKey: key) != nil else { return true }
+        return defaults.bool(forKey: key)
     }
 }
 

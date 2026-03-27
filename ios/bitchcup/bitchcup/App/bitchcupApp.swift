@@ -75,6 +75,13 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         #endif
         return true
     }
+
+    func application(
+        _ application: UIApplication,
+        supportedInterfaceOrientationsFor window: UIWindow?
+    ) -> UIInterfaceOrientationMask {
+        .portrait
+    }
 }
 
 @main
@@ -107,6 +114,7 @@ struct bitchcupApp: App {
                 }
             }
             .font(.custom("NeueHaasDisplay-Roman", size: 16))
+            .preferredColorScheme(.light)
             .task {
                 await appShell.prepareFirstFrame()
             }

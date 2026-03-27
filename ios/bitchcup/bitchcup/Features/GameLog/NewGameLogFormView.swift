@@ -1331,10 +1331,8 @@ struct NewGameLogFormView: View {
         selectedWinnerProfileIds.subtract(selectedLoserProfileIds)
         selectedLoserProfileIds.subtract(selectedWinnerProfileIds)
 
-        let updatedTeammateCount = isMySideWinners ? selectedWinnerProfileIds.count : selectedLoserProfileIds.count
-        if updatedTeammateCount >= teamSize {
-            isTeammateDropdownOpen = false
-        }
+        // Keep the dropdown open even when selection reaches team size,
+        // so users can immediately swap picks without reopening.
     }
 
     private func toggleOpponent(profileId: String, isSelected: Bool) {
@@ -1361,10 +1359,8 @@ struct NewGameLogFormView: View {
         selectedWinnerProfileIds.subtract(selectedLoserProfileIds)
         selectedLoserProfileIds.subtract(selectedWinnerProfileIds)
 
-        let updatedOpponentCount = opponentsAreLosers ? selectedLoserProfileIds.count : selectedWinnerProfileIds.count
-        if updatedOpponentCount >= teamSize {
-            isOpponentDropdownOpen = false
-        }
+        // Keep the dropdown open even when selection reaches team size,
+        // so users can immediately swap picks without reopening.
     }
 
     private func submitGameLog() async {
