@@ -67,7 +67,7 @@ struct JoinCommunityFlowView: View {
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity, alignment: .center)
 
-            Button("Join League") {
+            Button {
                 Task {
                     isWorking = true
                     errorMessage = nil
@@ -80,19 +80,21 @@ struct JoinCommunityFlowView: View {
                     }
                     isWorking = false
                 }
+            } label: {
+                Text("Join League")
+                    .font(.custom("NeueHaasDisplay-Bold", size: 30))
+                    .frame(maxWidth: .infinity, minHeight: 56)
+                    .foregroundStyle(
+                        isInviteCodeValid
+                            ? .white
+                            : Color(red: 207.0 / 255.0, green: 106.0 / 255.0, blue: 84.0 / 255.0)
+                    )
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(Color(red: 180.0 / 255.0, green: 61.0 / 255.0, blue: 37.0 / 255.0))
+                    )
+                    .contentShape(Rectangle())
             }
-            .font(.custom("NeueHaasDisplay-Bold", size: 30))
-            .frame(maxWidth: .infinity, minHeight: 56)
-            .foregroundStyle(
-                isInviteCodeValid
-                    ? .white
-                    : Color(red: 207.0 / 255.0, green: 106.0 / 255.0, blue: 84.0 / 255.0)
-            )
-            .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color(red: 180.0 / 255.0, green: 61.0 / 255.0, blue: 37.0 / 255.0))
-            )
-            .contentShape(Rectangle())
             .buttonStyle(.plain)
             .disabled(isWorking || !isInviteCodeValid)
             .opacity(isWorking ? 0.65 : 1.0)

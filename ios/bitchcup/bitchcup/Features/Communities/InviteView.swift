@@ -7,7 +7,6 @@ struct InviteView: View {
     let inviteCode: String
     let inviteLink: String
 
-    @State private var showShareSheet = false
     @State private var copied = false
     var onDone: () -> Void
     
@@ -48,22 +47,22 @@ struct InviteView: View {
                     .font(.custom("NeueHaasDisplay-Mediu", size: 24))
                     .frame(maxWidth: .infinity)
                     .padding()
-                    .background(Color(red: 180.0 / 255.0, green: 61.0 / 255.0, blue: 37.0 / 255.0))
-                    .foregroundColor(.white)
+                    .background(Color.white)
+                    .foregroundStyle(Color(red: 180.0 / 255.0, green: 61.0 / 255.0, blue: 37.0 / 255.0))
                     .cornerRadius(12)
             }
 
-            Button {
-                showShareSheet = true
-            } label: {
-                Label("Share Invite Link", systemImage: "square.and.arrow.up")
-                    .font(.custom("NeueHaasDisplay-Mediu", size: 24))
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color(red: 180.0 / 255.0, green: 61.0 / 255.0, blue: 37.0 / 255.0))
-                    .foregroundColor(.white)
-                    .cornerRadius(12)
-            }
+//            Button {
+//                showShareSheet = true
+//            } label: {
+//                Label("Share Invite Link", systemImage: "square.and.arrow.up")
+//                    .font(.custom("NeueHaasDisplay-Mediu", size: 24))
+//                    .frame(maxWidth: .infinity)
+//                    .padding()
+//                    .background(Color(red: 180.0 / 255.0, green: 61.0 / 255.0, blue: 37.0 / 255.0))
+//                    .foregroundColor(.white)
+//                    .cornerRadius(12)
+//            }
 
             Spacer()
 
@@ -95,19 +94,16 @@ struct InviteView: View {
                 .buttonStyle(.plain)
             }
         }
-        .sheet(isPresented: $showShareSheet) {
-            ShareSheet(items: [inviteLink])
-        }
     }
 }
 
-// UIKit share sheet wrapper
-struct ShareSheet: UIViewControllerRepresentable {
-    let items: [Any]
-
-    func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: items, applicationActivities: nil)
-    }
-
-    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
-}
+//// UIKit share sheet wrapper
+//struct ShareSheet: UIViewControllerRepresentable {
+//    let items: [Any]
+//
+//    func makeUIViewController(context: Context) -> UIActivityViewController {
+//        UIActivityViewController(activityItems: items, applicationActivities: nil)
+//    }
+//
+//    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+//}

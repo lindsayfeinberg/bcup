@@ -64,8 +64,31 @@ struct CommunityDetailView: View {
         2 * selectedTeamSize
     }
 
-    private var canCreateBracket: Bool {
+    private var hasEnoughMembersForSelectedTeamSize: Bool {
         members.count >= minMembersForBracket
+    }
+
+    /// Entry-point gating: only disable the *popup opener* when no bracket is possible at all.
+    /// (Creation itself is still validated by `canCreateBracket` based on selected team size.)
+    private var canOpenCreateBracketPopup: Bool {
+        members.count >= 2
+    }
+
+    private var isMemberCountDivisibleByTeamSize: Bool {
+        guard selectedTeamSize > 0 else { return false }
+        // If teamSize is "players per side", total players must split cleanly into teams.
+        return members.count % selectedTeamSize == 0
+    }
+
+    private var teamSizeDivisibilityErrorMessage: String? {
+        guard selectedTeamSize > 0 else { return "Team size must be at least 1." }
+        guard !members.isEmpty else { return nil }
+        guard !isMemberCountDivisibleByTeamSize else { return nil }
+        return "League member count (\(members.count)) must be divisible by team size (\(selectedTeamSize))."
+    }
+
+    private var canCreateBracket: Bool {
+        hasEnoughMembersForSelectedTeamSize && isMemberCountDivisibleByTeamSize
     }
 
     /// Highest `communityOdds` first (best → worst); ties broken by `profileId` for stable order.
@@ -164,9 +187,17 @@ struct CommunityDetailView: View {
                                     }
                                     .pickerStyle(.segmented)
 
-                                    Text("Players per side in each match")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text("Players per side in each match is \(selectedTeamSize)")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+
+                                        if let teamSizeDivisibilityErrorMessage {
+                                            Text(teamSizeDivisibilityErrorMessage)
+                                                .font(.caption)
+                                                .foregroundStyle(.red)
+                                        }
+                                    }
                                 }
 
                                 // Error
@@ -176,10 +207,12 @@ struct CommunityDetailView: View {
                                         .foregroundStyle(.red)
                                 }
 
-                                if !canCreateBracket {
+                                if !hasEnoughMembersForSelectedTeamSize {
                                     Text("Need at least \(minMembersForBracket) members for \(selectedTeamSize)v\(selectedTeamSize).")
                                         .font(.caption)
-                                        .foregroundStyle(.secondary)
+                                        .foregroundStyle(.red)
+                                        .multilineTextAlignment(.leading)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
                                 }
 
                                 // Footer buttons
@@ -297,7 +330,7 @@ struct CommunityDetailView: View {
                 Text(isCreatingBracket ? "Creating..." : "Create Bracket")
                     .font(.custom("NeueHaasDisplay-Bold", size: 26))
                     .foregroundStyle(
-                        canCreateBracket
+                        canOpenCreateBracketPopup
                             ? .white
                             : bracketAccentTextDisabledColor
                     )
@@ -309,7 +342,7 @@ struct CommunityDetailView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .disabled(!canCreateBracket || isCreatingBracket || showCreateBracketPopup)
+            .disabled(!canOpenCreateBracketPopup || isCreatingBracket || showCreateBracketPopup)
             .opacity((isCreatingBracket || showCreateBracketPopup) ? 0.65 : 1.0)
             .accessibilityIdentifier("community.createBracket")
 
@@ -647,6 +680,11 @@ struct CommunityDetailView: View {
         }
     }
     private func createBracket() async {
+        guard canCreateBracket else {
+            bracketErrorMessage = teamSizeDivisibilityErrorMessage
+                ?? "League doesn’t have enough members for a team of size \(selectedTeamSize)."
+            return
+        }
         if UITestRuntime.participatesInUiTestHarness {
             let bracketId = "ui-bracket-\(brackets.count + 1)"
             let created = BracketListItem(
