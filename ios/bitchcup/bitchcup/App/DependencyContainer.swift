@@ -47,6 +47,34 @@ enum LeagueRankingBasis: String, CaseIterable, Identifiable {
         case .crossfire: return "Crossfire"
         }
     }
+
+    /// Single game types only (excludes aggregate `allGames`), aligned with `gameLogs.gameType`.
+    static var perGameTypeCases: [LeagueRankingBasis] {
+        allCases.filter { $0 != .allGames }
+    }
+
+    /// Players-per-side bounds for this game category (before capping by league roster size).
+    var baseTeamSizeRange: ClosedRange<Int> {
+        switch self {
+        case .allGames:
+            return 1...10
+        case .pong, .beerBall, .crossfire:
+            return 1...10
+        case .battlePong, .baseball:
+            return 3...20
+        }
+    }
+
+    /// Clamped range so both sides fit in `memberCount` league members (`floor(n/2)` cap per side).
+    func validTeamSizeRange(memberCount: Int) -> ClosedRange<Int> {
+        let leagueCap = max(1, memberCount / 2)
+        let base = baseTeamSizeRange
+        let upperBound = min(base.upperBound, leagueCap)
+        if upperBound < base.lowerBound {
+            return base.lowerBound...base.lowerBound
+        }
+        return base.lowerBound...upperBound
+    }
 }
 
 protocol UserServiceProtocol {
@@ -94,6 +122,40 @@ struct CommunityMemberRosterRow: Identifiable {
     func effectiveGamesPlayed(basis: LeagueRankingBasis) -> Int {
         if basis == .allGames { return communityGamesPlayed }
         return communityGamesPlayedByGameType[basis.rawValue] ?? 0
+    }
+
+    /// Win rate used for hypothetical matchups: type-specific when the player has games in that type in this league; otherwise aggregate league odds (sparse fallback, mirrors server `effectiveOdds`).
+    func resolvedOddsForMatchup(basis: LeagueRankingBasis) -> Double {
+        if basis == .allGames { return communityOdds }
+        if effectiveGamesPlayed(basis: basis) > 0 {
+            return communityOddsByGameType[basis.rawValue] ?? communityOdds
+        }
+        return communityOdds
+    }
+
+    /// Games in the same scope as `resolvedOddsForMatchup` (for reconstructing W–L).
+    private func matchupGamesPlayed(basis: LeagueRankingBasis) -> Int {
+        if basis == .allGames { return communityGamesPlayed }
+        if effectiveGamesPlayed(basis: basis) > 0 {
+            return effectiveGamesPlayed(basis: basis)
+        }
+        return communityGamesPlayed
+    }
+
+    /// Integer wins implied by stored odds × games (same rounding as league member subtitles).
+    private static func reconstructedWins(odds: Double, gamesPlayed: Int) -> Int {
+        guard gamesPlayed > 0 else { return 0 }
+        let raw = (odds * Double(gamesPlayed)).rounded()
+        let w = Int(raw)
+        return min(max(w, 0), gamesPlayed)
+    }
+
+    /// Laplace-smoothed strength `(wins + 1) / (games + 2)` for what-if matchups; dampens small-sample extremes.
+    func laplaceSmoothedStrengthForMatchup(basis: LeagueRankingBasis) -> Double {
+        let odds = resolvedOddsForMatchup(basis: basis)
+        let games = matchupGamesPlayed(basis: basis)
+        let wins = Self.reconstructedWins(odds: odds, gamesPlayed: games)
+        return Double(wins + 1) / Double(games + 2)
     }
 }
 

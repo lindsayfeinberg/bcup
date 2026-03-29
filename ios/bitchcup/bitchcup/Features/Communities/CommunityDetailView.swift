@@ -1,5 +1,6 @@
 import FirebaseFirestore
 import SwiftUI
+import UIKit
 
 struct CommunityDetailView: View {
     let communityId: String
@@ -106,6 +107,58 @@ struct CommunityDetailView: View {
         }
     }
 
+    private let rankingBasisGridSpacing: CGFloat = 8
+
+    /// Chip grid (same idea as log form game types): no menu dropdown; matches league accent styling.
+    private var rankingBasisChipGrid: some View {
+        let columns = [
+            GridItem(.flexible(), spacing: rankingBasisGridSpacing),
+            GridItem(.flexible(), spacing: rankingBasisGridSpacing),
+            GridItem(.flexible(), spacing: rankingBasisGridSpacing)
+        ]
+        return VStack(alignment: .leading, spacing: 10) {
+            Text("Rank by")
+                .font(.custom("NeueHaasDisplay-Bold", size: 15))
+                .foregroundStyle(bracketAccentColor)
+
+            LazyVGrid(columns: columns, spacing: rankingBasisGridSpacing) {
+                ForEach(LeagueRankingBasis.allCases) { basis in
+                    let selected = rankingBasis == basis
+                    Button {
+                        rankingBasis = basis
+                    } label: {
+                        Text(basis.displayName)
+                            .font(rankingBasisFont)
+                            .multilineTextAlignment(.center)
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.85)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .padding(.horizontal, 6)
+                            .foregroundStyle(selected ? bracketAccentColor : .primary)
+                            .background {
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .fill(selected ? Color.white : Color(UIColor.secondarySystemGroupedBackground))
+                            }
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .strokeBorder(
+                                        selected ? bracketAccentColor : Color.primary.opacity(0.12),
+                                        lineWidth: selected ? 2 : 1
+                                    )
+                            }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(basis.displayName)
+                    .accessibilityAddTraits(selected ? .isSelected : [])
+                }
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Rank by")
+            .accessibilityIdentifier("community.detail.rankingBasis")
+        }
+    }
+
     var body: some View {
         Group {
             if isLoading {
@@ -130,6 +183,11 @@ struct CommunityDetailView: View {
                         VStack(alignment: .leading, spacing: 24) {
                             inviteCodeSection
                             membersSection
+                            WhatIfMatchupSection(
+                                members: members,
+                                accentColor: bracketAccentColor,
+                                sectionHeaderFont: sectionHeaderFont
+                            )
                             recentGamesSection
                             bracketPlaceholder
                         }
@@ -445,21 +503,7 @@ struct CommunityDetailView: View {
                     .font(memberDetailFont)
                     .foregroundStyle(.secondary)
             } else {
-                Picker(selection: $rankingBasis) {
-                    ForEach(LeagueRankingBasis.allCases) { basis in
-                        Text(basis.displayName).tag(basis)
-                    }
-                } label: {
-                    HStack(spacing: 6) {
-                        Text("Rank by")
-                            .foregroundStyle(.secondary)
-                        Text(rankingBasis.displayName)
-                            .foregroundStyle(.primary)
-                    }
-                    .font(rankingBasisFont)
-                }
-                .pickerStyle(.menu)
-                .accessibilityIdentifier("community.detail.rankingBasis")
+                rankingBasisChipGrid
 
                 ForEach(Array(membersOrderedForRanking.enumerated()), id: \.element.id) { index, member in
                     HStack(alignment: .center, spacing: 10) {

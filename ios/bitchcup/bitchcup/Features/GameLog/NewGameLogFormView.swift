@@ -48,6 +48,9 @@ struct NewGameLogFormView: View {
     private static let autoPeekOpponentsAnchor = "gamelog.anchor.opponents"
     private static let autoPeekChooseGameAnchor = "gamelog.anchor.chooseGame"
     private static let widgetTitleFont = Font.custom("NeueHaasDisplay-Bold", size: 16)
+    /// Matches league “Rank by” chip section (`CommunityDetailView`).
+    private static let gameTypeSectionTitleFont = Font.custom("NeueHaasDisplay-Bold", size: 15)
+    private static let gameTypeChipLabelFont = Font.custom("NeueHaasDisplay-Mediu", size: 14)
     /// One point larger than `AppFont.body` (17), medium weight — teammate/opponent picker rows.
     private static let participantPickerRowNameFont = Font.custom("NeueHaasDisplay-Mediu", size: 18)
 
@@ -69,6 +72,25 @@ struct NewGameLogFormView: View {
     }
     private var bracketScopedParticipantProfileIds: Set<String> {
         Set(bracketContext?.participantProfileIds ?? [])
+    }
+
+    /// Bracket match defines the full roster; pickers stay read-only and teams follow outcome only.
+    private var bracketTeamsAreFixed: Bool {
+        isBracketLinked && bracketParticipantProfileIdsInOrder.count >= 2 * teamSize
+    }
+
+    /// Roster rows for everyone in the bracket match (order preserved). Unknown ids get a placeholder row so pickers and counts stay correct when the league fetch is incomplete.
+    private var bracketParticipantPoolMembers: [CommunityMemberRosterRow] {
+        let byId = Dictionary(uniqueKeysWithValues: members.map { ($0.profileId, $0) })
+        return bracketParticipantProfileIdsInOrder.map { id in
+            byId[id] ?? CommunityMemberRosterRow(
+                profileId: id,
+                displayName: "Unknown",
+                profilePhotoUrl: nil,
+                communityOdds: 0,
+                communityGamesPlayed: 0
+            )
+        }
     }
 
     init(
@@ -155,13 +177,14 @@ struct NewGameLogFormView: View {
             )
     }
 
-    /// Three columns so five game types lay out as two rows (3 + 2); avoids single-row segmented truncation.
+    /// Three columns (3 + 2 rows); chip styling aligned with league “Rank by” grid (`CommunityDetailView`).
     private var gameTypeGrid: some View {
         let columns = [
             GridItem(.flexible(), spacing: GameLogFormLayout.gameTypeGridSpacing),
             GridItem(.flexible(), spacing: GameLogFormLayout.gameTypeGridSpacing),
             GridItem(.flexible(), spacing: GameLogFormLayout.gameTypeGridSpacing)
         ]
+        let chipAccent = GameLogBrandColor.lostRed
         return LazyVGrid(columns: columns, spacing: GameLogFormLayout.gameTypeGridSpacing) {
             ForEach(GameType.allCases) { type in
                 let available = isGameTypeAvailable(type)
@@ -171,14 +194,18 @@ struct NewGameLogFormView: View {
                     selectedGameType = type
                 } label: {
                     Text(type.displayName)
-                        .font(AppFont.body)
+                        .font(Self.gameTypeChipLabelFont)
                         .multilineTextAlignment(.center)
                         .lineLimit(2)
                         .minimumScaleFactor(0.85)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 10)
                         .padding(.horizontal, 6)
-                        .foregroundStyle(available ? (selected ? GameLogBrandColor.pillDark : Color.primary) : Color.secondary)
+                        .foregroundStyle(
+                            available
+                                ? (selected ? chipAccent : Color.primary)
+                                : Color.secondary
+                        )
                         .background {
                             RoundedRectangle(cornerRadius: 10, style: .continuous)
                                 .fill(selected && available ? Color.white : Color(UIColor.secondarySystemGroupedBackground))
@@ -186,8 +213,8 @@ struct NewGameLogFormView: View {
                         .overlay {
                             RoundedRectangle(cornerRadius: 10, style: .continuous)
                                 .strokeBorder(
-                                    selected && available ? GameLogBrandColor.pillDark : Color.primary.opacity(0.12),
-                                    lineWidth: 1
+                                    selected && available ? chipAccent : Color.primary.opacity(0.12),
+                                    lineWidth: selected && available ? 2 : 1
                                 )
                         }
                 }
@@ -263,8 +290,8 @@ struct NewGameLogFormView: View {
                 .padding(.vertical, GameLogFormLayout.gameTypeSegmentedInnerVerticalPadding)
         } header: {
             Text("Choose Game Type")
-                .font(Self.widgetTitleFont)
-                .foregroundStyle(GameLogBrandColor.red)
+                .font(Self.gameTypeSectionTitleFont)
+                .foregroundStyle(GameLogBrandColor.lostRed)
         }
         .id(Self.autoPeekChooseGameAnchor)
         .listRowBackground(widgetOutlineBackground)
@@ -597,10 +624,11 @@ struct NewGameLogFormView: View {
             }
             .listRowBackground(widgetOutlineBackground)
         } else {
-            let selectionPoolMembers = isBracketLinked
-                ? members.filter { bracketScopedParticipantProfileIds.contains($0.profileId) }
-                : members
-            let hasEnoughMembers = selectionPoolMembers.count >= (2 * teamSize)
+            let selectionPoolMembers = isBracketLinked ? bracketParticipantPoolMembers : members
+            // Bracket matches already define exactly who plays; don’t require every id to appear in the league roster response.
+            let hasEnoughMembers = isBracketLinked
+                ? (bracketParticipantProfileIdsInOrder.count >= 2 * teamSize)
+                : (selectionPoolMembers.count >= (2 * teamSize))
             if let outcome, let myUserId = currentUserId {
                 let isMySideWinners = (outcome == .won)
                 let teammateSet = isMySideWinners ? selectedWinnerProfileIds : selectedLoserProfileIds
@@ -608,63 +636,91 @@ struct NewGameLogFormView: View {
 
                 if !hasEnoughMembers {
                     Section {
-                        Text("League doesn’t have enough members for a team of size \(teamSize).")
+                        Text(
+                            isBracketLinked
+                                ? "This bracket match doesn’t list all \(2 * teamSize) players yet. Try again after the matchup is fully set, or contact a league admin."
+                                : "League doesn’t have enough members for a team of size \(teamSize)."
+                        )
                             .font(AppFont.subheadline)
                             .foregroundStyle(.black)
                     }
                     .listRowBackground(widgetOutlineBackground)
                 }
 
-                if teamSize > 1 {
+                if bracketTeamsAreFixed && hasEnoughMembers {
+                    if teamSize > 1 {
+                        Section {
+                            bracketFixedTeamRosterBlock(
+                                title: "Your team",
+                                profileIds: sortedProfileIdsForBracketDisplay(teammateSet),
+                                pool: selectionPoolMembers
+                            )
+                        }
+                        .id(Self.autoPeekTeammatesAnchor)
+                        .listRowBackground(widgetOutlineBackground)
+                    }
+
+                    Section {
+                        bracketFixedTeamRosterBlock(
+                            title: teamSize > 1 ? "Opponents" : "Opponent",
+                            profileIds: sortedProfileIdsForBracketDisplay(opponentSet),
+                            pool: selectionPoolMembers
+                        )
+                    }
+                    .id(Self.autoPeekOpponentsAnchor)
+                    .listRowBackground(widgetOutlineBackground)
+                } else {
+                    if teamSize > 1 {
+                        Section {
+                            dropdownBlock(
+                                title: "Choose team",
+                                includeTitleAboveButton: false,
+                                selectedCount: teammateSet.count,
+                                query: $teammateQuery,
+                                isOpen: $isTeammateDropdownOpen,
+                                participants: selectionPoolMembers.filter { $0.profileId != myUserId },
+                                onOpposite: opponentSet,
+                                onCurrent: teammateSet,
+                                oppositeLabel: "Choose Opponents",
+                                hasEnoughMembers: hasEnoughMembers
+                            ) { profileId, isSelected in
+                                toggleTeammate(profileId: profileId, isSelected: isSelected)
+                            }
+                        } header: {
+                            participantSectionHeaderPills(
+                                selectedProfileIds: teammateSet.subtracting([myUserId]),
+                                members: selectionPoolMembers.filter { $0.profileId != myUserId }
+                            )
+                        }
+                        .id(Self.autoPeekTeammatesAnchor)
+                        .listRowBackground(widgetOutlineBackground)
+                    }
+
                     Section {
                         dropdownBlock(
-                            title: "Choose team",
+                            title: "Choose opponents",
                             includeTitleAboveButton: false,
-                            selectedCount: teammateSet.count,
-                            query: $teammateQuery,
-                            isOpen: $isTeammateDropdownOpen,
+                            buttonTitleForeground: .black,
+                            selectedCount: opponentSet.count,
+                            query: $opponentQuery,
+                            isOpen: $isOpponentDropdownOpen,
                             participants: selectionPoolMembers.filter { $0.profileId != myUserId },
-                            onOpposite: opponentSet,
-                            onCurrent: teammateSet,
-                            oppositeLabel: "Choose Opponents",
+                            onOpposite: teammateSet,
+                            onCurrent: opponentSet,
+                            oppositeLabel: "Choose Teammates",
                             hasEnoughMembers: hasEnoughMembers
                         ) { profileId, isSelected in
-                            toggleTeammate(profileId: profileId, isSelected: isSelected)
+                            toggleOpponent(profileId: profileId, isSelected: isSelected)
                         }
                     } header: {
                         participantSectionHeaderPills(
-                            selectedProfileIds: teammateSet.subtracting([myUserId]),
-                            members: members.filter { $0.profileId != myUserId }
+                            selectedProfileIds: opponentSet,
+                            members: selectionPoolMembers.filter { $0.profileId != myUserId }
                         )
                     }
-                    .id(Self.autoPeekTeammatesAnchor)
+                    .id(Self.autoPeekOpponentsAnchor)
                     .listRowBackground(widgetOutlineBackground)
                 }
-
-                Section {
-                    dropdownBlock(
-                        title: "Choose opponents",
-                        includeTitleAboveButton: false,
-                        buttonTitleForeground: .black,
-                        selectedCount: opponentSet.count,
-                        query: $opponentQuery,
-                        isOpen: $isOpponentDropdownOpen,
-                        participants: selectionPoolMembers.filter { $0.profileId != myUserId },
-                        onOpposite: teammateSet,
-                        onCurrent: opponentSet,
-                        oppositeLabel: "Choose Teammates",
-                        hasEnoughMembers: hasEnoughMembers
-                    ) { profileId, isSelected in
-                        toggleOpponent(profileId: profileId, isSelected: isSelected)
-                    }
-                } header: {
-                    participantSectionHeaderPills(
-                        selectedProfileIds: opponentSet,
-                        members: members.filter { $0.profileId != myUserId }
-                    )
-                }
-                .id(Self.autoPeekOpponentsAnchor)
-                .listRowBackground(widgetOutlineBackground)
             }
         }
     }
@@ -723,6 +779,48 @@ struct NewGameLogFormView: View {
         .frame(height: headerHeight, alignment: .leading)
         // Reduce vertical gap between pills and the dropdown row below.
         .padding(.bottom, -8)
+    }
+
+    private func sortedProfileIdsForBracketDisplay(_ ids: Set<String>) -> [String] {
+        ids.sorted { lhs, rhs in
+            let lSeq = participantSelectionRecency[lhs] ?? -1
+            let rSeq = participantSelectionRecency[rhs] ?? -1
+            if lSeq != rSeq { return lSeq > rSeq }
+            return lhs < rhs
+        }
+    }
+
+    @ViewBuilder
+    private func bracketFixedTeamRosterBlock(title: String, profileIds: [String], pool: [CommunityMemberRosterRow]) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .font(Self.widgetTitleFont)
+                .foregroundStyle(GameLogBrandColor.red)
+            Text("Set by this bracket match.")
+                .font(AppFont.footnote)
+                .foregroundStyle(.secondary)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(profileIds, id: \.self) { profileId in
+                        let label = pool.first { $0.profileId == profileId }
+                            .map { $0.displayName.isEmpty ? "Unknown" : $0.displayName } ?? "Unknown"
+                        Text(label)
+                            .font(AppFont.subheadlineBold)
+                            .foregroundStyle(GameLogBrandColor.pillDark)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 7)
+                            .background(
+                                Capsule(style: .continuous)
+                                    .fill(GameLogBrandColor.pillBackground.opacity(0.22))
+                            )
+                            .overlay(
+                                Capsule(style: .continuous)
+                                    .strokeBorder(GameLogBrandColor.pillDark, lineWidth: 1)
+                            )
+                    }
+                }
+            }
+        }
     }
 
     @ViewBuilder
@@ -1378,7 +1476,16 @@ struct NewGameLogFormView: View {
     }
 
     private var selectedParticipants: [CommunityMemberRosterRow] {
-        members.filter { participantProfileIds.contains($0.profileId) }
+        participantProfileIds.map { id in
+            members.first { $0.profileId == id }
+                ?? CommunityMemberRosterRow(
+                    profileId: id,
+                    displayName: "Unknown",
+                    profilePhotoUrl: nil,
+                    communityOdds: 0,
+                    communityGamesPlayed: 0
+                )
+        }
     }
 
     private var shouldShowDetailsSection: Bool {
@@ -1480,34 +1587,17 @@ struct NewGameLogFormView: View {
         return nil
     }
 
-    private var leagueTeamSizeCap: Int {
-        max(1, members.count / 2)
-    }
-
-    private func baseTeamSizeRange(for gameType: GameType) -> ClosedRange<Int> {
-        switch gameType {
-        case .pong, .beerBall, .crossfire:
-            return 1...10
-        case .battlePong, .baseball:
-            return 3...20
-        }
-    }
-
     private func validTeamSizeRange(for gameType: GameType) -> ClosedRange<Int> {
-        let base = baseTeamSizeRange(for: gameType)
-        let upperBound = min(base.upperBound, leagueTeamSizeCap)
-        if upperBound < base.lowerBound {
-            return base.lowerBound...base.lowerBound
-        }
-        return base.lowerBound...upperBound
+        gameType.leagueRankingBasis.validTeamSizeRange(memberCount: members.count)
     }
 
     private func isGameTypeAvailable(_ gameType: GameType) -> Bool {
-        leagueTeamSizeCap >= baseTeamSizeRange(for: gameType).lowerBound
+        let cap = max(1, members.count / 2)
+        return cap >= gameType.leagueRankingBasis.baseTeamSizeRange.lowerBound
     }
 
     private var unavailableGameTypeMessage: String {
-        let minimumTeamSize = baseTeamSizeRange(for: selectedGameType).lowerBound
+        let minimumTeamSize = selectedGameType.leagueRankingBasis.baseTeamSizeRange.lowerBound
         let minimumLeagueMembers = minimumTeamSize * 2
         return "League doesn’t have enough members for \(selectedGameType.displayName). This game needs at least \(minimumLeagueMembers) league members (\(minimumTeamSize)v\(minimumTeamSize))."
     }
@@ -1668,28 +1758,80 @@ struct NewGameLogFormView: View {
 
     private func lockUserIntoOutcome() {
         guard let myUserId = currentUserId else { return }
-        selectedWinnerProfileIds.removeAll()
-        selectedLoserProfileIds.removeAll()
-        participantSelectionRecency.removeAll()
-        participantSelectionCounter = 0
-
         guard let outcome else { return }
+
+        func resetParticipantSelectionState() {
+            selectedWinnerProfileIds.removeAll()
+            selectedLoserProfileIds.removeAll()
+            participantSelectionRecency.removeAll()
+            participantSelectionCounter = 0
+        }
+
+        /// Non-bracket (or bracket fallback): lock only the current user on their chosen side.
+        func applySoloOutcomeLock() {
+            resetParticipantSelectionState()
+            switch outcome {
+            case .won:
+                selectedWinnerProfileIds.insert(myUserId)
+            case .lost:
+                selectedLoserProfileIds.insert(myUserId)
+            }
+            markParticipantSelectedMostRecently(myUserId)
+        }
+
         if isBracketLinked && !bracketParticipantProfileIdsInOrder.contains(myUserId) {
-            // In bracket-linked flows, only auto-fill if the user is actually one of the match participants.
+            // Outcome buttons are disabled in this state; clear any stale picks if something got out of sync.
+            resetParticipantSelectionState()
             return
         }
 
         // If bracket-linked, the match participant list already contains the full 2-team set.
         // We can deterministically split into "team A / team B" by ordering, then map them
         // onto winners/losers based on whether the user tapped "I won" or "I lost".
+        if isBracketLinked, teamSize == 1 {
+            let ids = bracketParticipantProfileIdsInOrder
+            guard ids.count >= 2 else {
+                applySoloOutcomeLock()
+                return
+            }
+            resetParticipantSelectionState()
+            let myTeam: [String]
+            let otherTeam: [String]
+            if ids[0] == myUserId {
+                myTeam = [ids[0]]
+                otherTeam = [ids[1]]
+            } else if ids[1] == myUserId {
+                myTeam = [ids[1]]
+                otherTeam = [ids[0]]
+            } else {
+                myTeam = [ids[0]]
+                otherTeam = [ids[1]]
+            }
+            switch outcome {
+            case .won:
+                selectedWinnerProfileIds = Set(myTeam)
+                selectedLoserProfileIds = Set(otherTeam)
+            case .lost:
+                selectedWinnerProfileIds = Set(otherTeam)
+                selectedLoserProfileIds = Set(myTeam)
+            }
+            for id in myTeam { markParticipantSelectedMostRecently(id) }
+            for id in otherTeam { markParticipantSelectedMostRecently(id) }
+            return
+        }
+
         if isBracketLinked, teamSize > 1 {
             let ids = bracketParticipantProfileIdsInOrder
-            guard !ids.isEmpty else { return }
+            guard ids.count >= 2 * teamSize else {
+                applySoloOutcomeLock()
+                return
+            }
+            resetParticipantSelectionState()
 
-            let teamA = Array(ids.prefix(teamSize))
-            let teamB = Array(ids.suffix(teamSize))
+            let teamA = Array(ids[0..<teamSize])
+            let teamB = Array(ids[teamSize..<(2 * teamSize)])
             let myIndex = ids.firstIndex(of: myUserId)
-            let myTeamIsFirstHalf = (myIndex ?? 0) < teamSize
+            let myTeamIsFirstHalf = myIndex.map { $0 < teamSize } ?? true
 
             let myTeam = myTeamIsFirstHalf ? teamA : teamB
             let otherTeam = myTeamIsFirstHalf ? teamB : teamA
@@ -1713,17 +1855,11 @@ struct NewGameLogFormView: View {
             return
         }
 
-        // Solo or non-bracket-linked flows: keep the old behavior of locking just the current user.
-        switch outcome {
-        case .won:
-            selectedWinnerProfileIds.insert(myUserId)
-        case .lost:
-            selectedLoserProfileIds.insert(myUserId)
-        }
-        markParticipantSelectedMostRecently(myUserId)
+        applySoloOutcomeLock()
     }
 
     private func toggleTeammate(profileId: String, isSelected: Bool) {
+        guard !bracketTeamsAreFixed else { return }
         guard let myUserId = currentUserId else { return }
         guard profileId != myUserId else { return }
         guard let outcome else { return }
@@ -1754,6 +1890,7 @@ struct NewGameLogFormView: View {
     }
 
     private func toggleOpponent(profileId: String, isSelected: Bool) {
+        guard !bracketTeamsAreFixed else { return }
         guard let myUserId = currentUserId else { return }
         guard profileId != myUserId else { return }
         guard let outcome else { return }
@@ -2079,9 +2216,16 @@ struct NewGameLogFormView: View {
                 selectedGameType = firstAvailableGameType()
             }
             let range = validTeamSizeRange(for: selectedGameType)
-            teamSize = min(max(teamSize, range.lowerBound), range.upperBound)
+            if isBracketLinked, let ctx = bracketContext {
+                teamSize = ctx.teamSize
+            } else {
+                teamSize = min(max(teamSize, range.lowerBound), range.upperBound)
+            }
             syncStatsWithParticipants()
             isMembersLoading = false
+            if isBracketLinked, outcome != nil {
+                lockUserIntoOutcome()
+            }
             return
         }
         do {
@@ -2090,13 +2234,20 @@ struct NewGameLogFormView: View {
                 selectedGameType = firstAvailableGameType()
             }
             let range = validTeamSizeRange(for: selectedGameType)
-            teamSize = min(max(teamSize, range.lowerBound), range.upperBound)
+            if isBracketLinked, let ctx = bracketContext {
+                teamSize = ctx.teamSize
+            } else {
+                teamSize = min(max(teamSize, range.lowerBound), range.upperBound)
+            }
             syncStatsWithParticipants()
         } catch {
             membersErrorMessage = error.localizedDescription
             members = []
         }
         isMembersLoading = false
+        if isBracketLinked, outcome != nil {
+            lockUserIntoOutcome()
+        }
     }
 }
 
@@ -2160,6 +2311,16 @@ private enum GameType: String, CaseIterable, Identifiable {
         case .battlePong: return "Battle Pong"
         case .baseball: return "Baseball"
         case .crossfire: return "Crossfire"
+        }
+    }
+
+    var leagueRankingBasis: LeagueRankingBasis {
+        switch self {
+        case .pong: return .pong
+        case .beerBall: return .beerBall
+        case .battlePong: return .battlePong
+        case .baseball: return .baseball
+        case .crossfire: return .crossfire
         }
     }
 }

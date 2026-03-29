@@ -62,14 +62,7 @@ struct BracketsView: View {
             toggleRow
 
             if viewMode == .bracket {
-                VStack(spacing: 8) {
-                    Spacer(minLength: 0)
-                    Text("Coming soon :)")
-                        .font(AppFont.emptyStateTitle)
-                        .foregroundStyle(.secondary)
-                    Spacer(minLength: 0)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                bracketVisualizationContent
             } else {
                 if resolvedSeedMethod == .manual && !isFinalized {
                     manualSeedCta
@@ -283,9 +276,9 @@ struct BracketsView: View {
                 .frame(maxWidth: .infinity, minHeight: 40)
                 .background(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(isSelected ? Color.black : Color(.secondarySystemGroupedBackground))
+                        .fill(isSelected ? BracketBrandColor.accent : Color(.secondarySystemGroupedBackground))
                 )
-                .foregroundStyle(isSelected ? Color.white : Color.black)
+                .foregroundStyle(isSelected ? Color.white : Color.primary)
         }
         .contentShape(Rectangle())
         .buttonStyle(.plain)
@@ -294,26 +287,51 @@ struct BracketsView: View {
     private func statusPill(text: String, isActive: Bool) -> some View {
         Text(text)
             .font(AppFont.caption)
-            .foregroundStyle(isActive ? Color.black : Color(.secondaryLabel))
+            .foregroundStyle(isActive ? BracketBrandColor.accent : Color(.secondaryLabel))
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .background(
                 Capsule(style: .continuous)
-                    .fill(isActive ? Color(.systemYellow).opacity(0.45) : Color(.tertiarySystemFill))
+                    .fill(isActive ? BracketBrandColor.accent.opacity(0.18) : Color(.tertiarySystemFill))
             )
     }
 
     private func shouldShowMatchInRound(_ match: BracketMatchSnapshot) -> Bool {
-        // Hide round matches that are auto-advanced byes (single side, winner-only),
-        // so users only see playable games in each round.
-        let participants = match.participantProfileIds ?? []
-        let winners = match.winnerProfileIds ?? []
-        let losers = match.loserProfileIds ?? []
-        let isWinnerOnlyBye = !winners.isEmpty &&
-            losers.isEmpty &&
-            participants.count == bracketTeamSize &&
-            winners.count == bracketTeamSize
-        return !isWinnerOnlyBye
+        !BracketMatchDisplay.hideFromRoundsList(match: match, teamSize: bracketTeamSize)
+    }
+
+    @ViewBuilder
+    private var bracketVisualizationContent: some View {
+        if resolvedSeedMethod == .manual && !isFinalized {
+            manualSeedCta
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        } else if bracketRounds.isEmpty {
+            VStack(spacing: 8) {
+                Spacer(minLength: 0)
+                Text("No bracket data yet.")
+                    .font(AppFont.emptyStateTitle)
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            BracketTreeView(
+                rounds: bracketRounds,
+                matchById: matchById,
+                members: bracketMembers,
+                teamSize: bracketTeamSize,
+                onLogResult: { match, participantIds in
+                    logResultContext = GameLogBracketContext(
+                        bracketId: bracketId,
+                        bracketMatchId: match.matchId,
+                        communityId: bracketCommunityId,
+                        participantProfileIds: participantIds,
+                        teamSize: bracketTeamSize
+                    )
+                }
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
     }
 
     private func loadBracketMembersIfNeeded() async {
@@ -338,70 +356,22 @@ private struct BracketMatchRow: View {
     let onLogResult: ([String]) -> Void
     let teamSize: Int
 
-    private var decodedParticipantProfileIds: [String] { match.participantProfileIds ?? [] }
-
-    private var isPlaceholder: Bool { match.feederMatchIds != nil }
-
-    /// Placeholder matches sometimes arrive with empty decoded `participantProfileIds`,
-    /// but the bye-side participants can still be inferred from feeder matches that are
-    /// already finalized. This lets the UI show byes without requiring the server prefill.
-    private var effectiveParticipantProfileIds: [String] {
-        guard isPlaceholder,
-              decodedParticipantProfileIds.isEmpty,
-              let feederIds = match.feederMatchIds
-        else { return decodedParticipantProfileIds }
-
-        // Preserve feeder order: feeder1 -> feeder2.
-        var out: [String] = []
-        var seen = Set<String>()
-        for feederId in feederIds {
-            guard let feeder = matchById[feederId] else { continue }
-            let advancing: [String]
-            if let winners = feeder.winnerProfileIds, !winners.isEmpty {
-                advancing = winners
-            } else if let losers = feeder.loserProfileIds, !losers.isEmpty {
-                // This is a fallback (bye matches should only have winners),
-                // but it keeps inference robust if the backend represents
-                // advancing side via loser side instead.
-                advancing = losers
-            } else {
-                // If the backend didn't mark the bye match as finalized yet,
-                // `winnerProfileIds`/`loserProfileIds` may be missing. A bye match
-                // will still contain exactly one team's participants.
-                let participants = feeder.participantProfileIds ?? []
-                advancing = participants.count == teamSize ? participants : []
-            }
-            for id in advancing where seen.insert(id).inserted {
-                out.append(id)
-            }
-        }
-        return out
-    }
-
     private var currentUserId: String? {
         Auth.auth().currentUser?.uid ?? UITestRuntime.currentUserIdFallback
     }
 
-    /// Treat a match as "played" when it has either a winner or a loser side.
-    /// This supports "bye matches" which may be finalized with only winners.
-    private var isPlayed: Bool {
-        let winners = match.winnerProfileIds ?? []
-        let losers = match.loserProfileIds ?? []
-        return !winners.isEmpty || !losers.isEmpty
+    private var viewerProfileIds: Set<String> {
+        Set([currentUserId].compactMap { $0 })
     }
 
-    private var canLogResult: Bool {
-        !isPlayed &&
-        !effectiveParticipantProfileIds.isEmpty &&
-        (currentUserId != nil && effectiveParticipantProfileIds.contains(currentUserId!)) &&
-        placeholderReadyToLog
-    }
-
-    /// For placeholders, only allow logging once both sides' participants are known.
-    /// We treat "known" as `participantProfileIds.count == 2 * teamSize`.
-    private var placeholderReadyToLog: Bool {
-        if !isPlaceholder { return true }
-        return effectiveParticipantProfileIds.count == 2 * teamSize
+    private var ui: BracketMatchUIState {
+        BracketMatchDisplay.uiState(
+            match: match,
+            matchById: matchById,
+            teamSize: teamSize,
+            currentUserId: currentUserId,
+            viewerProfileIds: viewerProfileIds
+        )
     }
 
     var body: some View {
@@ -411,10 +381,10 @@ private struct BracketMatchRow: View {
                     .font(AppFont.subheadlineBold)
                     .foregroundStyle(.primary)
                 Spacer(minLength: 0)
-                statusPill(text: isPlayed ? "Completed" : "Not completed", isActive: !isPlayed)
+                statusPill(text: ui.isPlayed ? "Completed" : "Not completed", isActive: !ui.isPlayed)
             }
 
-            if isPlayed {
+            if ui.isPlayed {
                 let winners = match.winnerProfileIds ?? []
                 let losers = match.loserProfileIds ?? []
 
@@ -432,28 +402,28 @@ private struct BracketMatchRow: View {
                         .lineLimit(3)
                 }
             } else {
-                if effectiveParticipantProfileIds.isEmpty, match.feederMatchIds != nil {
+                if ui.isWaitingOnFeeders {
                     Text("Waiting for previous matches...")
                         .font(AppFont.footnote)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                 } else {
-                    Text(names(effectiveParticipantProfileIds))
+                    Text(names(ui.effectiveParticipantProfileIds))
                         .font(AppFont.bodyMedium)
                         .foregroundStyle(.primary)
                         .lineLimit(3)
                 }
 
-                if canLogResult {
+                if ui.canLogResult {
                     Button {
-                        onLogResult(effectiveParticipantProfileIds)
+                        onLogResult(ui.effectiveParticipantProfileIds)
                     } label: {
-                        Text("Log result")
+                        Text("Log game")
                             .font(AppFont.buttonProminent)
                             .frame(maxWidth: .infinity, minHeight: 44)
                             .background(
                                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .fill(Color.black)
+                                    .fill(BracketBrandColor.accent)
                             )
                             .foregroundStyle(.white)
                     }
@@ -479,78 +449,13 @@ private struct BracketMatchRow: View {
     private func statusPill(text: String, isActive: Bool) -> some View {
         Text(text)
             .font(AppFont.caption)
-            .foregroundStyle(isActive ? Color.black : Color(.secondaryLabel))
+            .foregroundStyle(isActive ? BracketBrandColor.accent : Color(.secondaryLabel))
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .background(
                 Capsule(style: .continuous)
-                    .fill(isActive ? Color(.systemYellow).opacity(0.45) : Color(.tertiarySystemFill))
+                    .fill(isActive ? BracketBrandColor.accent.opacity(0.18) : Color(.tertiarySystemFill))
             )
-    }
-}
-
-private struct BracketSnapshot: Decodable {
-    let communityId: String
-    let seedMethod: SeedMethod?
-    let status: String
-    let teamSize: Int
-    let rounds: [BracketRoundSnapshot]
-
-    init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        communityId = try c.decode(String.self, forKey: .communityId)
-        status = try c.decode(String.self, forKey: .status)
-        teamSize = try c.decode(Int.self, forKey: .teamSize)
-        rounds = try c.decode([BracketRoundSnapshot].self, forKey: .rounds)
-        if let rawSeedMethod = try c.decodeIfPresent(String.self, forKey: .seedMethod) {
-            seedMethod = SeedMethod(rawValue: rawSeedMethod)
-        } else {
-            seedMethod = nil
-        }
-    }
-
-    enum CodingKeys: String, CodingKey {
-        case communityId
-        case seedMethod
-        case status
-        case teamSize
-        case rounds
-    }
-}
-
-private struct BracketRoundSnapshot: Decodable {
-    let roundNumber: Int
-    let matches: [BracketMatchSnapshot]
-}
-
-private struct BracketMatchSnapshot: Decodable, Identifiable {
-    let matchId: String
-    let roundNumber: Int
-    /// Can be missing or null until a later round is activated.
-    let participantProfileIds: [String]?
-    let winnerProfileIds: [String]?
-    let loserProfileIds: [String]?
-    let feederMatchIds: [String]?
-
-    var id: String { matchId }
-
-    init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        matchId = try c.decode(String.self, forKey: .matchId)
-        roundNumber = try c.decode(Int.self, forKey: .roundNumber)
-        participantProfileIds = try c.decodeIfPresent([String].self, forKey: .participantProfileIds)
-        winnerProfileIds = try c.decodeIfPresent([String].self, forKey: .winnerProfileIds)
-        loserProfileIds = try c.decodeIfPresent([String].self, forKey: .loserProfileIds)
-        feederMatchIds = try c.decodeIfPresent([String].self, forKey: .feederMatchIds)
-    }
-
-    enum CodingKeys: String, CodingKey {
-        case matchId
-        case roundNumber
-        case participantProfileIds
-        case winnerProfileIds
-        case loserProfileIds
-        case feederMatchIds
     }
 }
 
