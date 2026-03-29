@@ -39,6 +39,8 @@ final class UITestUserService: UserServiceProtocol {
             profilePhotoUrl: "",
             overallOdds: 0,
             overallGamesPlayed: 0,
+            overallOddsByGameType: [:],
+            overallGamesPlayedByGameType: [:],
             ageConfirmed21PlusAt: Date(),
             onboardingCompleteAt: nil
         )
@@ -55,6 +57,8 @@ final class UITestUserService: UserServiceProtocol {
             profilePhotoUrl: profilePhotoUrl,
             overallOdds: 0.5,
             overallGamesPlayed: 1,
+            overallOddsByGameType: ["PONG": 0.5],
+            overallGamesPlayedByGameType: ["PONG": 1],
             ageConfirmed21PlusAt: profile?.ageConfirmed21PlusAt ?? Date(),
             onboardingCompleteAt: Date()
         )
@@ -213,6 +217,8 @@ enum UITestContainerFactory {
                 profilePhotoUrl: "",
                 overallOdds: 0.75,
                 overallGamesPlayed: 12,
+                overallOddsByGameType: ["PONG": 0.8, "CROSSFIRE": 0.5],
+                overallGamesPlayedByGameType: ["PONG": 5, "CROSSFIRE": 4],
                 ageConfirmed21PlusAt: Date(),
                 onboardingCompleteAt: Date()
             )

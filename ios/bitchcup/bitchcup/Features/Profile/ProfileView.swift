@@ -35,6 +35,8 @@ struct ProfileView: View {
     @State private var historyRows: [ProfileHistoryRow] = []
     @State private var stats = ProfileAggregateStats.empty
     @State private var overallOdds: Double = 0.0
+    @State private var overallOddsByGameType: [String: Double] = [:]
+    @State private var overallGamesPlayedByGameType: [String: Int] = [:]
     @State private var historyCursor: HomeFeedPageCursor?
     @State private var hasMoreHistory = false
     @State private var isLoadingMoreHistory = false
@@ -51,6 +53,7 @@ struct ProfileView: View {
                     VStack(alignment: .leading, spacing: 20) {
                         profileHeaderSection
                         statsSection
+                        perGameTypeStatsSection
                         if historyRows.isEmpty {
                             profileEmptyHistoryCard
                         } else {
@@ -225,6 +228,49 @@ struct ProfileView: View {
         )
     }
 
+    private var perGameTypeStatsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("By game type")
+                .font(ProfileTypography.sectionHeader)
+                .foregroundStyle(ProfileTestStyle.ink)
+
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(LeagueRankingBasis.allCases.filter { $0 != .allGames }) { basis in
+                    let games = overallGamesPlayedByGameType[basis.rawValue] ?? 0
+                    let odds = overallOddsByGameType[basis.rawValue] ?? 0
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(basis.displayName)
+                            .font(AppFont.subheadlineBold)
+                            .foregroundStyle(ProfileTestStyle.ink)
+                        Spacer(minLength: 8)
+                        if games == 0 {
+                            Text("No games")
+                                .font(AppFont.subheadline)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            let pct = Int((odds * 100).rounded())
+                            Text("\(pct)% win rate · \(games) \(games == 1 ? "game" : "games")")
+                                .font(AppFont.subheadline)
+                                .foregroundStyle(ProfileTestStyle.ink)
+                                .multilineTextAlignment(.trailing)
+                        }
+                    }
+                    .accessibilityElement(children: .combine)
+                }
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.white)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(ProfileChrome.lightBorder, lineWidth: 1)
+        )
+    }
+
     private var historySection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Game History")
@@ -303,6 +349,8 @@ struct ProfileView: View {
         isLoading = true
         errorMessage = nil
         overallOdds = 0.0
+        overallOddsByGameType = [:]
+        overallGamesPlayedByGameType = [:]
         historyRows = []
         historyCursor = nil
         hasMoreHistory = false
@@ -325,6 +373,8 @@ struct ProfileView: View {
             displayName = (resolvedName?.isEmpty == false) ? resolvedName! : "Profile"
             profilePhotoUrl = profile?.profilePhotoUrl.flatMap(URL.init(string:))
             overallOdds = profile?.overallOdds ?? 0.0
+            overallOddsByGameType = profile?.overallOddsByGameType ?? [:]
+            overallGamesPlayedByGameType = profile?.overallGamesPlayedByGameType ?? [:]
 
             let relevantRows = allRows.filter {
                 $0.winnerProfileIds.contains(userId) || $0.loserProfileIds.contains(userId)

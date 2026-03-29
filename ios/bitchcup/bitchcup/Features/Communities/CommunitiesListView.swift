@@ -88,6 +88,12 @@ struct CommunitiesListView: View {
         .background(Color.white)
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(true)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                CommunityFlowBackToolbarButton()
+            }
+        }
         .toolbarBackground(Color.white, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .task { await load() }

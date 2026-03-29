@@ -11,6 +11,17 @@ export interface OddsRecalcContext {
   kind: GameLogEventKind;
 }
 
+/** Matches iOS `GameType` raw values in game logs. */
+const KNOWN_GAME_TYPES = [
+  "PONG",
+  "BEER_BALL",
+  "BATTLE_PONG",
+  "BASEBALL",
+  "CROSSFIRE",
+] as const;
+
+type KnownGameType = (typeof KNOWN_GAME_TYPES)[number];
+
 interface EligibleLog {
   participantProfileIds: string[];
   winnerProfileIds: string[];
@@ -39,21 +50,59 @@ function isEligible(data: Record<string, unknown>): boolean {
   );
 }
 
-/**
- * Queries all eligible game logs for a profile and computes
- * overallOdds = wins / games (0 if no games).
- * @param {string} profileId The profile to recompute.
- * @return {Promise<number>} Computed overallOdds value.
- */
-interface OverallOddsResult {
-    odds: number;
-    games: number;
+function knownGameTypeFromData(
+  data: Record<string, unknown>
+): KnownGameType | null {
+  const gt = data.gameType;
+  if (typeof gt !== "string") return null;
+  return (KNOWN_GAME_TYPES as readonly string[]).includes(gt) ?
+    (gt as KnownGameType) :
+    null;
 }
+
+function emptyPerTypeMaps(): {
+  gamesByType: Record<KnownGameType, number>;
+  winsByType: Record<KnownGameType, number>;
+} {
+  const gamesByType = {} as Record<KnownGameType, number>;
+  const winsByType = {} as Record<KnownGameType, number>;
+  for (const t of KNOWN_GAME_TYPES) {
+    gamesByType[t] = 0;
+    winsByType[t] = 0;
+  }
+  return {gamesByType, winsByType};
+}
+
+function buildOddsAndGamesMaps(
+  gamesByType: Record<KnownGameType, number>,
+  winsByType: Record<KnownGameType, number>
+): {
+  oddsByGameType: Record<string, number>;
+  gamesPlayedByGameType: Record<string, number>;
+} {
+  const oddsByGameType: Record<string, number> = {};
+  const gamesPlayedByGameType: Record<string, number> = {};
+  for (const t of KNOWN_GAME_TYPES) {
+    const g = gamesByType[t];
+    const w = winsByType[t];
+    gamesPlayedByGameType[t] = g;
+    oddsByGameType[t] = g === 0 ? 0 : w / g;
+  }
+  return {oddsByGameType, gamesPlayedByGameType};
+}
+
+interface OverallOddsResult {
+  odds: number;
+  games: number;
+  overallOddsByGameType: Record<string, number>;
+  overallGamesPlayedByGameType: Record<string, number>;
+}
+
 /**
  * Queries all eligible game logs for a profile and computes
- * overallOdds and overallGamesPlayed.
+ * overall odds, aggregate counts, and per–game-type odds/maps.
  * @param {string} profileId The profile to recompute.
- * @return {Promise<OverallOddsResult>} Computed odds and game count.
+ * @return {Promise<OverallOddsResult>} Computed values.
  */
 async function computeOverallOdds(
   profileId: string
@@ -66,41 +115,58 @@ async function computeOverallOdds(
 
   let games = 0;
   let wins = 0;
+  const {gamesByType, winsByType} = emptyPerTypeMaps();
 
   for (const doc of snap.docs) {
     const data = doc.data() as Record<string, unknown>;
     if (!isEligible(data)) continue;
     const log = data as unknown as EligibleLog;
     games++;
-    if (log.winnerProfileIds.includes(profileId)) {
+    const won = log.winnerProfileIds.includes(profileId);
+    if (won) {
       wins++;
+    }
+    const gt = knownGameTypeFromData(data);
+    if (gt) {
+      gamesByType[gt]++;
+      if (won) {
+        winsByType[gt]++;
+      }
     }
   }
 
   const odds = games === 0 ? 0 : wins / games;
+  const {oddsByGameType, gamesPlayedByGameType} = buildOddsAndGamesMaps(
+    gamesByType,
+    winsByType
+  );
   logger.debug("computeOverallOdds result", {
     profileId,
     games,
     wins,
     odds,
   });
-  return {odds, games};
+  return {
+    odds,
+    games,
+    overallOddsByGameType: oddsByGameType,
+    overallGamesPlayedByGameType: gamesPlayedByGameType,
+  };
 }
 
 interface CommunityOddsResult {
   odds: number;
   games: number;
+  communityOddsByGameType: Record<string, number>;
+  communityGamesPlayedByGameType: Record<string, number>;
 }
 
 /**
  * Queries eligible game logs scoped to one community for a
- * profile. Returns both communityOdds and communityGamesPlayed
- * so the caller can persist both in a single pass.
- * Requires composite index: participantProfileIds array-contains
- * + communityId == (see firestore.indexes.json).
+ * profile. Returns community odds, counts, and per–game-type maps.
  * @param {string} profileId The profile to recompute.
  * @param {string} communityId The community to scope to.
- * @return {Promise<CommunityOddsResult>} Odds and game count.
+ * @return {Promise<CommunityOddsResult>} Computed values.
  */
 async function computeCommunityOdds(
   profileId: string,
@@ -119,18 +185,31 @@ async function computeCommunityOdds(
 
   let games = 0;
   let wins = 0;
+  const {gamesByType, winsByType} = emptyPerTypeMaps();
 
   for (const doc of snap.docs) {
     const data = doc.data() as Record<string, unknown>;
     if (!isEligible(data)) continue;
     const log = data as unknown as EligibleLog;
     games++;
-    if (log.winnerProfileIds.includes(profileId)) {
+    const won = log.winnerProfileIds.includes(profileId);
+    if (won) {
       wins++;
+    }
+    const gt = knownGameTypeFromData(data);
+    if (gt) {
+      gamesByType[gt]++;
+      if (won) {
+        winsByType[gt]++;
+      }
     }
   }
 
   const odds = games === 0 ? 0 : wins / games;
+  const {oddsByGameType, gamesPlayedByGameType} = buildOddsAndGamesMaps(
+    gamesByType,
+    winsByType
+  );
   logger.debug("computeCommunityOdds result", {
     profileId,
     communityId,
@@ -138,11 +217,16 @@ async function computeCommunityOdds(
     wins,
     odds,
   });
-  return {odds, games};
+  return {
+    odds,
+    games,
+    communityOddsByGameType: oddsByGameType,
+    communityGamesPlayedByGameType: gamesPlayedByGameType,
+  };
 }
 
 /**
- * Writes communityOdds and communityGamesPlayed to
+ * Writes community odds (aggregate + per game type) to
  * memberships/{communityId}_{profileId}.
  * Skips if the membership doc does not exist.
  * @param {string} profileId Target profile.
@@ -172,12 +256,18 @@ async function writeCommunityOdds(
     return;
   }
 
-  const {odds: communityOdds, games: communityGamesPlayed} =
-    await computeCommunityOdds(profileId, communityId);
+  const {
+    odds: communityOdds,
+    games: communityGamesPlayed,
+    communityOddsByGameType,
+    communityGamesPlayedByGameType,
+  } = await computeCommunityOdds(profileId, communityId);
 
   await membershipRef.update({
     communityOdds,
     communityGamesPlayed,
+    communityOddsByGameType,
+    communityGamesPlayedByGameType,
     updatedAt: now,
   });
 
@@ -192,7 +282,7 @@ async function writeCommunityOdds(
 /**
  * Recomputes and persists overallOdds for all impacted profiles,
  * communityOdds and communityGamesPlayed for impacted
- * (profile, community) pairs.
+ * (profile, community) pairs, including per–game-type maps.
  * @param {OddsRecalcContext} ctx Event context including impacted
  * profile IDs and community info.
  * @return {Promise<void>}
@@ -241,14 +331,17 @@ export async function recomputeOddsForGameLogEvent(
         return;
       }
 
-      // T09.2: overall odds
       const {
         odds: overallOdds,
         games: overallGamesPlayed,
+        overallOddsByGameType,
+        overallGamesPlayedByGameType,
       } = await computeOverallOdds(profileId);
       await profileRef.update({
         overallOdds,
         overallGamesPlayed,
+        overallOddsByGameType,
+        overallGamesPlayedByGameType,
         updatedAt: now,
       });
       logger.info("odds recompute: profile updated", {
@@ -257,7 +350,6 @@ export async function recomputeOddsForGameLogEvent(
         overallGamesPlayed,
       });
 
-      // T09.3/T09.4: community odds + gamesPlayed for current
       if (communityId) {
         await writeCommunityOdds(
           profileId,
@@ -267,8 +359,6 @@ export async function recomputeOddsForGameLogEvent(
         );
       }
 
-      // T09.3/T09.4: community odds + gamesPlayed for previous
-      // (only on update when communityId changed)
       if (previousCommunityId) {
         await writeCommunityOdds(
           profileId,

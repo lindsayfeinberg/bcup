@@ -9,6 +9,8 @@ struct CommunityDetailView: View {
     private let memberRankFont = Font.custom("NeueHaasDisplay-Mediu", size: 18)
     private let memberNameFont = Font.custom("NeueHaasDisplay-Mediu", size: 17)
     private let memberDetailFont = Font.custom("NeueHaasDisplay-Light", size: 15)
+    /// Same family as member names (`NeueHaasDisplay-Mediu`), smaller than `memberNameFont` for rank-by control.
+    private let rankingBasisFont = Font.custom("NeueHaasDisplay-Mediu", size: 14)
 
     @EnvironmentObject private var container: DependencyContainer
     @State private var communityName: String = ""
@@ -38,6 +40,7 @@ struct CommunityDetailView: View {
     @State private var loadMoreFeedErrorMessage: String?
     @State private var visibleActiveBracketsCount = 3
     @State private var visiblePastBracketsCount = 3
+    @State private var rankingBasis: LeagueRankingBasis = .allGames
     private let uiTestMembers: [CommunityMemberRosterRow] = [
         .init(profileId: "ui-test-user", displayName: "You", profilePhotoUrl: nil, communityOdds: 0.75, communityGamesPlayed: 4),
         .init(profileId: "ui-opponent-1", displayName: "Alex", profilePhotoUrl: nil, communityOdds: 0.62, communityGamesPlayed: 3),
@@ -91,11 +94,13 @@ struct CommunityDetailView: View {
         hasEnoughMembersForSelectedTeamSize && isMemberCountDivisibleByTeamSize
     }
 
-    /// Highest `communityOdds` first (best → worst); ties broken by `profileId` for stable order.
-    private var membersOrderedByOdds: [CommunityMemberRosterRow] {
+    /// Highest effective odds for `rankingBasis` first; ties broken by `profileId` for stable order.
+    private var membersOrderedForRanking: [CommunityMemberRosterRow] {
         members.sorted { lhs, rhs in
-            if lhs.communityOdds != rhs.communityOdds {
-                return lhs.communityOdds > rhs.communityOdds
+            let lo = lhs.effectiveOdds(basis: rankingBasis)
+            let ro = rhs.effectiveOdds(basis: rankingBasis)
+            if lo != ro {
+                return lo > ro
             }
             return lhs.profileId < rhs.profileId
         }
@@ -279,6 +284,12 @@ struct CommunityDetailView: View {
         .background(Color.white)
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(true)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                CommunityFlowBackToolbarButton()
+            }
+        }
         .toolbarBackground(Color.white, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .task {
@@ -434,7 +445,23 @@ struct CommunityDetailView: View {
                     .font(memberDetailFont)
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(Array(membersOrderedByOdds.enumerated()), id: \.element.id) { index, member in
+                Picker(selection: $rankingBasis) {
+                    ForEach(LeagueRankingBasis.allCases) { basis in
+                        Text(basis.displayName).tag(basis)
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Text("Rank by")
+                            .foregroundStyle(.secondary)
+                        Text(rankingBasis.displayName)
+                            .foregroundStyle(.primary)
+                    }
+                    .font(rankingBasisFont)
+                }
+                .pickerStyle(.menu)
+                .accessibilityIdentifier("community.detail.rankingBasis")
+
+                ForEach(Array(membersOrderedForRanking.enumerated()), id: \.element.id) { index, member in
                     HStack(alignment: .center, spacing: 10) {
                         Text("\(index + 1).")
                             .font(memberRankFont)
@@ -448,18 +475,9 @@ struct CommunityDetailView: View {
                             Text(member.displayName.isEmpty ? "Unknown" : member.displayName)
                                 .font(memberNameFont)
                                 .foregroundStyle(.black)
-                            if member.communityGamesPlayed == 0 {
-                                Text("No league games yet")
-                                    .font(memberDetailFont)
-                                    .foregroundStyle(.secondary)
-                            } else {
-                                Text(Self.oddsFormatter.string(
-                                    from: NSNumber(value: member.communityOdds)
-                                ) ?? "0.000")
-                                    .font(memberDetailFont)
-                                    .foregroundStyle(.secondary)
-                                    .monospacedDigit()
-                            }
+                            Text(memberOddsSubtitle(for: member))
+                                .font(memberDetailFont)
+                                .foregroundStyle(.secondary)
                         }
                         Spacer(minLength: 0)
                     }
@@ -526,6 +544,28 @@ struct CommunityDetailView: View {
             .opacity(hasInviteCode ? 1.0 : 0.65)
             .accessibilityIdentifier("community.detail.copyInviteCode")
         }
+    }
+
+    private func memberOddsSubtitle(for member: CommunityMemberRosterRow) -> String {
+        let games = member.effectiveGamesPlayed(basis: rankingBasis)
+        if games == 0 {
+            return rankingBasis == .allGames
+                ? "No league games yet"
+                : "No \(rankingBasis.displayName) games in this league"
+        }
+        let odds = member.effectiveOdds(basis: rankingBasis)
+        let oddsText = Self.oddsFormatter.string(from: NSNumber(value: odds)) ?? "0.000"
+        let wins = winCount(fromOdds: odds, gamesPlayed: games)
+        let losses = games - wins
+        return "\(oddsText) · \(wins)-\(losses)"
+    }
+
+    /// Reconstructs integer wins from server `wins/games` odds (same source as `communityOdds` / per-type maps).
+    private func winCount(fromOdds odds: Double, gamesPlayed games: Int) -> Int {
+        guard games > 0 else { return 0 }
+        let raw = (odds * Double(games)).rounded()
+        let w = Int(raw)
+        return min(max(w, 0), games)
     }
 
     @ViewBuilder

@@ -119,6 +119,62 @@ describe("Firestore rules — profiles", () => {
     );
   });
 
+  it("denies create when overallOddsByGameType is present", async () => {
+    const db = testEnv.authenticatedContext(ALICE).firestore();
+    await assertFails(
+      setDoc(
+        doc(db, "profiles", ALICE),
+        profilePayload(ALICE, {
+          overallOddsByGameType: {PONG: 0},
+        })
+      )
+    );
+  });
+
+  it("allows profile update when server odds maps are unchanged", async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const adb = ctx.firestore();
+      await setDoc(
+        doc(adb, "profiles", ALICE),
+        profilePayload(ALICE, {
+          overallOdds: 0.6,
+          overallGamesPlayed: 10,
+          overallOddsByGameType: {PONG: 0.5},
+          overallGamesPlayedByGameType: {PONG: 4},
+        })
+      );
+    });
+    const db = testEnv.authenticatedContext(ALICE).firestore();
+    await assertSucceeds(
+      updateDoc(doc(db, "profiles", ALICE), {
+        displayName: "Renamed",
+        updatedAt: ts(),
+      })
+    );
+  });
+
+  it("denies profile update that mutates overallOddsByGameType", async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const adb = ctx.firestore();
+      await setDoc(
+        doc(adb, "profiles", ALICE),
+        profilePayload(ALICE, {
+          overallOdds: 0.6,
+          overallGamesPlayed: 10,
+          overallOddsByGameType: {PONG: 0.5},
+          overallGamesPlayedByGameType: {PONG: 4},
+        })
+      );
+    });
+    const db = testEnv.authenticatedContext(ALICE).firestore();
+    await assertFails(
+      updateDoc(doc(db, "profiles", ALICE), {
+        overallOddsByGameType: {PONG: 0.99},
+        updatedAt: ts(),
+      })
+    );
+  });
+
   it("denies delete", async () => {
     const ctx = testEnv.authenticatedContext(ALICE);
     const db = ctx.firestore();

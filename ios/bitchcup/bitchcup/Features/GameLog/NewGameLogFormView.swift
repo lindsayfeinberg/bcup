@@ -7,9 +7,10 @@ import UIKit
 private enum GameLogFormLayout {
     static let widgetOutlineHorizontalPadding: CGFloat = 12
     static let widgetOutlineVerticalPadding: CGFloat = 6
-    /// Extra breathing room inside the row for `UISegmentedControl` (avoids edge-hugging vs simulator).
+    /// Insets around the game-type grid (replaces segmented control padding).
     static let gameTypeSegmentedInnerHorizontalPadding: CGFloat = 6
     static let gameTypeSegmentedInnerVerticalPadding: CGFloat = 4
+    static let gameTypeGridSpacing: CGFloat = 8
 }
 
 /// Brand colors for the game log form.
@@ -130,6 +131,8 @@ struct NewGameLogFormView: View {
 
     @State private var battlePongCupsByProfileId: [String: Int] = [:]
     @State private var baseballHitsByProfileId: [String: Int] = [:]
+    @State private var crossfireCupsByProfileId: [String: Int] = [:]
+    @State private var crossfireLastCupByProfileId: String = ""
 
     @State private var gameLogNotes: String = ""
 
@@ -150,6 +153,53 @@ struct NewGameLogFormView: View {
                     .padding(.horizontal, GameLogFormLayout.widgetOutlineHorizontalPadding)
                     .padding(.vertical, GameLogFormLayout.widgetOutlineVerticalPadding)
             )
+    }
+
+    /// Three columns so five game types lay out as two rows (3 + 2); avoids single-row segmented truncation.
+    private var gameTypeGrid: some View {
+        let columns = [
+            GridItem(.flexible(), spacing: GameLogFormLayout.gameTypeGridSpacing),
+            GridItem(.flexible(), spacing: GameLogFormLayout.gameTypeGridSpacing),
+            GridItem(.flexible(), spacing: GameLogFormLayout.gameTypeGridSpacing)
+        ]
+        return LazyVGrid(columns: columns, spacing: GameLogFormLayout.gameTypeGridSpacing) {
+            ForEach(GameType.allCases) { type in
+                let available = isGameTypeAvailable(type)
+                let selected = selectedGameType == type
+                Button {
+                    guard available else { return }
+                    selectedGameType = type
+                } label: {
+                    Text(type.displayName)
+                        .font(AppFont.body)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.85)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .padding(.horizontal, 6)
+                        .foregroundStyle(available ? (selected ? GameLogBrandColor.pillDark : Color.primary) : Color.secondary)
+                        .background {
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(selected && available ? Color.white : Color(UIColor.secondarySystemGroupedBackground))
+                        }
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .strokeBorder(
+                                    selected && available ? GameLogBrandColor.pillDark : Color.primary.opacity(0.12),
+                                    lineWidth: 1
+                                )
+                        }
+                }
+                .buttonStyle(.plain)
+                .disabled(!available)
+                .opacity(available ? 1.0 : 0.45)
+                .accessibilityLabel(type.displayName)
+                .accessibilityAddTraits(selected && available ? .isSelected : [])
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Game type")
     }
 
     @ViewBuilder
@@ -208,22 +258,9 @@ struct NewGameLogFormView: View {
         .listRowBackground(widgetOutlineBackground)
 
         Section {
-            // Section header already says “Choose Game Type”; use empty title + labelsHidden so segments aren’t squeezed.
-            Picker("", selection: $selectedGameType) {
-                ForEach(GameType.allCases) { type in
-                    Text(type.displayName)
-                        .font(AppFont.body)
-                        .foregroundStyle(isGameTypeAvailable(type) ? Color.primary : Color.secondary)
-                        .opacity(isGameTypeAvailable(type) ? 1.0 : 0.45)
-                        .disabled(!isGameTypeAvailable(type))
-                        .tag(type)
-                }
-            }
-            .labelsHidden()
-            .pickerStyle(.segmented)
-            .padding(.horizontal, GameLogFormLayout.gameTypeSegmentedInnerHorizontalPadding)
-            .padding(.vertical, GameLogFormLayout.gameTypeSegmentedInnerVerticalPadding)
-            .accessibilityLabel("Game type")
+            gameTypeGrid
+                .padding(.horizontal, GameLogFormLayout.gameTypeSegmentedInnerHorizontalPadding)
+                .padding(.vertical, GameLogFormLayout.gameTypeSegmentedInnerVerticalPadding)
         } header: {
             Text("Choose Game Type")
                 .font(Self.widgetTitleFont)
@@ -905,6 +942,26 @@ struct NewGameLogFormView: View {
                     .font(AppFont.subheadlineBold)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
+            case .crossfire:
+                Text("Crossfire")
+                    .font(AppFont.subheadlineBold)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                ForEach(participantProfileIds.sorted(), id: \.self) { profileId in
+                    let cups = crossfireCupsByProfileId[profileId] ?? 0
+                    if cups > 0 {
+                        Text("\(displayName(for: profileId)): \(cups) cups")
+                            .font(AppFont.subheadlineBold)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                if !crossfireLastCupByProfileId.isEmpty {
+                    Text("Last cup: \(displayName(for: crossfireLastCupByProfileId))")
+                        .font(AppFont.subheadlineBold)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
     }
@@ -925,6 +982,8 @@ struct NewGameLogFormView: View {
                 battlePongStatsView
             case .baseball:
                 baseballStatsView
+            case .crossfire:
+                crossfireStatsView
             }
         }
     }
@@ -1226,6 +1285,33 @@ struct NewGameLogFormView: View {
         }
     }
 
+    @ViewBuilder
+    private var crossfireStatsView: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            ForEach(selectedParticipants, id: \.profileId) { participant in
+                Stepper(
+                    value: crossfireCupsBinding(for: participant.profileId),
+                    in: 0...5
+                ) {
+                    Text("\(displayName(for: participant.profileId)): \(crossfireCupsByProfileId[participant.profileId] ?? 0) cups")
+                        .font(AppFont.body)
+                }
+            }
+
+            Picker("Last cup (optional)", selection: $crossfireLastCupByProfileId) {
+                Text("None")
+                    .font(AppFont.body)
+                    .tag("")
+                ForEach(selectedParticipants, id: \.profileId) { participant in
+                    Text(displayName(for: participant.profileId))
+                        .font(AppFont.body)
+                        .tag(participant.profileId)
+                }
+            }
+            .font(AppFont.body)
+        }
+    }
+
     private var canSubmitGameLog: Bool {
         !selectedCommunityId.isEmpty &&
         outcome != nil &&
@@ -1364,6 +1450,21 @@ struct NewGameLogFormView: View {
             }
         case .battlePong, .baseball:
             break
+        case .crossfire:
+            for id in participantProfileIds {
+                let n = crossfireCupsByProfileId[id] ?? 0
+                if n < 0 || n > 5 {
+                    return "Crossfire cups must be between 0 and 5 per player."
+                }
+            }
+            if !crossfireLastCupByProfileId.isEmpty {
+                if !participantSet.contains(crossfireLastCupByProfileId) {
+                    return "Last cup must be one of the selected participants."
+                }
+                if (crossfireCupsByProfileId[crossfireLastCupByProfileId] ?? 0) < 1 {
+                    return "Last cup player must have at least 1 cup made."
+                }
+            }
         }
         if !selectedMVPProfileId.isEmpty && !participantSet.contains(selectedMVPProfileId) {
             return "MVP must be one of the selected participants."
@@ -1385,7 +1486,7 @@ struct NewGameLogFormView: View {
 
     private func baseTeamSizeRange(for gameType: GameType) -> ClosedRange<Int> {
         switch gameType {
-        case .pong, .beerBall:
+        case .pong, .beerBall, .crossfire:
             return 1...10
         case .battlePong, .baseball:
             return 3...20
@@ -1448,12 +1549,16 @@ struct NewGameLogFormView: View {
         beerBallNewCansByProfileId = keepOnly(ids: ids, from: beerBallNewCansByProfileId)
         battlePongCupsByProfileId = keepOnly(ids: ids, from: battlePongCupsByProfileId)
         baseballHitsByProfileId = keepOnly(ids: ids, from: baseballHitsByProfileId)
+        crossfireCupsByProfileId = keepOnly(ids: ids, from: crossfireCupsByProfileId).mapValues { min(5, $0) }
 
         if !pongLastCupByProfileId.isEmpty && !ids.contains(pongLastCupByProfileId) {
             pongLastCupByProfileId = ""
         }
         if !beerBallFirstFinishedByProfileId.isEmpty && !ids.contains(beerBallFirstFinishedByProfileId) {
             beerBallFirstFinishedByProfileId = ""
+        }
+        if !crossfireLastCupByProfileId.isEmpty && !ids.contains(crossfireLastCupByProfileId) {
+            crossfireLastCupByProfileId = ""
         }
         if !selectedMVPProfileId.isEmpty && !ids.contains(selectedMVPProfileId) {
             selectedMVPProfileId = ""
@@ -1504,6 +1609,15 @@ struct NewGameLogFormView: View {
             get: { map.wrappedValue[profileId] ?? 0 },
             set: { newValue in
                 map.wrappedValue[profileId] = max(0, newValue)
+            }
+        )
+    }
+
+    private func crossfireCupsBinding(for profileId: String) -> Binding<Int> {
+        Binding<Int>(
+            get: { min(5, max(0, crossfireCupsByProfileId[profileId] ?? 0)) },
+            set: { newValue in
+                crossfireCupsByProfileId[profileId] = min(5, max(0, newValue))
             }
         )
     }
@@ -1718,6 +1832,7 @@ struct NewGameLogFormView: View {
         let beerBallStats = selectedGameType == .beerBall ? buildBeerBallStats() : nil
         let battlePongStats = selectedGameType == .battlePong ? buildBattlePongStats() : nil
         let baseballStats = selectedGameType == .baseball ? buildBaseballStats() : nil
+        let crossfireStats = selectedGameType == .crossfire ? buildCrossfireStats() : nil
         let trimmedNotes = gameLogNotes.trimmingCharacters(in: .whitespacesAndNewlines)
         let notesPayload: String? = trimmedNotes.isEmpty ? nil : trimmedNotes
         let gameLogService = container.gameLogService
@@ -1755,7 +1870,8 @@ struct NewGameLogFormView: View {
                 pongStats: pongStats,
                 beerBallStats: beerBallStats,
                 battlePongStats: battlePongStats,
-                baseballStats: baseballStats
+                baseballStats: baseballStats,
+                crossfireStats: crossfireStats
             )
             AppDebugLog.log(
                 "submitGameLog: createGameLog start gameLogId=\(gameLogId) bracketLinked=\(isBracketLinked) bracketId=\(payload.bracketId ?? "nil") bracketMatchId=\(payload.bracketMatchId ?? "nil") photoUrls=\(payload.photoUrls.count)"
@@ -1881,6 +1997,14 @@ struct NewGameLogFormView: View {
 
     private func buildBaseballStats() -> [String: Any] {
         ["hitsByProfileId": baseballHitsByProfileId]
+    }
+
+    private func buildCrossfireStats() -> [String: Any] {
+        var stats: [String: Any] = ["playerCupsHit": crossfireCupsByProfileId]
+        if !crossfireLastCupByProfileId.isEmpty {
+            stats["lastCupByProfileId"] = crossfireLastCupByProfileId
+        }
+        return stats
     }
 
     /// Full width × fixed height (scaled from feed card photo height); rectangular, no corner radius.
@@ -2025,6 +2149,7 @@ private enum GameType: String, CaseIterable, Identifiable {
     case beerBall = "BEER_BALL"
     case battlePong = "BATTLE_PONG"
     case baseball = "BASEBALL"
+    case crossfire = "CROSSFIRE"
 
     var id: String { rawValue }
 
@@ -2034,6 +2159,7 @@ private enum GameType: String, CaseIterable, Identifiable {
         case .beerBall: return "Beer Ball"
         case .battlePong: return "Battle Pong"
         case .baseball: return "Baseball"
+        case .crossfire: return "Crossfire"
         }
     }
 }

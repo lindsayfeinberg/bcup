@@ -19,8 +19,34 @@ struct ProfileRecord {
     let profilePhotoUrl: String?
     let overallOdds: Double
     let overallGamesPlayed: Int
+    /// Server-computed win rate (`wins/games`) per `gameLogs.gameType` key.
+    let overallOddsByGameType: [String: Double]
+    let overallGamesPlayedByGameType: [String: Int]
     let ageConfirmed21PlusAt: Date?
     let onboardingCompleteAt: Date?
+}
+
+/// League roster ordering: all games in the league vs. one game type (matches `gameLogs.gameType`).
+enum LeagueRankingBasis: String, CaseIterable, Identifiable {
+    case allGames = "ALL"
+    case pong = "PONG"
+    case beerBall = "BEER_BALL"
+    case battlePong = "BATTLE_PONG"
+    case baseball = "BASEBALL"
+    case crossfire = "CROSSFIRE"
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .allGames: return "All games"
+        case .pong: return "Pong"
+        case .beerBall: return "Beer Ball"
+        case .battlePong: return "Battle Pong"
+        case .baseball: return "Baseball"
+        case .crossfire: return "Crossfire"
+        }
+    }
 }
 
 protocol UserServiceProtocol {
@@ -38,7 +64,37 @@ struct CommunityMemberRosterRow: Identifiable {
     let profilePhotoUrl: String?
     let communityOdds: Double
     let communityGamesPlayed: Int
+    let communityOddsByGameType: [String: Double]
+    let communityGamesPlayedByGameType: [String: Int]
     var id: String { profileId }
+
+    init(
+        profileId: String,
+        displayName: String,
+        profilePhotoUrl: String?,
+        communityOdds: Double,
+        communityGamesPlayed: Int,
+        communityOddsByGameType: [String: Double] = [:],
+        communityGamesPlayedByGameType: [String: Int] = [:]
+    ) {
+        self.profileId = profileId
+        self.displayName = displayName
+        self.profilePhotoUrl = profilePhotoUrl
+        self.communityOdds = communityOdds
+        self.communityGamesPlayed = communityGamesPlayed
+        self.communityOddsByGameType = communityOddsByGameType
+        self.communityGamesPlayedByGameType = communityGamesPlayedByGameType
+    }
+
+    func effectiveOdds(basis: LeagueRankingBasis) -> Double {
+        if basis == .allGames { return communityOdds }
+        return communityOddsByGameType[basis.rawValue] ?? 0
+    }
+
+    func effectiveGamesPlayed(basis: LeagueRankingBasis) -> Int {
+        if basis == .allGames { return communityGamesPlayed }
+        return communityGamesPlayedByGameType[basis.rawValue] ?? 0
+    }
 }
 
 protocol CommunityServiceProtocol {
@@ -285,6 +341,7 @@ struct GameLogCreatePayload {
     let beerBallStats: [String: Any]?
     let battlePongStats: [String: Any]?
     let baseballStats: [String: Any]?
+    let crossfireStats: [String: Any]?
 }
 
 struct GameLogUpdatePayload {
@@ -300,9 +357,44 @@ struct GameLogUpdatePayload {
     let beerBallStats: [String: Any]?
     let battlePongStats: [String: Any]?
     let baseballStats: [String: Any]?
+    let crossfireStats: [String: Any]?
 }
 
 // MARK: - Default Service Implementations
+
+private enum FirestoreStringKeyMaps {
+    static func stringToDouble(_ value: Any?) -> [String: Double] {
+        guard let dict = value as? [String: Any] else { return [:] }
+        var out: [String: Double] = [:]
+        out.reserveCapacity(dict.count)
+        for (key, v) in dict {
+            if let d = v as? Double {
+                out[key] = d
+            } else if let n = v as? NSNumber {
+                out[key] = n.doubleValue
+            } else if let i = v as? Int {
+                out[key] = Double(i)
+            }
+        }
+        return out
+    }
+
+    static func stringToInt(_ value: Any?) -> [String: Int] {
+        guard let dict = value as? [String: Any] else { return [:] }
+        var out: [String: Int] = [:]
+        out.reserveCapacity(dict.count)
+        for (key, v) in dict {
+            if let i = v as? Int {
+                out[key] = i
+            } else if let n = v as? NSNumber {
+                out[key] = n.intValue
+            } else if let d = v as? Double {
+                out[key] = Int(d)
+            }
+        }
+        return out
+    }
+}
 
 final class UserService: UserServiceProtocol {
     func fetchProfile(userId: String) async throws -> ProfileRecord? {
@@ -366,6 +458,8 @@ final class UserService: UserServiceProtocol {
         let overallGamesPlayed = (data["overallGamesPlayed"] as? Int)
             ?? (data["overallGamesPlayed"] as? Double).map(Int.init)
             ?? 0
+        let overallOddsByGameType = FirestoreStringKeyMaps.stringToDouble(data["overallOddsByGameType"])
+        let overallGamesPlayedByGameType = FirestoreStringKeyMaps.stringToInt(data["overallGamesPlayedByGameType"])
         AppDebugLog.log("UserService.fetchProfile: exists onboardingCompleteAt=\(onboardingCompleteAt != nil) age21=\(ageConfirmed21PlusAt != nil)")
         return ProfileRecord(
             userId: userId,
@@ -373,6 +467,8 @@ final class UserService: UserServiceProtocol {
             profilePhotoUrl: profilePhotoUrl,
             overallOdds: overallOdds,
             overallGamesPlayed: overallGamesPlayed,
+            overallOddsByGameType: overallOddsByGameType,
+            overallGamesPlayedByGameType: overallGamesPlayedByGameType,
             ageConfirmed21PlusAt: ageConfirmed21PlusAt,
             onboardingCompleteAt: onboardingCompleteAt
         )
@@ -551,6 +647,8 @@ final class CommunityService: CommunityServiceProtocol {
             let communityGamesPlayed = (membershipData["communityGamesPlayed"] as? Int)
                 ?? (membershipData["communityGamesPlayed"] as? Double).map(Int.init)
                 ?? 0
+            let communityOddsByGameType = FirestoreStringKeyMaps.stringToDouble(membershipData["communityOddsByGameType"])
+            let communityGamesPlayedByGameType = FirestoreStringKeyMaps.stringToInt(membershipData["communityGamesPlayedByGameType"])
 
             let displayNameFromMembership = membershipData["displayName"] as? String
             let profilePhotoUrlFromMembership = membershipData["profilePhotoUrl"] as? String
@@ -560,7 +658,9 @@ final class CommunityService: CommunityServiceProtocol {
                     displayName: displayNameFromMembership,
                     profilePhotoUrl: profilePhotoUrlFromMembership,
                     communityOdds: communityOdds,
-                    communityGamesPlayed: communityGamesPlayed
+                    communityGamesPlayed: communityGamesPlayed,
+                    communityOddsByGameType: communityOddsByGameType,
+                    communityGamesPlayedByGameType: communityGamesPlayedByGameType
                 ))
                 continue
             }
@@ -578,7 +678,9 @@ final class CommunityService: CommunityServiceProtocol {
                     displayName: displayName,
                     profilePhotoUrl: profilePhotoUrl,
                     communityOdds: communityOdds,
-                    communityGamesPlayed: communityGamesPlayed
+                    communityGamesPlayed: communityGamesPlayed,
+                    communityOddsByGameType: communityOddsByGameType,
+                    communityGamesPlayedByGameType: communityGamesPlayedByGameType
                 ))
             } else {
                 members.append(CommunityMemberRosterRow(
@@ -586,7 +688,9 @@ final class CommunityService: CommunityServiceProtocol {
                     displayName: "",
                     profilePhotoUrl: profilePhotoUrlFromMembership,
                     communityOdds: communityOdds,
-                    communityGamesPlayed: communityGamesPlayed
+                    communityGamesPlayed: communityGamesPlayed,
+                    communityOddsByGameType: communityOddsByGameType,
+                    communityGamesPlayedByGameType: communityGamesPlayedByGameType
                 ))
             }
         }
@@ -886,6 +990,9 @@ final class GameLogService: GameLogServiceProtocol {
         if let baseballStats = payload.baseballStats {
             data["baseballStats"] = baseballStats
         }
+        if let crossfireStats = payload.crossfireStats {
+            data["crossfireStats"] = crossfireStats
+        }
         try await AppFirestore.db()
             .collection("gameLogs")
             .document(payload.gameLogId)
@@ -920,6 +1027,11 @@ final class GameLogService: GameLogServiceProtocol {
             data["baseballStats"] = baseballStats
         } else {
             data["baseballStats"] = NSNull()
+        }
+        if let crossfireStats = payload.crossfireStats {
+            data["crossfireStats"] = crossfireStats
+        } else {
+            data["crossfireStats"] = NSNull()
         }
         do {
             try await AppFirestore.db()
@@ -1007,6 +1119,10 @@ extension GameLogService: FeedServiceProtocol {
         if let b = data["baseballStats"] as? [String: Any] {
             if let m = b["hitsByProfileId"] as? [String: Any] { ids.append(contentsOf: m.keys) }
         }
+        if let cf = data["crossfireStats"] as? [String: Any] {
+            if let m = cf["playerCupsHit"] as? [String: Any] { ids.append(contentsOf: m.keys) }
+            if let last = cf["lastCupByProfileId"] as? String, !last.isEmpty { ids.append(last) }
+        }
     }
 
     private static func stringIntMap(from value: Any?) -> [String: Int] {
@@ -1040,6 +1156,9 @@ extension GameLogService: FeedServiceProtocol {
         case "BASEBALL":
             guard let b = data["baseballStats"] as? [String: Any], !b.isEmpty else { return nil }
             return formatBaseballStats(b, resolveName: resolveName)
+        case "CROSSFIRE":
+            guard let cf = data["crossfireStats"] as? [String: Any], !cf.isEmpty else { return nil }
+            return formatCrossfireStats(cf, resolveName: resolveName)
         default:
             return nil
         }
@@ -1096,6 +1215,22 @@ extension GameLogService: FeedServiceProtocol {
             lines.append("\(resolveName(id)) had \(hits[id] ?? 0) hits!")
         }
         return lines.joined(separator: "\n")
+    }
+
+    private static func formatCrossfireStats(_ cf: [String: Any], resolveName: (String) -> String) -> String? {
+        var detailLines: [String] = []
+        let cups = stringIntMap(from: cf["playerCupsHit"])
+        for id in cups.keys.sorted(by: { resolveName($0) < resolveName($1) }) {
+            let n = cups[id] ?? 0
+            if n > 0 {
+                detailLines.append("\(resolveName(id)) made \(n) cups")
+            }
+        }
+        if let last = cf["lastCupByProfileId"] as? String, !last.isEmpty {
+            detailLines.append("\(resolveName(last)) hit the last cup!")
+        }
+        guard !detailLines.isEmpty else { return nil }
+        return (["Crossfire"] + detailLines).joined(separator: "\n")
     }
 
     /// Maps a `gameLogs` document to `FeedRow` (shared by home feed and community-scoped feed).

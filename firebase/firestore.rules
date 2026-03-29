@@ -45,11 +45,30 @@ service cloud.firestore {
         "profilePhotoUrl",
         "overallOdds",
         "overallGamesPlayed",
+        "overallOddsByGameType",
+        "overallGamesPlayedByGameType",
         "ageConfirmed21PlusAt",
         "onboardingCompleteAt",
         "createdAt",
         "updatedAt"
       ]);
+    }
+
+    // Clients must not set server-owned per–game-type maps on create.
+    function profileCreateOmitsServerOddsMaps() {
+      return !request.resource.data.keys().hasAny(["overallOddsByGameType"]) &&
+        !request.resource.data.keys().hasAny(["overallGamesPlayedByGameType"]);
+    }
+
+    // Once present (via Admin), per–game-type maps cannot be added or changed by the client.
+    function profileUpdateServerOddsMapsImmutable() {
+      let oddsOk = (!resource.data.keys().hasAny(["overallOddsByGameType"]) &&
+        !request.resource.data.keys().hasAny(["overallOddsByGameType"])) ||
+        request.resource.data.overallOddsByGameType == resource.data.overallOddsByGameType;
+      let gamesOk = (!resource.data.keys().hasAny(["overallGamesPlayedByGameType"]) &&
+        !request.resource.data.keys().hasAny(["overallGamesPlayedByGameType"])) ||
+        request.resource.data.overallGamesPlayedByGameType == resource.data.overallGamesPlayedByGameType;
+      return oddsOk && gamesOk;
     }
 
     // Callable-created communities include memberCount; older docs may omit it until backfilled.
@@ -98,6 +117,7 @@ service cloud.firestore {
         "beerBallStats",
         "battlePongStats",
         "baseballStats",
+        "crossfireStats",
         "createdAt",
         "updatedAt"
       ]);
@@ -164,6 +184,7 @@ service cloud.firestore {
       // Client can create/update own profile but cannot set server-owned fields.
       allow create: if isOwnProfile(profileId) &&
         hasProfileKeys() &&
+        profileCreateOmitsServerOddsMaps() &&
         request.resource.data.id == profileId &&
         request.resource.data.googleAuthId == uid() &&
         request.resource.data.overallOdds == 0 &&
@@ -171,6 +192,7 @@ service cloud.firestore {
 
       allow update: if isOwnProfile(profileId) &&
         hasProfileKeys() &&
+        profileUpdateServerOddsMapsImmutable() &&
         request.resource.data.id == resource.data.id &&
         request.resource.data.googleAuthId == resource.data.googleAuthId &&
         request.resource.data.overallOdds == resource.data.overallOdds &&
