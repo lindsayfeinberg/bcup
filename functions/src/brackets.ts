@@ -109,24 +109,27 @@ export const createBracket = onCall({region}, async (request) => {
 
   const participantProfileIds = sortUniqueProfileIds(rawIds);
 
-  if (participantProfileIds.length < 2) {
+  const participantCount = participantProfileIds.length;
+  if (participantCount < 2) {
     throw new HttpsError(
       "invalid-argument",
       "Community must have at least 2 members to create a bracket"
     );
   }
 
-  // 5. Validate enough players for at least one full match
-  if (participantProfileIds.length < 2 * teamSize) {
+  // 5. Need at least two teams when chunking by teamSize (last team may be short / uneven).
+  const teamCount = Math.ceil(participantCount / teamSize);
+  if (teamCount < 2) {
     throw new HttpsError(
       "invalid-argument",
-      `Need at least ${2 * teamSize} members for teamSize ${teamSize}`
+      `Not enough members for two teams at team size ${teamSize} (${participantCount} members). Try a smaller team size or add more members.`
     );
   }
 
   logger.info("createBracket: participants resolved", {
     communityId,
-    participantCount: participantProfileIds.length,
+    participantCount,
+    teamCount,
     seedMethod,
     teamSize,
   });
@@ -217,9 +220,9 @@ export const createBracket = onCall({region}, async (request) => {
   }
 
   logger.info("createBracket: bracket created", {
+    participantCount,
     bracketId,
     communityId,
-    participantCount: participantProfileIds.length,
     teamSize,
     status,
     roundCount: (rounds as unknown[]).length,

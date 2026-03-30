@@ -146,13 +146,12 @@ private struct BracketMatchPairCard: View {
 
     private var standardCard: some View {
         VStack(alignment: .leading, spacing: 0) {
-            slotRow(ids: ui.topParticipantIds, isWinner: ui.winningSide == .top)
-            Rectangle()
-                .fill(BracketBrandColor.accent.opacity(0.22))
-                .frame(height: 1)
-            slotRow(ids: ui.bottomParticipantIds, isWinner: ui.winningSide == .bottom)
-
             if ui.isPlayed {
+                slotRow(ids: ui.topParticipantIds, isWinner: ui.winningSide == .top)
+                Rectangle()
+                    .fill(BracketBrandColor.accent.opacity(0.22))
+                    .frame(height: 1)
+                slotRow(ids: ui.bottomParticipantIds, isWinner: ui.winningSide == .bottom)
                 VStack(alignment: .trailing, spacing: 6) {
                     Text("Final")
                         .font(AppFont.caption)
@@ -167,26 +166,41 @@ private struct BracketMatchPairCard: View {
                     }
                 }
                 .padding(.top, 6)
-            } else if ui.isWaitingOnFeeders {
-                Text("Waiting…")
+            } else if ui.isBlockedByIncompletePriorRounds {
+                Text("Earlier rounds must finish first.")
                     .font(AppFont.caption)
-                    .foregroundStyle(BracketBrandColor.accent.opacity(0.55))
-                    .padding(.top, 6)
-            }
+                    .foregroundStyle(Color.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+            } else {
+                slotRow(ids: ui.topParticipantIds, isWinner: ui.winningSide == .top)
+                Rectangle()
+                    .fill(BracketBrandColor.accent.opacity(0.22))
+                    .frame(height: 1)
+                slotRow(ids: ui.bottomParticipantIds, isWinner: ui.winningSide == .bottom)
 
-            if ui.canLogResult {
-                Button(action: onLogResult) {
-                    Text("Log game")
-                        .font(AppFont.buttonProminent)
-                        .frame(maxWidth: .infinity, minHeight: 36)
-                        .background(
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .fill(BracketBrandColor.accent)
-                        )
-                        .foregroundStyle(.white)
+                if ui.isWaitingOnFeeders {
+                    Text("Waiting…")
+                        .font(AppFont.caption)
+                        .foregroundStyle(BracketBrandColor.accent.opacity(0.55))
+                        .padding(.top, 6)
                 }
-                .buttonStyle(.plain)
-                .padding(.top, 8)
+
+                if ui.canLogResult {
+                    Button(action: onLogResult) {
+                        Text("Log game")
+                            .font(AppFont.buttonProminent)
+                            .frame(maxWidth: .infinity, minHeight: 36)
+                            .background(
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .fill(BracketBrandColor.accent)
+                            )
+                            .foregroundStyle(.white)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.top, 8)
+                }
             }
         }
         .padding(10)
@@ -245,12 +259,19 @@ struct BracketTreeView: View {
         rounds.sorted { $0.roundNumber < $1.roundNumber }
     }
 
+    /// Only rounds whose prerequisite rounds are fully played (hides future Rounds / Bracket tabs until then).
+    private var visibleRounds: [BracketRoundSnapshot] {
+        sortedRounds.filter {
+            BracketMatchDisplay.allPriorRoundsFullyPlayed(forMatchRound: $0.roundNumber, rounds: sortedRounds)
+        }
+    }
+
     private var flatMatches: [BracketMatchSnapshot] {
-        sortedRounds.flatMap(\.matches)
+        visibleRounds.flatMap(\.matches)
     }
 
     private var colForRound: [Int: Int] {
-        Dictionary(uniqueKeysWithValues: sortedRounds.enumerated().map { ($0.element.roundNumber, $0.offset) })
+        Dictionary(uniqueKeysWithValues: visibleRounds.enumerated().map { ($0.element.roundNumber, $0.offset) })
     }
 
     private var currentUserId: String? {
@@ -265,7 +286,7 @@ struct BracketTreeView: View {
         let layout = BracketLayoutCache(matchById: matchById, rowStride: rowStride)
         let maxY = flatMatches.map { layout.yCenter(for: $0.matchId) }.max() ?? rowStride
         let contentHeight = topPad + maxY + estimatedPairCardHalfHeight + treeContentBottomInset
-        let colCount = max(sortedRounds.count, 1)
+        let colCount = max(visibleRounds.count, 1)
         let contentWidth = leftPad + CGFloat(colCount) * cardWidth + CGFloat(max(0, colCount - 1)) * columnGap + leftPad
         let segments = BracketConnectorSegments.segments(
             matches: flatMatches,
@@ -293,12 +314,17 @@ struct BracketTreeView: View {
                     let col = colForRound[match.roundNumber] ?? 0
                     let xCenter = leftPad + CGFloat(col) * (cardWidth + columnGap) + cardWidth * 0.5
                     let y = topPad + layout.yCenter(for: match.matchId)
+                    let priorRoundsComplete = BracketMatchDisplay.allPriorRoundsFullyPlayed(
+                        forMatchRound: match.roundNumber,
+                        rounds: sortedRounds
+                    )
                     let ui = BracketMatchDisplay.uiState(
                         match: match,
                         matchById: matchById,
                         teamSize: teamSize,
                         currentUserId: currentUserId,
-                        viewerProfileIds: viewerProfileIds
+                        viewerProfileIds: viewerProfileIds,
+                        priorRoundsComplete: priorRoundsComplete
                     )
                     let isLoneFinalMatch = sortedRounds.last.map {
                         $0.matches.count == 1 && $0.matches.first?.matchId == match.matchId

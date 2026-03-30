@@ -14,12 +14,30 @@ struct BracketMatchUIState {
     let isPlayed: Bool
     let canLogResult: Bool
     let isWaitingOnFeeders: Bool
+    /// True when this match’s round cannot start until every match in lower-numbered rounds has a result.
+    let isBlockedByIncompletePriorRounds: Bool
     let winningSide: BracketWinningSide?
     /// Auto-advanced bye — hide in round list; show compact in tree.
     let isAutoAdvancedBye: Bool
 }
 
 enum BracketMatchDisplay {
+    /// Whether `n` players can form two sides (each ≤ `teamSize`, each at least 1) as in `chunkIntoTeams` ordering.
+    static func bracketMatchHasValidTwoSides(n: Int, teamSize: Int) -> Bool {
+        guard n >= 2, teamSize >= 1 else { return false }
+        let low = max(1, n - teamSize)
+        let high = min(teamSize, n - 1)
+        return high >= low
+    }
+
+    /// Split index after first side: `profileIds[0..<idx]` is team A, rest is team B (matches consecutive chunkIntoTeams teams).
+    static func splitIndexFirstTeam(n: Int, teamSize: Int) -> Int {
+        guard bracketMatchHasValidTwoSides(n: n, teamSize: teamSize) else { return max(1, n / 2) }
+        let low = max(1, n - teamSize)
+        let high = min(teamSize, n - 1)
+        return high >= low ? high : max(1, n / 2)
+    }
+
     /// Same rule as legacy `shouldShowMatchInRound`: hide winner-only bye rows from the rounds list.
     static func hideFromRoundsList(match: BracketMatchSnapshot, teamSize: Int) -> Bool {
         isAutoAdvancedBye(match: match, teamSize: teamSize)
@@ -40,19 +58,23 @@ enum BracketMatchDisplay {
         matchById: [String: BracketMatchSnapshot],
         teamSize: Int,
         currentUserId: String?,
-        viewerProfileIds: Set<String>? = nil
+        viewerProfileIds: Set<String>? = nil,
+        priorRoundsComplete: Bool = true
     ) -> BracketMatchUIState {
         let merged = resolvedRosterForLogging(match: match, matchById: matchById, teamSize: teamSize)
-        let top = Array(merged.prefix(teamSize))
-        let bottom = Array(merged.dropFirst(teamSize).prefix(teamSize))
+        let split = splitIndexFirstTeam(n: merged.count, teamSize: teamSize)
+        let top = Array(merged.prefix(split))
+        let bottom = Array(merged.dropFirst(split))
         let played = isPlayed(match: match)
         let waiting = merged.isEmpty && (match.feederMatchIds?.isEmpty == false)
+        let blockedByPrior = !played && !priorRoundsComplete
         let canLog = canLogResult(
             match: match,
             matchById: matchById,
             teamSize: teamSize,
             currentUserId: currentUserId,
-            viewerProfileIds: viewerProfileIds
+            viewerProfileIds: viewerProfileIds,
+            priorRoundsComplete: priorRoundsComplete
         )
         let winSide = winningSide(match: match, top: top, bottom: bottom, teamSize: teamSize)
         let bye = isAutoAdvancedBye(match: match, teamSize: teamSize)
@@ -63,9 +85,23 @@ enum BracketMatchDisplay {
             isPlayed: played,
             canLogResult: canLog,
             isWaitingOnFeeders: waiting,
+            isBlockedByIncompletePriorRounds: blockedByPrior,
             winningSide: winSide,
             isAutoAdvancedBye: bye
         )
+    }
+
+    /// Every match in rounds strictly before `forMatchRound` has been played (has winner or loser data).
+    static func allPriorRoundsFullyPlayed(
+        forMatchRound matchRound: Int,
+        rounds: [BracketRoundSnapshot]
+    ) -> Bool {
+        for round in rounds where round.roundNumber < matchRound {
+            for m in round.matches where !isPlayed(match: m) {
+                return false
+            }
+        }
+        return true
     }
 
     /// Roster order passed into `GameLogBracketContext` and used for top/bottom slots. Prefer a full stored list for
@@ -148,11 +184,24 @@ enum BracketMatchDisplay {
         matchById: [String: BracketMatchSnapshot],
         teamSize: Int,
         currentUserId: String?,
-        viewerProfileIds: Set<String>? = nil
+        viewerProfileIds: Set<String>? = nil,
+        priorRoundsComplete: Bool = true
     ) -> Bool {
+        guard priorRoundsComplete else { return false }
         let roster = resolvedRosterForLogging(match: match, matchById: matchById, teamSize: teamSize)
         let expected = 2 * teamSize
-        guard !isPlayed(match: match), roster.count == expected else { return false }
+        guard !isPlayed(match: match) else { return false }
+
+        let hasActiveFeeders = match.feederMatchIds?.isEmpty == false
+        if hasActiveFeeders {
+            guard roster.count == expected else { return false }
+        } else {
+            let decoded = match.participantProfileIds ?? []
+            guard roster.count >= 2,
+                  roster.count == decoded.count,
+                  bracketMatchHasValidTwoSides(n: roster.count, teamSize: teamSize)
+            else { return false }
+        }
 
         let viewers: Set<String> = viewerProfileIds ?? Set([currentUserId].compactMap { $0 })
         guard !viewers.isEmpty else { return false }

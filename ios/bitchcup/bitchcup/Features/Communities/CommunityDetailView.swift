@@ -63,13 +63,14 @@ struct CommunityDetailView: View {
         return trimmed.isEmpty ? "League" : trimmed
     }
 
-    /// Matches server rule: at least `2 * teamSize` members for one full match.
-    private var minMembersForBracket: Int {
-        2 * selectedTeamSize
+    /// Teams formed by chunking the seed list in `teamSize` slices; the last team may have fewer players.
+    private var teamCountForBracket: Int {
+        guard selectedTeamSize > 0 else { return 0 }
+        return (members.count + selectedTeamSize - 1) / selectedTeamSize
     }
 
     private var hasEnoughMembersForSelectedTeamSize: Bool {
-        members.count >= minMembersForBracket
+        members.count >= 2 && teamCountForBracket >= 2
     }
 
     /// Entry-point gating: only disable the *popup opener* when no bracket is possible at all.
@@ -78,21 +79,15 @@ struct CommunityDetailView: View {
         members.count >= 2
     }
 
-    private var isMemberCountDivisibleByTeamSize: Bool {
-        guard selectedTeamSize > 0 else { return false }
-        // If teamSize is "players per side", total players must split cleanly into teams.
-        return members.count % selectedTeamSize == 0
-    }
-
-    private var teamSizeDivisibilityErrorMessage: String? {
-        guard selectedTeamSize > 0 else { return "Team size must be at least 1." }
-        guard !members.isEmpty else { return nil }
-        guard !isMemberCountDivisibleByTeamSize else { return nil }
-        return "League member count (\(members.count)) must be divisible by team size (\(selectedTeamSize))."
+    private var unevenTeamSplitHint: String? {
+        guard selectedTeamSize > 0, members.count >= 2 else { return nil }
+        guard members.count % selectedTeamSize != 0 else { return nil }
+        guard hasEnoughMembersForSelectedTeamSize else { return nil }
+        return "League size doesn’t divide evenly into \(selectedTeamSize)-player teams — one team will have fewer players."
     }
 
     private var canCreateBracket: Bool {
-        hasEnoughMembersForSelectedTeamSize && isMemberCountDivisibleByTeamSize
+        hasEnoughMembersForSelectedTeamSize
     }
 
     /// Highest effective odds for `rankingBasis` first; ties broken by `profileId` for stable order.
@@ -251,14 +246,14 @@ struct CommunityDetailView: View {
                                     .pickerStyle(.segmented)
 
                                     VStack(alignment: .leading, spacing: 4) {
-                                        Text("Players per side in each match is \(selectedTeamSize)")
+                                        Text("Most lineups use \(selectedTeamSize) per side; uneven leagues get a shorter last team.")
                                             .font(.caption)
                                             .foregroundStyle(.secondary)
 
-                                        if let teamSizeDivisibilityErrorMessage {
-                                            Text(teamSizeDivisibilityErrorMessage)
+                                        if let unevenTeamSplitHint {
+                                            Text(unevenTeamSplitHint)
                                                 .font(.caption)
-                                                .foregroundStyle(.red)
+                                                .foregroundStyle(.secondary)
                                         }
                                     }
                                 }
@@ -271,7 +266,7 @@ struct CommunityDetailView: View {
                                 }
 
                                 if !hasEnoughMembersForSelectedTeamSize {
-                                    Text("Need at least \(minMembersForBracket) members for \(selectedTeamSize)v\(selectedTeamSize).")
+                                    Text("Need at least 2 members and enough for two teams (for \(selectedTeamSize)v\(selectedTeamSize), more than \(selectedTeamSize) people in the league).")
                                         .font(.caption)
                                         .foregroundStyle(.red)
                                         .multilineTextAlignment(.leading)
@@ -485,7 +480,7 @@ struct CommunityDetailView: View {
             }
 
             if !canCreateBracket {
-                Text("Need at least \(minMembersForBracket) members for \(selectedTeamSize)v\(selectedTeamSize).")
+                Text("Need at least 2 members and enough for two teams at the selected team size.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -765,8 +760,8 @@ struct CommunityDetailView: View {
     }
     private func createBracket() async {
         guard canCreateBracket else {
-            bracketErrorMessage = teamSizeDivisibilityErrorMessage
-                ?? "League doesn’t have enough members for a team of size \(selectedTeamSize)."
+            bracketErrorMessage =
+                "Need at least 2 members and enough for two teams at team size \(selectedTeamSize)."
             return
         }
         if UITestRuntime.participatesInUiTestHarness {

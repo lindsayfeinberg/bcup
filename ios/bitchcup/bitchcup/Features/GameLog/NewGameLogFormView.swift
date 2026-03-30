@@ -76,7 +76,35 @@ struct NewGameLogFormView: View {
 
     /// Bracket match defines the full roster; pickers stay read-only and teams follow outcome only.
     private var bracketTeamsAreFixed: Bool {
-        isBracketLinked && bracketParticipantProfileIdsInOrder.count >= 2 * teamSize
+        isBracketLinked &&
+            BracketMatchDisplay.bracketMatchHasValidTwoSides(
+                n: bracketParticipantProfileIdsInOrder.count,
+                teamSize: teamSize
+            )
+    }
+
+    /// Winner/loser set sizes must match the two sides derived from stored participant order (supports uneven sides).
+    private var bracketSelectionMatchesSideSizes: Bool {
+        guard isBracketLinked else { return true }
+        let ids = bracketParticipantProfileIdsInOrder
+        let n = ids.count
+        guard n >= 2,
+              BracketMatchDisplay.bracketMatchHasValidTwoSides(n: n, teamSize: teamSize)
+        else { return false }
+        let firstCount = BracketMatchDisplay.splitIndexFirstTeam(n: n, teamSize: teamSize)
+        let secondCount = n - firstCount
+        let w = selectedWinnerProfileIds.count
+        let l = selectedLoserProfileIds.count
+        guard w + l == n,
+              Set(ids) == selectedWinnerProfileIds.union(selectedLoserProfileIds)
+        else { return false }
+        return (w == firstCount && l == secondCount) || (w == secondCount && l == firstCount)
+    }
+
+    private var participantSelectionMatchesExpectedTeamSizes: Bool {
+        if isBracketLinked { return bracketSelectionMatchesSideSizes }
+        return selectedWinnerProfileIds.count == teamSize &&
+            selectedLoserProfileIds.count == teamSize
     }
 
     /// Roster rows for everyone in the bracket match (order preserved). Unknown ids get a placeholder row so pickers and counts stay correct when the league fetch is incomplete.
@@ -627,7 +655,7 @@ struct NewGameLogFormView: View {
             let selectionPoolMembers = isBracketLinked ? bracketParticipantPoolMembers : members
             // Bracket matches already define exactly who plays; don’t require every id to appear in the league roster response.
             let hasEnoughMembers = isBracketLinked
-                ? (bracketParticipantProfileIdsInOrder.count >= 2 * teamSize)
+                ? bracketTeamsAreFixed
                 : (selectionPoolMembers.count >= (2 * teamSize))
             if let outcome, let myUserId = currentUserId {
                 let isMySideWinners = (outcome == .won)
@@ -638,7 +666,7 @@ struct NewGameLogFormView: View {
                     Section {
                         Text(
                             isBracketLinked
-                                ? "This bracket match doesn’t list all \(2 * teamSize) players yet. Try again after the matchup is fully set, or contact a league admin."
+                                ? "This bracket match doesn’t list a valid two-sided roster yet. Try again after the matchup is fully set, or contact a league admin."
                                 : "League doesn’t have enough members for a team of size \(teamSize)."
                         )
                             .font(AppFont.subheadline)
@@ -1413,8 +1441,7 @@ struct NewGameLogFormView: View {
     private var canSubmitGameLog: Bool {
         !selectedCommunityId.isEmpty &&
         outcome != nil &&
-        selectedWinnerProfileIds.count == teamSize &&
-        selectedLoserProfileIds.count == teamSize &&
+        participantSelectionMatchesExpectedTeamSizes &&
         hasRequiredPhotos &&
         currentStatsValidationError == nil &&
         (!isBracketLinked || currentUserIsGameMember)
@@ -1423,8 +1450,7 @@ struct NewGameLogFormView: View {
     private var canSubmitWithoutPhotos: Bool {
         !selectedCommunityId.isEmpty &&
         outcome != nil &&
-        selectedWinnerProfileIds.count == teamSize &&
-        selectedLoserProfileIds.count == teamSize &&
+        participantSelectionMatchesExpectedTeamSizes &&
         currentStatsValidationError == nil &&
         (!isBracketLinked || currentUserIsGameMember)
     }
@@ -1434,8 +1460,12 @@ struct NewGameLogFormView: View {
         if frontPhotoData == nil || backPhotoData == nil {
             reasons.append("Photos are required and will be captured when you submit")
         }
-        if selectedWinnerProfileIds.count != teamSize || selectedLoserProfileIds.count != teamSize {
-            reasons.append("Winners and losers must each equal team size")
+        if !participantSelectionMatchesExpectedTeamSizes {
+            reasons.append(
+                isBracketLinked
+                    ? "Winners and losers must match the bracket matchup’s two sides"
+                    : "Winners and losers must each equal team size"
+            )
         }
         if selectedGameType == .pong, teamSize > 1, isPongCupBreakdownEnabled {
             let hasAnyPongCups = pongTotalCups > 0
@@ -1497,6 +1527,9 @@ struct NewGameLogFormView: View {
         guard let outcome else { return false }
         guard !selectedOpponentSet(for: outcome).isEmpty else { return false }
         if teamSize == 1 {
+            return true
+        }
+        if bracketTeamsAreFixed {
             return true
         }
         guard let myUserId = currentUserId else { return false }
@@ -1822,16 +1855,19 @@ struct NewGameLogFormView: View {
 
         if isBracketLinked, teamSize > 1 {
             let ids = bracketParticipantProfileIdsInOrder
-            guard ids.count >= 2 * teamSize else {
+            let split = BracketMatchDisplay.splitIndexFirstTeam(n: ids.count, teamSize: teamSize)
+            guard ids.count >= 2,
+                  BracketMatchDisplay.bracketMatchHasValidTwoSides(n: ids.count, teamSize: teamSize)
+            else {
                 applySoloOutcomeLock()
                 return
             }
             resetParticipantSelectionState()
 
-            let teamA = Array(ids[0..<teamSize])
-            let teamB = Array(ids[teamSize..<(2 * teamSize)])
+            let teamA = Array(ids[0..<split])
+            let teamB = Array(ids[split...])
             let myIndex = ids.firstIndex(of: myUserId)
-            let myTeamIsFirstHalf = myIndex.map { $0 < teamSize } ?? true
+            let myTeamIsFirstHalf = myIndex.map { $0 < split } ?? true
 
             let myTeam = myTeamIsFirstHalf ? teamA : teamB
             let otherTeam = myTeamIsFirstHalf ? teamB : teamA

@@ -159,7 +159,9 @@ struct BracketsView: View {
                     let sortedRounds = bracketRounds.sorted(by: { $0.roundNumber < $1.roundNumber })
                     let finalRoundNumber = sortedRounds.last?.roundNumber
 
-                    ForEach(sortedRounds, id: \.roundNumber) { round in
+                    ForEach(sortedRounds.filter {
+                        BracketMatchDisplay.allPriorRoundsFullyPlayed(forMatchRound: $0.roundNumber, rounds: sortedRounds)
+                    }, id: \.roundNumber) { round in
                         let visibleMatches = round.matches.filter { shouldShowMatchInRound($0) }
 
                         VStack(alignment: .leading, spacing: 10) {
@@ -179,12 +181,18 @@ struct BracketsView: View {
                                     .foregroundStyle(.secondary)
                             }
 
+                            let priorRoundsComplete = BracketMatchDisplay.allPriorRoundsFullyPlayed(
+                                forMatchRound: round.roundNumber,
+                                rounds: sortedRounds
+                            )
+
                             ForEach(Array(visibleMatches.enumerated()), id: \.element.id) { index, match in
                                 BracketMatchRow(
                                     matchIndex: index,
                                     match: match,
                                     members: bracketMembers,
                                     matchById: matchById,
+                                    priorRoundsComplete: priorRoundsComplete,
                                     onLogResult: { effectiveParticipantProfileIds in
                                         logResultContext = GameLogBracketContext(
                                             bracketId: bracketId,
@@ -353,6 +361,7 @@ private struct BracketMatchRow: View {
     let match: BracketMatchSnapshot
     let members: [CommunityMemberRosterRow]
     let matchById: [String: BracketMatchSnapshot]
+    let priorRoundsComplete: Bool
     let onLogResult: ([String]) -> Void
     let teamSize: Int
 
@@ -370,7 +379,8 @@ private struct BracketMatchRow: View {
             matchById: matchById,
             teamSize: teamSize,
             currentUserId: currentUserId,
-            viewerProfileIds: viewerProfileIds
+            viewerProfileIds: viewerProfileIds,
+            priorRoundsComplete: priorRoundsComplete
         )
     }
 
@@ -402,7 +412,12 @@ private struct BracketMatchRow: View {
                         .lineLimit(3)
                 }
             } else {
-                if ui.isWaitingOnFeeders {
+                if ui.isBlockedByIncompletePriorRounds {
+                    Text("Earlier rounds must finish before this game can be logged.")
+                        .font(AppFont.footnote)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(3)
+                } else if ui.isWaitingOnFeeders {
                     Text("Waiting for previous matches...")
                         .font(AppFont.footnote)
                         .foregroundStyle(.secondary)
