@@ -1,7 +1,12 @@
 import * as admin from "firebase-admin";
-import {HttpsError, onCall} from "firebase-functions/v2/https";
+import {HttpsError, onCall, type CallableRequest} from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
-import {isValidSeedMethod, validateRoundsStructure} from "./bracketModel.js";
+import {
+  isValidSeedMethod,
+  validateRoundsStructure,
+  validateRoundOneCoversParticipants,
+  type BracketRound,
+} from "./bracketModel.js";
 import {buildCommunityOddsRounds} from "./bracketSeeding.js";
 import {buildRandomSeededRounds} from "./bracketRandomSeed.js";
 
@@ -39,23 +44,83 @@ export function sortUniqueProfileIds(ids: string[]): string[] {
 }
 
 /**
+ * Reads `profileId` from membership document data (string or legacy int).
+ * @param {Record<string, unknown>} data Raw membership fields.
+ * @return {?string} Non-empty profile id or null.
+ */
+export function extractProfileIdFromMembershipData(
+  data: Record<string, unknown>
+): string | null {
+  const raw = data["profileId"];
+  if (typeof raw === "string") {
+    const t = raw.trim();
+    return t.length > 0 ? t : null;
+  }
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    const s = String(Math.trunc(raw));
+    return s.length > 0 ? s : null;
+  }
+  return null;
+}
+
+const BUILTIN_BRACKET_GAME_TYPES = new Set([
+  "PONG",
+  "BEER_BALL",
+  "BATTLE_PONG",
+  "BASEBALL",
+  "CROSSFIRE",
+]);
+
+/**
+ * Normalizes callable `gameType` to a built-in code or `CUSTOM`.
+ * Unknown strings default to `PONG`.
+ * @param {unknown} raw Request field `gameType`.
+ * @return {string} Stored `brackets.gameType` value.
+ */
+export function parseBracketGameType(raw: unknown): string {
+  if (typeof raw !== "string") {
+    return "PONG";
+  }
+  const t = raw.trim();
+  if (t === "CUSTOM") {
+    return "CUSTOM";
+  }
+  if (BUILTIN_BRACKET_GAME_TYPES.has(t)) {
+    return t;
+  }
+  return "PONG";
+}
+
+/** Callable `teamSize`: max players per team (chunking uses a short last team when N is not divisible). */
+export const BRACKET_TEAM_SIZE_MAX = 20;
+
+/**
  * Parses and validates teamSize from request data.
- * Must be integer 1–4.
+ * Integer 1–{@link BRACKET_TEAM_SIZE_MAX} (inclusive).
  * @param {unknown} raw Raw value from request.
  * @return {number} Validated teamSize.
  */
-function parseTeamSize(raw: unknown): number {
+export function parseBracketCallableTeamSize(raw: unknown): number {
   const n = typeof raw === "number" ? raw : Number(raw);
-  if (!Number.isInteger(n) || n < 1 || n > 4) {
+  if (!Number.isInteger(n) || n < 1 || n > BRACKET_TEAM_SIZE_MAX) {
     throw new HttpsError(
       "invalid-argument",
-      "teamSize must be an integer between 1 and 4"
+      `teamSize must be an integer between 1 and ${BRACKET_TEAM_SIZE_MAX}`
     );
   }
   return n;
 }
 
-export const createBracket = onCall({region}, async (request) => {
+/**
+ * Creates a league bracket (odds / random / manual seed path).
+ * Last team may have fewer than `teamSize` players when member count is not divisible.
+ */
+async function runCreateBracket(request: CallableRequest) {
+  logger.info("runCreateBracket: entry", {
+    impl: "v2-uneven-last-team-ok",
+    uid: request.auth?.uid,
+  });
+
   // 1. Auth
   if (!request.auth) {
     throw new HttpsError("unauthenticated", "Sign in required");
@@ -82,7 +147,8 @@ export const createBracket = onCall({region}, async (request) => {
     );
   }
 
-  const teamSize = parseTeamSize(request.data?.teamSize);
+  const teamSize = parseBracketCallableTeamSize(request.data?.teamSize);
+  const gameType = parseBracketGameType(request.data?.gameType);
 
   // 3. Authorization — caller must be a member
   const membershipId = `${communityId}_${uid}`;
@@ -103,11 +169,30 @@ export const createBracket = onCall({region}, async (request) => {
     .where("communityId", "==", communityId)
     .get();
 
-  const rawIds: string[] = membershipsSnap.docs
-    .map((doc) => doc.data()["profileId"])
-    .filter((id): id is string => typeof id === "string");
+  const rawIds: string[] = [];
+  let skippedMembershipsMissingProfileId = 0;
+  for (const doc of membershipsSnap.docs) {
+    const data = doc.data() as Record<string, unknown>;
+    const id = extractProfileIdFromMembershipData(data);
+    if (id) {
+      rawIds.push(id);
+    } else {
+      skippedMembershipsMissingProfileId += 1;
+      logger.warn("runCreateBracket: membership skipped (no profileId)", {
+        communityId,
+        membershipDocId: doc.id,
+      });
+    }
+  }
 
   const participantProfileIds = sortUniqueProfileIds(rawIds);
+  if (skippedMembershipsMissingProfileId > 0) {
+    logger.warn("runCreateBracket: memberships without usable profileId", {
+      communityId,
+      skippedMembershipsMissingProfileId,
+      membershipDocsRead: membershipsSnap.docs.length,
+    });
+  }
 
   const participantCount = participantProfileIds.length;
   if (participantCount < 2) {
@@ -126,12 +211,42 @@ export const createBracket = onCall({region}, async (request) => {
     );
   }
 
+  let customGameDefinitionId: string | undefined;
+  let customGameDefinitionName: string | undefined;
+  if (gameType === "CUSTOM") {
+    const rawCustomId = request.data?.customGameDefinitionId;
+    const customId =
+      typeof rawCustomId === "string" ? rawCustomId.trim() : "";
+    if (!customId) {
+      throw new HttpsError(
+        "invalid-argument",
+        "customGameDefinitionId is required when gameType is CUSTOM"
+      );
+    }
+    const defSnap = await db
+      .collection("communities")
+      .doc(communityId)
+      .collection("gameDefinitions")
+      .doc(customId)
+      .get();
+    if (!defSnap.exists) {
+      throw new HttpsError("not-found", "Game definition not found");
+    }
+    const defName = defSnap.data()?.["name"];
+    if (typeof defName !== "string" || !defName.trim()) {
+      throw new HttpsError("internal", "Invalid game definition");
+    }
+    customGameDefinitionId = customId;
+    customGameDefinitionName = defName.trim();
+  }
+
   logger.info("createBracket: participants resolved", {
     communityId,
     participantCount,
     teamCount,
     seedMethod,
     teamSize,
+    gameType,
   });
 
   // 6. Build rounds: COMMUNITY_ODDS (odds), RANDOM (deterministic shuffle),
@@ -154,6 +269,21 @@ export const createBracket = onCall({region}, async (request) => {
         logger.error("createBracket: invalid rounds generated", {
           bracketId,
           errors: validation.errors,
+        });
+        throw new HttpsError(
+          "internal",
+          "Could not generate valid bracket rounds"
+        );
+      }
+      const rosterCheck = validateRoundOneCoversParticipants(
+        generated as BracketRound[],
+        participantProfileIds
+      );
+      if (!rosterCheck.valid) {
+        logger.error("createBracket: round1 does not cover all participants", {
+          bracketId,
+          errors: rosterCheck.errors,
+          participantCount: participantProfileIds.length,
         });
         throw new HttpsError(
           "internal",
@@ -187,6 +317,21 @@ export const createBracket = onCall({region}, async (request) => {
           "Could not generate valid bracket rounds"
         );
       }
+      const rosterCheck = validateRoundOneCoversParticipants(
+        generated as BracketRound[],
+        participantProfileIds
+      );
+      if (!rosterCheck.valid) {
+        logger.error("createBracket: RANDOM round1 roster mismatch", {
+          bracketId,
+          errors: rosterCheck.errors,
+          participantCount: participantProfileIds.length,
+        });
+        throw new HttpsError(
+          "internal",
+          "Could not generate valid bracket rounds"
+        );
+      }
       rounds = generated;
     } catch (e) {
       if (e instanceof HttpsError) throw e;
@@ -203,17 +348,23 @@ export const createBracket = onCall({region}, async (request) => {
   const status = seedMethod === "MANUAL" ? "DRAFT" : "ACTIVE";
 
   try {
-    await bracketRef.set({
+    const bracketDoc: Record<string, unknown> = {
       id: bracketId,
       communityId,
       participantProfileIds,
       seedMethod,
       teamSize,
+      gameType,
       status,
       rounds,
       createdAt: now,
       updatedAt: now,
-    });
+    };
+    if (gameType === "CUSTOM" && customGameDefinitionId) {
+      bracketDoc.customGameDefinitionId = customGameDefinitionId;
+      bracketDoc.customGameDefinitionName = customGameDefinitionName;
+    }
+    await bracketRef.set(bracketDoc);
   } catch (e) {
     logger.error("createBracket: Firestore write failed", e);
     throw new HttpsError("internal", "Could not create bracket");
@@ -229,4 +380,13 @@ export const createBracket = onCall({region}, async (request) => {
   });
 
   return newEnvelope({bracketId});
-});
+}
+
+/**
+ * **Preferred callable name for new clients.** Some Firebase projects still have a legacy
+ * Gen1 `createBracket` deployed; the iOS app calls this name so it always hits this Gen2 implementation.
+ */
+export const createLeagueBracket = onCall({region}, runCreateBracket);
+
+/** @deprecated Prefer routing clients to {@link createLeagueBracket} to avoid Gen1 name collisions. */
+export const createBracket = onCall({region}, runCreateBracket);

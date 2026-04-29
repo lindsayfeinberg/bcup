@@ -19,9 +19,12 @@ struct GameLogCaptureEntryView: View {
                 ProgressView("Opening camera…")
                 .navigationTitle("Capture Game Photos")
                 .navigationBarTitleDisplayMode(.inline)
+                .communityFlowNavigationBarChrome()
                 .toolbar {
                     ToolbarItem(placement: .navigationBarLeading) {
-                        Button("Cancel") { dismiss() }
+                        CommunityFlowAccentToolbarButton(title: "Cancel") {
+                            dismiss()
+                        }
                     }
                 }
             }

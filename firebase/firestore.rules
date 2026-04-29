@@ -18,6 +18,10 @@ service cloud.firestore {
       return request.auth.uid;
     }
 
+    function isPlatformAdmin() {
+      return signedIn() && request.auth.token.platformAdmin == true;
+    }
+
     function isOwnProfile(profileId) {
       return signedIn() && uid() == profileId;
     }
@@ -31,6 +35,14 @@ service cloud.firestore {
         exists(
           /databases/$(database)/documents/memberships/$(membershipIdFor(communityId, uid()))
         );
+    }
+
+    // Set by Admin when creator hides a league; blocks reads of other members' roster rows and league content.
+    function currentUserLeagueHiddenFromMembers(communityId) {
+      let mid = membershipIdFor(communityId, uid());
+      return exists(/databases/$(database)/documents/memberships/$(mid)) &&
+        get(/databases/$(database)/documents/memberships/$(mid)).data.keys().hasAny(['leagueHiddenForMember']) &&
+        get(/databases/$(database)/documents/memberships/$(mid)).data.leagueHiddenForMember == true;
     }
 
     function keysOnly(allowed) {
@@ -71,26 +83,24 @@ service cloud.firestore {
       return oddsOk && gamesOk;
     }
 
-    // Callable-created communities include memberCount; older docs may omit it until backfilled.
-    function hasCommunityKeys() {
+    // Callable-created communities include memberCount; optional hiddenFromMembers toggled only via Admin/callable.
+    function hasCommunityDocumentKeys() {
       return request.resource.data.keys().hasOnly([
         "id",
         "name",
         "createdByProfileId",
         "inviteCode",
         "inviteLink",
-        "createdAt",
-        "updatedAt"
-      ]) || request.resource.data.keys().hasOnly([
-        "id",
-        "name",
-        "createdByProfileId",
-        "inviteCode",
-        "inviteLink",
         "memberCount",
+        "hiddenFromMembers",
         "createdAt",
         "updatedAt"
       ]);
+    }
+
+    function communityHiddenPreserved() {
+      return (!resource.data.keys().hasAny(['hiddenFromMembers']) && !request.resource.data.keys().hasAny(['hiddenFromMembers'])) ||
+        request.resource.data.hiddenFromMembers == resource.data.hiddenFromMembers;
     }
 
     function communityMemberCountPreserved() {
@@ -105,6 +115,8 @@ service cloud.firestore {
         "bracketId",
         "bracketMatchId",
         "gameType",
+        "customGameDefinitionId",
+        "customGameDefinitionName",
         "createdByProfileId",
         "participantProfileIds",
         "winnerProfileIds",
@@ -121,6 +133,65 @@ service cloud.firestore {
         "createdAt",
         "updatedAt"
       ]);
+    }
+
+    // Phase E2: built-in `gameType` OR sentinel `CUSTOM` + `customGameDefinitionId`.
+    function gameLogIsBuiltinGameType(gt) {
+      return gt == "PONG" || gt == "BEER_BALL" || gt == "BATTLE_PONG" ||
+        gt == "BASEBALL" || gt == "CROSSFIRE";
+    }
+
+    function gameLogIsAllowedGameType(gt) {
+      return gameLogIsBuiltinGameType(gt) || gt == "CUSTOM";
+    }
+
+    function gameLogCustomDefIdPresent(data) {
+      return data.keys().hasAny(["customGameDefinitionId"]) &&
+        data.customGameDefinitionId is string &&
+        data.customGameDefinitionId.size() > 0 &&
+        data.customGameDefinitionId.size() <= 128;
+    }
+
+    function gameLogCustomDefinitionNameValid(data) {
+      return !data.keys().hasAny(["customGameDefinitionName"]) ||
+        data.customGameDefinitionName == null ||
+        (data.customGameDefinitionName is string &&
+          data.customGameDefinitionName.size() > 0 &&
+          data.customGameDefinitionName.size() <= 80);
+    }
+
+    function gameLogGameTypeAndCustomValid(data) {
+      return data.gameType is string &&
+        gameLogIsAllowedGameType(data.gameType) &&
+        (data.gameType != "CUSTOM" || gameLogCustomDefIdPresent(data)) &&
+        (gameLogIsBuiltinGameType(data.gameType) ?
+          (!data.keys().hasAny(["customGameDefinitionId"]) ||
+            data.customGameDefinitionId == null) :
+          true) &&
+        (gameLogIsBuiltinGameType(data.gameType) ?
+          (!data.keys().hasAny(["customGameDefinitionName"]) ||
+            data.customGameDefinitionName == null) :
+          gameLogCustomDefinitionNameValid(data));
+    }
+
+    function gameLogCustomDefIdValue(data) {
+      return !data.keys().hasAny(["customGameDefinitionId"]) ?
+        null :
+        data.customGameDefinitionId;
+    }
+
+    function gameLogCustomDefinitionNameValue(data) {
+      return !data.keys().hasAny(["customGameDefinitionName"]) ?
+        null :
+        data.customGameDefinitionName;
+    }
+
+    function gameLogGameTypeAndCustomImmutableOnUpdate() {
+      return request.resource.data.gameType == resource.data.gameType &&
+        gameLogCustomDefIdValue(request.resource.data) ==
+        gameLogCustomDefIdValue(resource.data) &&
+        gameLogCustomDefinitionNameValue(request.resource.data) ==
+        gameLogCustomDefinitionNameValue(resource.data);
     }
 
     // MVP/LVP optional; when set must be a participant and must differ from each other.
@@ -171,8 +242,58 @@ service cloud.firestore {
         "participantProfileIds",
         "seedMethod",
         "teamSize",
+        "gameType",
+        "customGameDefinitionId",
+        "customGameDefinitionName",
         "status",
         "rounds",
+        "createdAt",
+        "updatedAt"
+      ]);
+    }
+
+    // Phase C — league board messages (`data-contracts.md`).
+    function hasCommunityMessageKeysOnCreate() {
+      let ks = request.resource.data.keys();
+      return ks.hasOnly([
+        "id",
+        "communityId",
+        "authorProfileId",
+        "text",
+        "createdAt",
+        "updatedAt"
+      ]) ||
+        ks.hasOnly([
+          "id",
+          "communityId",
+          "authorProfileId",
+          "text",
+          "deleted",
+          "createdAt",
+          "updatedAt"
+        ]);
+    }
+
+    function communityMessageCreateValid(communityId, messageId) {
+      return request.resource.data.id == messageId &&
+        request.resource.data.communityId == communityId &&
+        request.resource.data.authorProfileId == uid() &&
+        request.resource.data.text is string &&
+        request.resource.data.text.size() > 0 &&
+        request.resource.data.text.size() <= 4000 &&
+        request.resource.data.createdAt is timestamp &&
+        request.resource.data.updatedAt is timestamp &&
+        (!request.resource.data.keys().hasAny(["deleted"]) ||
+          request.resource.data.deleted == false);
+    }
+
+    function hasGameDefinitionKeys() {
+      return request.resource.data.keys().hasOnly([
+        "id",
+        "communityId",
+        "name",
+        "rulesText",
+        "createdByProfileId",
         "createdAt",
         "updatedAt"
       ]);
@@ -203,14 +324,21 @@ service cloud.firestore {
     }
 
     match /communities/{communityId} {
-      allow read: if isCommunityMember(communityId);
+      allow read: if isPlatformAdmin() || (
+        isCommunityMember(communityId) && (
+          resource.data.createdByProfileId == uid() ||
+          !resource.data.keys().hasAny(['hiddenFromMembers']) ||
+          resource.data.hiddenFromMembers == false
+        )
+      );
 
       // Created only by Cloud Functions (Admin SDK) so joins can enforce caps atomically.
       allow create: if false;
 
-      // Creator may edit display name; memberCount changes only via Admin (e.g. join callable).
+      // Creator may edit display name; memberCount / hiddenFromMembers change only via Admin (e.g. callables).
       allow update: if signedIn() &&
-        hasCommunityKeys() &&
+        hasCommunityDocumentKeys() &&
+        communityHiddenPreserved() &&
         isCommunityMember(communityId) &&
         resource.data.createdByProfileId == uid() &&
         request.resource.data.id == resource.data.id &&
@@ -221,12 +349,43 @@ service cloud.firestore {
         communityMemberCountPreserved();
 
       allow delete: if false;
+
+      match /messages/{messageId} {
+        // Path already scopes `communityId`; create rules validate payload `communityId`.
+        allow read: if isPlatformAdmin() || (
+          isCommunityMember(communityId) &&
+          !currentUserLeagueHiddenFromMembers(communityId)
+        );
+
+        allow create: if signedIn() &&
+          hasCommunityMessageKeysOnCreate() &&
+          communityMessageCreateValid(communityId, messageId) &&
+          isCommunityMember(communityId) &&
+          !currentUserLeagueHiddenFromMembers(communityId);
+
+        // V1: no client edits; moderation via Admin SDK / Phase D callables.
+        allow update, delete: if false;
+      }
+
+      match /gameDefinitions/{gameDefinitionId} {
+        allow read: if isPlatformAdmin() || (
+          isCommunityMember(communityId) &&
+          !currentUserLeagueHiddenFromMembers(communityId)
+        );
+
+        // E1: custom game definitions are managed by trusted callables (Admin SDK).
+        allow create, update, delete: if false;
+      }
     }
 
     match /memberships/{membershipId} {
-      // User can read only their own membership docs.
-      allow read: if signedIn() && (
-        resource.data.profileId == uid() || isCommunityMember(resource.data.communityId)
+      // Own row always; others in same league only when this user is not blocked from that league.
+      allow read: if isPlatformAdmin() || (
+        signedIn() && (
+          resource.data.profileId == uid() ||
+          (isCommunityMember(resource.data.communityId) &&
+            !currentUserLeagueHiddenFromMembers(resource.data.communityId))
+        )
       );
 
       // Membership rows are created only by Cloud Functions (Admin SDK).
@@ -237,15 +396,20 @@ service cloud.firestore {
     }
 
     match /gameLogs/{gameLogId} {
-      allow read: if isCommunityMember(resource.data.communityId);
+      allow read: if isPlatformAdmin() || (
+        isCommunityMember(resource.data.communityId) &&
+        !currentUserLeagueHiddenFromMembers(resource.data.communityId)
+      );
 
       allow create: if signedIn() &&
         hasGameLogKeys() &&
         gameLogBracketLinkValid(request.resource.data) &&
         gameLogMvpLvpValid(request.resource.data) &&
+        gameLogGameTypeAndCustomValid(request.resource.data) &&
         request.resource.data.id == gameLogId &&
         request.resource.data.createdByProfileId == uid() &&
         isCommunityMember(request.resource.data.communityId) &&
+        !currentUserLeagueHiddenFromMembers(request.resource.data.communityId) &&
         request.resource.data.winnerProfileIds.size() > 0 &&
         request.resource.data.loserProfileIds.size() > 0 &&
         request.resource.data.photoUrls.size() == 1;
@@ -256,7 +420,10 @@ service cloud.firestore {
         gameLogBracketLinkValid(request.resource.data) &&
         gameLogBracketImmutabilityValid() &&
         gameLogMvpLvpValid(request.resource.data) &&
+        gameLogGameTypeAndCustomValid(request.resource.data) &&
+        gameLogGameTypeAndCustomImmutableOnUpdate() &&
         isCommunityMember(resource.data.communityId) &&
+        !currentUserLeagueHiddenFromMembers(resource.data.communityId) &&
         resource.data.createdByProfileId == uid() &&
         request.resource.data.id == resource.data.id &&
         request.resource.data.communityId == resource.data.communityId &&
@@ -268,26 +435,39 @@ service cloud.firestore {
 
       allow delete: if signedIn() &&
         isCommunityMember(resource.data.communityId) &&
+        !currentUserLeagueHiddenFromMembers(resource.data.communityId) &&
         resource.data.createdByProfileId == uid();
     }
 
     match /brackets/{bracketId} {
-      allow read: if isCommunityMember(resource.data.communityId);
+      allow read: if isPlatformAdmin() || (
+        isCommunityMember(resource.data.communityId) &&
+        !currentUserLeagueHiddenFromMembers(resource.data.communityId)
+      );
 
       allow create: if signedIn() &&
         hasBracketKeys() &&
         request.resource.data.id == bracketId &&
-        isCommunityMember(request.resource.data.communityId);
+        isCommunityMember(request.resource.data.communityId) &&
+        !currentUserLeagueHiddenFromMembers(request.resource.data.communityId);
 
       // Updates allowed only for community members.
       allow update: if signedIn() &&
         hasBracketKeys() &&
         isCommunityMember(resource.data.communityId) &&
+        !currentUserLeagueHiddenFromMembers(resource.data.communityId) &&
         request.resource.data.id == resource.data.id &&
         request.resource.data.communityId == resource.data.communityId &&
         request.resource.data.createdAt == resource.data.createdAt;
 
       allow delete: if false;
+    }
+
+    // D3 audit log: append-only via Admin SDK callables/triggers.
+    // Clients cannot write; platform admins may read for accountability.
+    match /adminActions/{adminActionId} {
+      allow read: if isPlatformAdmin();
+      allow create, update, delete: if false;
     }
   }
 }

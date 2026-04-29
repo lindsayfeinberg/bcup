@@ -121,16 +121,12 @@ private struct BracketMatchPairCard: View {
             Text("Advanced (bye)")
                 .font(AppFont.caption)
                 .foregroundStyle(BracketBrandColor.accent)
-            if !ui.topParticipantIds.isEmpty {
-                Text(names(ui.topParticipantIds))
-                    .font(AppFont.subheadline)
-                    .foregroundStyle(.primary)
-                    .lineLimit(2)
+            // Auto-bye matches still run `splitIndexFirstTeam`, so a 2-person (or 3-person) bye
+            // is split across top/bottom for “sides” — but everyone advanced together; show the full roster.
+            if !ui.effectiveParticipantProfileIds.isEmpty {
+                byeNameStack(ids: ui.effectiveParticipantProfileIds)
             } else if let w = match.winnerProfileIds, !w.isEmpty {
-                Text(names(w))
-                    .font(AppFont.subheadline)
-                    .foregroundStyle(.primary)
-                    .lineLimit(2)
+                byeNameStack(ids: w)
             }
         }
         .padding(8)
@@ -216,24 +212,44 @@ private struct BracketMatchPairCard: View {
 
     @ViewBuilder
     private func slotRow(ids: [String], isWinner: Bool) -> some View {
-        let text = ids.isEmpty ? "TBD" : names(ids)
-        Text(text)
-            .font(AppFont.bodyMedium)
-            .foregroundStyle(
-                isWinner ? BracketBrandColor.winnerGreen : (ids.isEmpty ? Color.secondary : Color.primary)
-            )
-            .fontWeight(isWinner ? .semibold : .regular)
-            .lineLimit(2)
-            .minimumScaleFactor(0.85)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 8)
+        Group {
+            if ids.isEmpty {
+                Text("TBD")
+                    .font(AppFont.bodyMedium)
+                    .foregroundStyle(Color.secondary)
+                    .fontWeight(.regular)
+            } else {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(ids, id: \.self) { id in
+                        Text(memberDisplayName(for: id))
+                            .font(AppFont.bodyMedium)
+                            .foregroundStyle(isWinner ? BracketBrandColor.winnerGreen : Color.primary)
+                            .fontWeight(isWinner ? .semibold : .regular)
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 8)
     }
 
-    private func names(_ ids: [String]) -> String {
-        let mapped = members
-            .filter { ids.contains($0.profileId) }
-            .map { $0.displayName.isEmpty ? "Unknown" : $0.displayName }
-        return mapped.isEmpty ? "—" : mapped.joined(separator: ", ")
+    @ViewBuilder
+    private func byeNameStack(ids: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            ForEach(ids, id: \.self) { id in
+                Text(memberDisplayName(for: id))
+                    .font(AppFont.subheadline)
+                    .foregroundStyle(.primary)
+            }
+        }
+    }
+
+    private func memberDisplayName(for id: String) -> String {
+        guard let row = members.first(where: { $0.profileId == id }) else {
+            return "Unknown"
+        }
+        let trimmed = row.displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "Unknown" : trimmed
     }
 }
 

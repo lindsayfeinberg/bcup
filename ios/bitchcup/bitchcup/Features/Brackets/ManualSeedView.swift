@@ -106,10 +106,13 @@ struct ManualSeedView: View {
             }
             .navigationTitle("Assign teams")
             .navigationBarTitleDisplayMode(.inline)
+            .communityFlowNavigationBarChrome()
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") { dismiss() }
-                        .disabled(isSubmitting)
+                    CommunityFlowAccentToolbarButton(title: "Cancel") {
+                        dismiss()
+                    }
+                    .disabled(isSubmitting)
                 }
             }
         }

@@ -4,6 +4,7 @@ import UIKit
 /// Hypothetical NvN matchup using league stats for **one game type** (never aggregate all games).
 struct WhatIfMatchupSection: View {
     let members: [CommunityMemberRosterRow]
+    let gameDefinitions: [GameDefinitionRecord]
     let accentColor: Color
     let sectionHeaderFont: Font
 
@@ -14,7 +15,7 @@ struct WhatIfMatchupSection: View {
     private let gameTypeChipFont = Font.custom("NeueHaasDisplay-Mediu", size: 14)
     private let gameTypeGridSpacing: CGFloat = 8
 
-    @State private var matchupGameType: LeagueRankingBasis = .pong
+    @State private var matchupChip: LeagueRankingChip = .builtIn(.pong)
     @State private var teamSize = 1
     @State private var sideA: Set<String> = []
     @State private var sideB: Set<String> = []
@@ -23,8 +24,12 @@ struct WhatIfMatchupSection: View {
     @State private var openA = false
     @State private var openB = false
 
+    private var whatIfGameChips: [LeagueRankingChip] {
+        LeagueRankingChip.whatIfGameChips(gameDefinitions: gameDefinitions)
+    }
+
     private var teamSizeRange: ClosedRange<Int> {
-        matchupGameType.validTeamSizeRange(memberCount: members.count)
+        matchupChip.whatIfTeamSizeRange(memberCount: members.count)
     }
 
     private var canPickFullSides: Bool {
@@ -101,9 +106,14 @@ struct WhatIfMatchupSection: View {
                 .foregroundStyle(.secondary)
         }
         .onAppear {
+            reconcileMatchupChipWithDefinitions()
             syncTeamSizeToRange()
         }
-        .onChange(of: matchupGameType) { _, _ in
+        .onChange(of: matchupChip) { _, _ in
+            syncTeamSizeToRange()
+        }
+        .onChange(of: gameDefinitions) { _, _ in
+            reconcileMatchupChipWithDefinitions()
             syncTeamSizeToRange()
         }
         .onChange(of: members.count) { _, _ in
@@ -123,12 +133,12 @@ struct WhatIfMatchupSection: View {
                 .foregroundStyle(accentColor)
 
             LazyVGrid(columns: columns, spacing: gameTypeGridSpacing) {
-                ForEach(LeagueRankingBasis.perGameTypeCases) { basis in
-                    let selected = matchupGameType == basis
+                ForEach(whatIfGameChips) { chip in
+                    let selected = matchupChip == chip
                     Button {
-                        matchupGameType = basis
+                        matchupChip = chip
                     } label: {
-                        Text(basis.displayName)
+                        Text(chip.displayName)
                             .font(gameTypeChipFont)
                             .multilineTextAlignment(.center)
                             .lineLimit(2)
@@ -150,13 +160,33 @@ struct WhatIfMatchupSection: View {
                             }
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel(basis.displayName)
+                    .accessibilityLabel(chip.displayName)
                     .accessibilityAddTraits(selected ? .isSelected : [])
                 }
             }
             .accessibilityElement(children: .contain)
             .accessibilityLabel("What-if game type")
             .accessibilityIdentifier("community.whatIf.gameType")
+        }
+    }
+
+    /// Keeps `matchupChip` valid when definitions load, rename, or disappear (what-if never uses aggregate “all games”).
+    private func reconcileMatchupChipWithDefinitions() {
+        let chips = whatIfGameChips
+        guard !chips.isEmpty else { return }
+        switch matchupChip {
+        case .allGames:
+            matchupChip = chips[0]
+        case .builtIn:
+            if !chips.contains(matchupChip) {
+                matchupChip = chips[0]
+            }
+        case .customDefinition(let id, _):
+            if let def = gameDefinitions.first(where: { $0.gameDefinitionId == id }) {
+                matchupChip = .customDefinition(id: def.gameDefinitionId, name: def.name)
+            } else {
+                matchupChip = chips[0]
+            }
         }
     }
 
@@ -332,8 +362,8 @@ struct WhatIfMatchupSection: View {
         guard sideA.count == teamSize,
               sideB.count == teamSize,
               sideA.isDisjoint(with: sideB),
-              let sA = WhatIfMatchupMath.meanResolvedOdds(memberIds: sideA, roster: members, basis: matchupGameType),
-              let sB = WhatIfMatchupMath.meanResolvedOdds(memberIds: sideB, roster: members, basis: matchupGameType)
+              let sA = WhatIfMatchupMath.meanResolvedOdds(memberIds: sideA, roster: members, chip: matchupChip),
+              let sB = WhatIfMatchupMath.meanResolvedOdds(memberIds: sideB, roster: members, chip: matchupChip)
         else { return nil }
 
         let (pA, pB) = WhatIfMatchupMath.winProbabilities(sideA: sA, sideB: sB)

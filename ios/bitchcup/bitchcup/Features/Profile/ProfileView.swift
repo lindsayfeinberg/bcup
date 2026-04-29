@@ -27,9 +27,15 @@ private let profileAvatarSize: CGFloat = 168
 
 struct ProfileView: View {
     @EnvironmentObject private var container: DependencyContainer
+    @EnvironmentObject private var sessionManager: AppSessionManager
 
     @State private var displayName: String = "Profile"
+    /// Raw name from Firestore for the edit sheet (empty when unset).
+    @State private var editingNameSeed: String = ""
+    @State private var showEditProfile = false
     @State private var profilePhotoUrl: URL?
+    /// Shown immediately after saving a new photo from the edit sheet (avoids AsyncImage reload spinner).
+    @State private var avatarDisplayOverride: UIImage?
     @State private var isLoading = true
     @State private var errorMessage: String?
     @State private var historyRows: [ProfileHistoryRow] = []
@@ -78,6 +84,29 @@ struct ProfileView: View {
             ToolbarItem(placement: .navigationBarLeading) {
                 CommunityFlowBackToolbarButton()
             }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                if container.authService.currentUserId != nil {
+                    Button("Edit") {
+                        showEditProfile = true
+                    }
+                    .font(.custom("NeueHaasDisplay-Mediu", size: 16))
+                    .foregroundStyle(ProfileBrandColor.red)
+                }
+            }
+        }
+        .sheet(isPresented: $showEditProfile) {
+            EditProfileView(
+                initialDisplayName: editingNameSeed,
+                initialPhotoURL: profilePhotoUrl,
+                onSaved: { image in
+                    if let image {
+                        avatarDisplayOverride = image
+                    }
+                    Task { await loadProfile() }
+                }
+            )
+            .environmentObject(container)
+            .environmentObject(sessionManager)
         }
         .toolbarBackground(Color.white, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
@@ -184,8 +213,14 @@ struct ProfileView: View {
 
     @ViewBuilder
     private var profileAvatar: some View {
-        if let profilePhotoUrl {
-            ProfileResolvedAvatarView(originalURL: profilePhotoUrl, size: profileAvatarSize)
+        if let avatarDisplayOverride {
+            Image(uiImage: avatarDisplayOverride)
+                .resizable()
+                .scaledToFill()
+                .frame(width: profileAvatarSize, height: profileAvatarSize)
+                .clipShape(Circle())
+        } else if let profilePhotoUrl {
+            ProfileAvatarCircleView(originalURL: profilePhotoUrl, size: profileAvatarSize)
         } else {
             avatarPlaceholder
                 .frame(width: profileAvatarSize, height: profileAvatarSize)
@@ -376,7 +411,8 @@ struct ProfileView: View {
 
             let (profile, firstPage, allRows) = try await (profileRecord, firstHistoryPage, allRowsForStats)
             let resolvedName = profile?.displayName?.trimmingCharacters(in: .whitespacesAndNewlines)
-            displayName = (resolvedName?.isEmpty == false) ? resolvedName! : "Profile"
+            editingNameSeed = (resolvedName?.isEmpty == false) ? resolvedName! : ""
+            displayName = editingNameSeed.isEmpty ? "Profile" : editingNameSeed
             profilePhotoUrl = profile?.profilePhotoUrl.flatMap(URL.init(string:))
             overallOdds = profile?.overallOdds ?? 0.0
             overallOddsByGameType = profile?.overallOddsByGameType ?? [:]
@@ -471,9 +507,20 @@ struct ProfileView: View {
 
     private static func mapHistoryRow(from row: FeedRow, userId: String) -> ProfileHistoryRow {
         let didWin = row.winnerProfileIds.contains(userId)
+        let gameTypeLabel: String
+        if row.gameType == "CUSTOM" {
+            if let name = row.customGameDefinitionName?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !name.isEmpty {
+                gameTypeLabel = name
+            } else {
+                gameTypeLabel = "Custom game"
+            }
+        } else {
+            gameTypeLabel = row.gameType.replacingOccurrences(of: "_", with: " ").capitalized
+        }
         return ProfileHistoryRow(
             gameLogId: row.gameLogId,
-            gameTypeText: row.gameType.replacingOccurrences(of: "_", with: " ").capitalized,
+            gameTypeText: gameTypeLabel,
             communityText: row.communityName ?? row.communityId,
             didWin: didWin,
             createdAt: row.createdAt
@@ -549,66 +596,6 @@ private struct ProfileAggregateStats {
         guard gamesPlayed > 0 else { return "0%" }
         let rate = (Double(wins) / Double(gamesPlayed)) * 100
         return "\(Int(rate.rounded()))%"
-    }
-}
-
-/// Loads the `400x400` Storage variant via `downloadURL()` so the token matches the resized object.
-private struct ProfileResolvedAvatarView: View {
-    let originalURL: URL
-    let size: CGFloat
-
-    @State private var loadURL: URL?
-
-    var body: some View {
-        Group {
-            if let loadURL {
-                AsyncImage(url: loadURL) { phase in
-                    switch phase {
-                    case .empty:
-                        ProgressView()
-                            .tint(ProfileTestStyle.ink)
-                            .frame(width: size, height: size)
-                            .background(ProfileBrandColor.formLightRed.opacity(0.35))
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .scaledToFill()
-                    case .failure:
-                        AsyncImage(url: originalURL) { fallbackPhase in
-                            switch fallbackPhase {
-                            case .success(let fallbackImage):
-                                fallbackImage
-                                    .resizable()
-                                    .scaledToFill()
-                            default:
-                                avatarFailurePlaceholder
-                            }
-                        }
-                    @unknown default:
-                        avatarFailurePlaceholder
-                    }
-                }
-            } else {
-                ProgressView()
-                    .tint(ProfileTestStyle.ink)
-                    .frame(width: size, height: size)
-                    .background(ProfileBrandColor.formLightRed.opacity(0.35))
-            }
-        }
-        .frame(width: size, height: size)
-        .clipShape(Circle())
-        .task(id: originalURL) {
-            loadURL = await ImageVariantURLResolver.shared.resolveURL(originalURL: originalURL, variant: .avatar)
-        }
-    }
-
-    private var avatarFailurePlaceholder: some View {
-        ZStack {
-            Circle()
-                .fill(ProfileBrandColor.formLightRed.opacity(0.35))
-            Image(systemName: "person.fill")
-                .foregroundStyle(ProfileTestStyle.ink)
-        }
     }
 }
 

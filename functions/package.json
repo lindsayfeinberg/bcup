@@ -10,7 +10,9 @@
     "shell": "npm run build && firebase --config ../firebase.json functions:shell",
     "start": "npm run shell",
     "deploy": "firebase --config ../firebase.json deploy --only functions",
-    "logs": "firebase --config ../firebase.json functions:log"
+    "deploy:operator-backend": "npm run build && cd .. && firebase --config firebase.json deploy --only functions,firestore",
+    "logs": "firebase --config ../firebase.json functions:log",
+    "set-platform-admin": "node scripts/setPlatformAdminClaim.js"
   },
   "engines": {
     "node": "20"

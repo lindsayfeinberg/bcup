@@ -1,9 +1,13 @@
 import * as admin from "firebase-admin";
 import {HttpsError, onCall} from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
-import {validateRoundsStructure} from "./bracketModel.js";
+import {
+  validateRoundsStructure,
+  validateRoundOneCoversParticipants,
+  type BracketMatch,
+  type BracketRound,
+} from "./bracketModel.js";
 import {generateBracketRounds} from "./bracketSeeding.js";
-import type {BracketMatch} from "./bracketModel.js";
 
 const db = admin.firestore();
 const region = "us-central1";
@@ -257,6 +261,20 @@ export const finalizeManualBracket = onCall(
       logger.error("finalizeManualBracket: invalid rounds", {
         bracketId,
         errors: validation.errors,
+      });
+      throw new HttpsError(
+        "internal",
+        "Could not generate valid bracket rounds"
+      );
+    }
+    const rosterCheck = validateRoundOneCoversParticipants(
+      rounds as BracketRound[],
+      participantProfileIds
+    );
+    if (!rosterCheck.valid) {
+      logger.error("finalizeManualBracket: round1 roster mismatch", {
+        bracketId,
+        errors: rosterCheck.errors,
       });
       throw new HttpsError(
         "internal",

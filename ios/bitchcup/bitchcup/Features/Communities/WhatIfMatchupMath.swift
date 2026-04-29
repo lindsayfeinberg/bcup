@@ -5,14 +5,14 @@ enum WhatIfMatchupMath {
     static func meanResolvedOdds(
         memberIds: Set<String>,
         roster: [CommunityMemberRosterRow],
-        basis: LeagueRankingBasis
+        chip: LeagueRankingChip
     ) -> Double? {
         guard !memberIds.isEmpty else { return nil }
         let byId = Dictionary(uniqueKeysWithValues: roster.map { ($0.profileId, $0) })
         var sum = 0.0
         for id in memberIds {
             guard let row = byId[id] else { return nil }
-            sum += row.laplaceSmoothedStrengthForMatchup(basis: basis)
+            sum += row.laplaceSmoothedStrengthForMatchup(chip: chip)
         }
         return sum / Double(memberIds.count)
     }

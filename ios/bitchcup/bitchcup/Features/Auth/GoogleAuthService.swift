@@ -23,6 +23,12 @@ final class GoogleAuthService: AuthServiceProtocol {
         return uid
     }
 
+    func fetchPlatformAdminClaimFromIDToken(forceRefresh: Bool) async throws -> Bool {
+        guard let user = Auth.auth().currentUser else { return false }
+        let token = try await user.getIDTokenResult(forcingRefresh: forceRefresh)
+        return (token.claims["platformAdmin"] as? Bool) == true
+    }
+
     func signIn() async throws {
         AppDebugLog.log("GoogleAuthService.signIn: resolving root VC for Google UI")
         guard let presentingViewController = Self.rootViewController() else {

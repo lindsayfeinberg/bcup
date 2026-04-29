@@ -2,6 +2,17 @@ import FirebaseFirestore
 import SwiftUI
 import UIKit
 
+private struct CommunityDetailGameLogEditItem: Identifiable {
+    let id: String
+}
+
+private struct BracketCreateGameOption: Identifiable, Hashable {
+    let id: String
+    let title: String
+    let gameTypeRaw: String
+    let customDefinitionId: String?
+}
+
 struct CommunityDetailView: View {
     let communityId: String
 
@@ -14,8 +25,15 @@ struct CommunityDetailView: View {
     private let rankingBasisFont = Font.custom("NeueHaasDisplay-Mediu", size: 14)
 
     @EnvironmentObject private var container: DependencyContainer
+    @EnvironmentObject private var sessionManager: AppSessionManager
     @State private var communityName: String = ""
     @State private var inviteCode: String?
+    @State private var createdByProfileId: String?
+    @State private var hiddenFromMembers = false
+    @State private var confirmHideLeague = false
+    @State private var confirmUnhideLeague = false
+    @State private var isSavingVisibility = false
+    @State private var visibilityErrorMessage: String?
     @State private var members: [CommunityMemberRosterRow] = []
     @State private var isLoading = true
     @State private var errorMessage: String?
@@ -23,7 +41,12 @@ struct CommunityDetailView: View {
 
     @State private var feedRows: [FeedRow] = []
     @State private var selectedSeedMethod: SeedMethod = .communityOdds
-    @State private var selectedTeamSize: Int = 1
+    /// Quick picks 1v1–4v4; use `bracketUsesCustomPlayersPerSide` + `bracketCustomPlayersPerSideText` for any size up to `bracketPlayersPerSideMax`.
+    @State private var bracketPresetPlayersPerSide: Int = 2
+    @State private var bracketUsesCustomPlayersPerSide: Bool = false
+    @State private var bracketCustomPlayersPerSideText: String = "5"
+    @FocusState private var customBracketTeamSizeFieldFocused: Bool
+    @State private var bracketCreateGameOptionId: String = GameType.pong.rawValue
     @State private var isCreatingBracket = false
     @State private var bracketErrorMessage: String?
     @State private var brackets: [BracketListItem] = []
@@ -41,7 +64,17 @@ struct CommunityDetailView: View {
     @State private var loadMoreFeedErrorMessage: String?
     @State private var visibleActiveBracketsCount = 3
     @State private var visiblePastBracketsCount = 3
-    @State private var rankingBasis: LeagueRankingBasis = .allGames
+    @State private var rankingChip: LeagueRankingChip = .allGames
+    @State private var gameDefinitions: [GameDefinitionRecord] = []
+    @State private var kickTargetProfileId: String?
+    @State private var kickTargetDisplayName: String = ""
+    @State private var showKickConfirm = false
+    @State private var kickInProgress = false
+    @State private var kickErrorMessage: String?
+    @State private var gameLogEditSheet: CommunityDetailGameLogEditItem?
+    /// Matches Cloud Function `BRACKET_TEAM_SIZE_MAX` (`functions/src/brackets.ts`).
+    private static let bracketPlayersPerSideMax = 20
+
     private let uiTestMembers: [CommunityMemberRosterRow] = [
         .init(profileId: "ui-test-user", displayName: "You", profilePhotoUrl: nil, communityOdds: 0.75, communityGamesPlayed: 4),
         .init(profileId: "ui-opponent-1", displayName: "Alex", profilePhotoUrl: nil, communityOdds: 0.62, communityGamesPlayed: 3),
@@ -63,10 +96,31 @@ struct CommunityDetailView: View {
         return trimmed.isEmpty ? "League" : trimmed
     }
 
+    private var isCurrentUserCreator: Bool {
+        guard let uid = container.authService.currentUserId,
+              let created = createdByProfileId
+        else { return false }
+        return uid == created
+    }
+
+    /// Players per team sent to `createBracket` (presets 1–4 or custom 1…`bracketPlayersPerSideMax`).
+    private var effectiveBracketPlayersPerSide: Int {
+        let cap = Self.bracketPlayersPerSideMax
+        if bracketUsesCustomPlayersPerSide {
+            let t = bracketCustomPlayersPerSideText.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let v = Int(t), v >= 1, v <= cap {
+                return v
+            }
+            return min(max(bracketPresetPlayersPerSide, 1), cap)
+        }
+        return min(max(bracketPresetPlayersPerSide, 1), cap)
+    }
+
     /// Teams formed by chunking the seed list in `teamSize` slices; the last team may have fewer players.
     private var teamCountForBracket: Int {
-        guard selectedTeamSize > 0 else { return 0 }
-        return (members.count + selectedTeamSize - 1) / selectedTeamSize
+        let s = effectiveBracketPlayersPerSide
+        guard s > 0 else { return 0 }
+        return (members.count + s - 1) / s
     }
 
     private var hasEnoughMembersForSelectedTeamSize: Bool {
@@ -79,27 +133,44 @@ struct CommunityDetailView: View {
         members.count >= 2
     }
 
-    private var unevenTeamSplitHint: String? {
-        guard selectedTeamSize > 0, members.count >= 2 else { return nil }
-        guard members.count % selectedTeamSize != 0 else { return nil }
-        guard hasEnoughMembersForSelectedTeamSize else { return nil }
-        return "League size doesn’t divide evenly into \(selectedTeamSize)-player teams — one team will have fewer players."
-    }
-
     private var canCreateBracket: Bool {
         hasEnoughMembersForSelectedTeamSize
     }
 
-    /// Highest effective odds for `rankingBasis` first; ties broken by `profileId` for stable order.
+    private var bracketCreateGameOptions: [BracketCreateGameOption] {
+        var list: [BracketCreateGameOption] = GameType.allCases.map {
+            BracketCreateGameOption(
+                id: $0.rawValue,
+                title: $0.displayName,
+                gameTypeRaw: $0.rawValue,
+                customDefinitionId: nil
+            )
+        }
+        list += gameDefinitions.map { def in
+            BracketCreateGameOption(
+                id: "CUSTOM:\(def.gameDefinitionId)",
+                title: def.name,
+                gameTypeRaw: "CUSTOM",
+                customDefinitionId: def.gameDefinitionId
+            )
+        }
+        return list
+    }
+
+    /// Highest effective odds for `rankingChip` first; ties broken by `profileId` for stable order.
     private var membersOrderedForRanking: [CommunityMemberRosterRow] {
         members.sorted { lhs, rhs in
-            let lo = lhs.effectiveOdds(basis: rankingBasis)
-            let ro = rhs.effectiveOdds(basis: rankingBasis)
+            let lo = lhs.effectiveOdds(chip: rankingChip)
+            let ro = rhs.effectiveOdds(chip: rankingChip)
             if lo != ro {
                 return lo > ro
             }
             return lhs.profileId < rhs.profileId
         }
+    }
+
+    private var rankingChips: [LeagueRankingChip] {
+        LeagueRankingChip.rankingChips(gameDefinitions: gameDefinitions)
     }
 
     private let rankingBasisGridSpacing: CGFloat = 8
@@ -117,12 +188,12 @@ struct CommunityDetailView: View {
                 .foregroundStyle(bracketAccentColor)
 
             LazyVGrid(columns: columns, spacing: rankingBasisGridSpacing) {
-                ForEach(LeagueRankingBasis.allCases) { basis in
-                    let selected = rankingBasis == basis
+                ForEach(rankingChips) { chip in
+                    let selected = rankingChip == chip
                     Button {
-                        rankingBasis = basis
+                        rankingChip = chip
                     } label: {
-                        Text(basis.displayName)
+                        Text(chip.displayName)
                             .font(rankingBasisFont)
                             .multilineTextAlignment(.center)
                             .lineLimit(2)
@@ -144,13 +215,322 @@ struct CommunityDetailView: View {
                             }
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel(basis.displayName)
+                    .accessibilityLabel(chip.displayName)
                     .accessibilityAddTraits(selected ? .isSelected : [])
                 }
             }
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Rank by")
             .accessibilityIdentifier("community.detail.rankingBasis")
+        }
+    }
+
+    /// Split from `body` so the Swift compiler can type-check the screen in reasonable time.
+    @ViewBuilder
+    private var leagueDetailMainColumn: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(displayCommunityName)
+                .font(pageTitleFont)
+                .foregroundStyle(.black)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.horizontal)
+                .padding(.top, 24)
+                .padding(.bottom, 28)
+                .accessibilityIdentifier("community.detail.title")
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    inviteCodeSection
+                    leagueBoardSection
+                    creatorVisibilitySection
+                    customGamesSection
+                    membersSection
+                    WhatIfMatchupSection(
+                        members: members,
+                        gameDefinitions: gameDefinitions,
+                        accentColor: bracketAccentColor,
+                        sectionHeaderFont: sectionHeaderFont
+                    )
+                    recentGamesSection
+                    bracketPlaceholder
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
+            }
+            .refreshable {
+                await refreshAll()
+            }
+        }
+        .background(Color.white)
+        .overlay {
+            bracketCreatePopupOverlay
+        }
+    }
+
+    @ViewBuilder
+    private var bracketCreatePopupOverlay: some View {
+        if showCreateBracketPopup {
+            ZStack {
+                Color.black.opacity(0.35)
+                    .ignoresSafeArea()
+                    .onTapGesture {
+                        bracketErrorMessage = nil
+                        showCreateBracketPopup = false
+                    }
+
+                VStack(alignment: .center, spacing: 18) {
+                    Text("Create Bracket")
+                        .font(sectionHeaderFont)
+                        .foregroundStyle(.black)
+                        .multilineTextAlignment(.center)
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Seeding method")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+
+                        Picker("Seeding", selection: $selectedSeedMethod) {
+                            ForEach(SeedMethod.allCases) { method in
+                                VStack(alignment: .leading) {
+                                    Text(method.displayName)
+                                }
+                                .tag(method)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+
+                        Text(selectedSeedMethod.subtitle)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    bracketCreateGameTypePickerSection
+
+                    bracketTeamSizePickerSection
+
+                    if let bracketErrorMessage {
+                        Text(bracketErrorMessage)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
+
+                    if !hasEnoughMembersForSelectedTeamSize {
+                        Text("Need at least 2 members and enough for two teams (for \(effectiveBracketPlayersPerSide)v\(effectiveBracketPlayersPerSide), more than \(effectiveBracketPlayersPerSide) people in the league).")
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                            .multilineTextAlignment(.leading)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
+                    HStack(spacing: 12) {
+                        Button {
+                            bracketErrorMessage = nil
+                            showCreateBracketPopup = false
+                        } label: {
+                            Text("Cancel")
+                                .font(.custom("NeueHaasDisplay-Mediu", size: 22))
+                                .foregroundStyle(bracketAccentColor)
+                                .frame(maxWidth: .infinity, minHeight: 48)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .fill(Color.white)
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .stroke(bracketAccentColor, lineWidth: 2)
+                                )
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+
+                        Button {
+                            Task { await createBracket() }
+                        } label: {
+                            HStack(spacing: 8) {
+                                if isCreatingBracket {
+                                    ProgressView()
+                                        .scaleEffect(0.8)
+                                }
+                                Text(isCreatingBracket ? "Creating" : "Create ")
+                            }
+                            .font(.custom("NeueHaasDisplay-Mediu", size: 22))
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity, minHeight: 48)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .fill(bracketAccentColor)
+                            )
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(!canCreateBracket || isCreatingBracket)
+                        .accessibilityIdentifier("community.popup.createBracket")
+                    }
+                }
+                .padding(20)
+                .background(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(Color.white)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(.white, lineWidth: 2)
+                )
+                .padding(.horizontal, 24)
+            }
+        }
+    }
+
+    private var bracketCreateGameTypePickerSection: some View {
+        let columns = [
+            GridItem(.flexible(), spacing: 8),
+            GridItem(.flexible(), spacing: 8),
+            GridItem(.flexible(), spacing: 8)
+        ]
+        return VStack(alignment: .leading, spacing: 8) {
+            Text("Game type")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            LazyVGrid(columns: columns, spacing: 8) {
+                ForEach(bracketCreateGameOptions) { opt in
+                    let selected = bracketCreateGameOptionId == opt.id
+                    Button {
+                        bracketCreateGameOptionId = opt.id
+                    } label: {
+                        Text(opt.title)
+                            .font(rankingBasisFont)
+                            .multilineTextAlignment(.center)
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.85)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .padding(.horizontal, 6)
+                            .foregroundStyle(selected ? bracketAccentColor : .primary)
+                            .background {
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .fill(selected ? Color.white : Color(UIColor.secondarySystemGroupedBackground))
+                            }
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .strokeBorder(
+                                        selected ? bracketAccentColor : Color.primary.opacity(0.12),
+                                        lineWidth: selected ? 2 : 1
+                                    )
+                            }
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    private var bracketTeamSizePickerSection: some View {
+        let columns = [
+            GridItem(.flexible(), spacing: 8),
+            GridItem(.flexible(), spacing: 8),
+            GridItem(.flexible(), spacing: 8)
+        ]
+        let cap = Self.bracketPlayersPerSideMax
+        let presets = [1, 2, 3, 4]
+        return VStack(alignment: .leading, spacing: 10) {
+            Text("Team size")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+            LazyVGrid(columns: columns, spacing: 8) {
+                ForEach(presets, id: \.self) { n in
+                    let selected = !bracketUsesCustomPlayersPerSide && bracketPresetPlayersPerSide == n
+                    Button {
+                        bracketUsesCustomPlayersPerSide = false
+                        bracketPresetPlayersPerSide = n
+                    } label: {
+                        Text("\(n)v\(n)")
+                            .font(rankingBasisFont)
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .padding(.horizontal, 6)
+                            .foregroundStyle(selected ? bracketAccentColor : .primary)
+                            .background {
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .fill(selected ? Color.white : Color(UIColor.secondarySystemGroupedBackground))
+                            }
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .strokeBorder(
+                                        selected ? bracketAccentColor : Color.primary.opacity(0.12),
+                                        lineWidth: selected ? 2 : 1
+                                    )
+                            }
+                    }
+                    .buttonStyle(.plain)
+                }
+                let customSelected = bracketUsesCustomPlayersPerSide
+                Button {
+                    bracketUsesCustomPlayersPerSide = true
+                    if bracketCustomPlayersPerSideText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        bracketCustomPlayersPerSideText = String(bracketPresetPlayersPerSide)
+                    }
+                } label: {
+                    Text("Custom")
+                        .font(rankingBasisFont)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .padding(.horizontal, 6)
+                        .foregroundStyle(customSelected ? bracketAccentColor : .primary)
+                        .background {
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(customSelected ? Color.white : Color(UIColor.secondarySystemGroupedBackground))
+                        }
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .strokeBorder(
+                                    customSelected ? bracketAccentColor : Color.primary.opacity(0.12),
+                                    lineWidth: customSelected ? 2 : 1
+                                )
+                        }
+                }
+                .buttonStyle(.plain)
+            }
+
+            if bracketUsesCustomPlayersPerSide {
+                HStack(alignment: .center, spacing: 10) {
+                    TextField("Players per team (1–\(cap))", text: $bracketCustomPlayersPerSideText)
+                        .keyboardType(.numberPad)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.body)
+                        .focused($customBracketTeamSizeFieldFocused)
+                        .accessibilityIdentifier("community.bracket.customTeamSize")
+
+                    Button {
+                        customBracketTeamSizeFieldFocused = false
+                    } label: {
+                        Text("Save")
+                            .font(.custom("NeueHaasDisplay-Mediu", size: 18))
+                            .foregroundStyle(bracketAccentColor)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 10)
+                            .background(
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .fill(Color.white)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .stroke(bracketAccentColor, lineWidth: 2)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("community.bracket.customTeamSize.save")
+                }
+            }
+
+            Text(
+                "Seeding builds teams of up to \(effectiveBracketPlayersPerSide) in order; the last team can have fewer players if the league count doesn’t divide evenly (e.g. 5 people at 2v2 → two teams of 2 and one team of 1)."
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
         }
     }
 
@@ -163,175 +543,7 @@ struct CommunityDetailView: View {
                     Task { await loadInitial() }
                 }
             } else {
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(displayCommunityName)
-                        .font(pageTitleFont)
-                        .foregroundStyle(.black)
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .padding(.horizontal)
-                        .padding(.top, 24)
-                        .padding(.bottom, 28)
-                        .accessibilityIdentifier("community.detail.title")
-
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 24) {
-                            inviteCodeSection
-                            membersSection
-                            WhatIfMatchupSection(
-                                members: members,
-                                accentColor: bracketAccentColor,
-                                sectionHeaderFont: sectionHeaderFont
-                            )
-                            recentGamesSection
-                            bracketPlaceholder
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding()
-                    }
-                    .refreshable {
-                        await refreshAll()
-                    }
-                }
-                .background(Color.white)
-                .overlay {
-                    if showCreateBracketPopup {
-                        ZStack {
-                            Color.black.opacity(0.35)
-                                .ignoresSafeArea()
-                                .onTapGesture {
-                                    bracketErrorMessage = nil
-                                    showCreateBracketPopup = false
-                                }
-
-                            VStack(alignment: .center, spacing: 18) {
-                                Text("Create Bracket")
-                                    .font(sectionHeaderFont)
-                                    .foregroundStyle(.black)
-                                    .multilineTextAlignment(.center)
-
-                                // Seed method picker
-                                VStack(alignment: .leading, spacing: 8) {
-                                    Text("Seeding method")
-                                        .font(.subheadline)
-                                        .foregroundStyle(.secondary)
-
-                                    Picker("Seeding", selection: $selectedSeedMethod) {
-                                        ForEach(SeedMethod.allCases) { method in
-                                            VStack(alignment: .leading) {
-                                                Text(method.displayName)
-                                            }
-                                            .tag(method)
-                                        }
-                                    }
-                                    .pickerStyle(.segmented)
-
-                                    Text(selectedSeedMethod.subtitle)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-
-                                // Team size picker
-                                VStack(alignment: .leading, spacing: 8) {
-                                    Text("Team size")
-                                        .font(.subheadline)
-                                        .foregroundStyle(.secondary)
-
-                                    Picker("Team size", selection: $selectedTeamSize) {
-                                        Text("1v1").tag(1)
-                                        Text("2v2").tag(2)
-                                        Text("3v3").tag(3)
-                                        Text("4v4").tag(4)
-                                    }
-                                    .pickerStyle(.segmented)
-
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text("Most lineups use \(selectedTeamSize) per side; uneven leagues get a shorter last team.")
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-
-                                        if let unevenTeamSplitHint {
-                                            Text(unevenTeamSplitHint)
-                                                .font(.caption)
-                                                .foregroundStyle(.secondary)
-                                        }
-                                    }
-                                }
-
-                                // Error
-                                if let bracketErrorMessage {
-                                    Text(bracketErrorMessage)
-                                        .font(.caption)
-                                        .foregroundStyle(.red)
-                                }
-
-                                if !hasEnoughMembersForSelectedTeamSize {
-                                    Text("Need at least 2 members and enough for two teams (for \(selectedTeamSize)v\(selectedTeamSize), more than \(selectedTeamSize) people in the league).")
-                                        .font(.caption)
-                                        .foregroundStyle(.red)
-                                        .multilineTextAlignment(.leading)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                }
-
-                                // Footer buttons
-                                HStack(spacing: 12) {
-                                    Button {
-                                        bracketErrorMessage = nil
-                                        showCreateBracketPopup = false
-                                    } label: {
-                                        Text("Cancel")
-                                            .font(.custom("NeueHaasDisplay-Mediu", size: 22))
-                                            .foregroundStyle(bracketAccentColor)
-                                            .frame(maxWidth: .infinity, minHeight: 48)
-                                            .background(
-                                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                                    .fill(Color.white)
-                                            )
-                                            .overlay(
-                                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                                    .stroke(bracketAccentColor, lineWidth: 2)
-                                            )
-                                            .contentShape(Rectangle())
-                                    }
-                                    .buttonStyle(.plain)
-
-                                    Button {
-                                        Task { await createBracket() }
-                                    } label: {
-                                        HStack(spacing: 8) {
-                                            if isCreatingBracket {
-                                                ProgressView()
-                                                    .scaleEffect(0.8)
-                                            }
-                                            Text(isCreatingBracket ? "Creating" : "Create ")
-                                        }
-                                        .font(.custom("NeueHaasDisplay-Mediu", size: 22))
-                                        .foregroundStyle(.white)
-                                        .frame(maxWidth: .infinity, minHeight: 48)
-                                        .background(
-                                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                                .fill(bracketAccentColor)
-                                        )
-                                        .contentShape(Rectangle())
-                                    }
-                                    .buttonStyle(.plain)
-                                    .disabled(!canCreateBracket || isCreatingBracket)
-                                    .accessibilityIdentifier("community.popup.createBracket")
-                                }
-                            }
-                            .padding(20)
-                            .background(
-                                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                    .fill(Color.white)
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                    .stroke(.white, lineWidth: 2)
-                            )
-                            .padding(.horizontal, 24)
-                        }
-                    }
-                }
+                leagueDetailMainColumn
             }
         }
         .background(Color.white)
@@ -348,6 +560,47 @@ struct CommunityDetailView: View {
         .task {
             await loadInitial()
         }
+        .sheet(item: $gameLogEditSheet) { item in
+            NavigationStack {
+                NewGameLogFormView(editingGameLogId: item.id)
+                    .environmentObject(container)
+                    .environmentObject(sessionManager)
+                    .navigationTitle("Edit game")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .communityFlowNavigationBarChrome()
+                    .toolbar {
+                        ToolbarItem(placement: .navigationBarLeading) {
+                            CommunityFlowCloseToolbarButton {
+                                gameLogEditSheet = nil
+                            }
+                        }
+                    }
+            }
+        }
+        .confirmationDialog(
+            "Hide this league from members?",
+            isPresented: $confirmHideLeague,
+            titleVisibility: .visible
+        ) {
+            Button("Cancel", role: .cancel) {}
+            Button("Hide", role: .destructive) {
+                Task { await applyCommunityVisibility(hidden: true) }
+            }
+        } message: {
+            Text("They remain members, but won't see this league, games, or brackets in the app. Overall stats are unchanged.")
+        }
+        .confirmationDialog(
+            "Unhide this league for members?",
+            isPresented: $confirmUnhideLeague,
+            titleVisibility: .visible
+        ) {
+            Button("Cancel", role: .cancel) {}
+            Button("Unhide") {
+                Task { await applyCommunityVisibility(hidden: false) }
+            }
+        } message: {
+            Text("Everyone in the league will see it again in their lists.")
+        }
         .fullScreenCover(isPresented: $showManualSeedFlow) {
             if let pendingManualBracket {
                 ManualBracketSeedingFlowView(
@@ -362,6 +615,9 @@ struct CommunityDetailView: View {
                         seedMethod: pendingManualBracket.seedMethod,
                         status: "ACTIVE",
                         teamSize: pendingManualBracket.teamSize,
+                        gameType: pendingManualBracket.gameType,
+                        customGameDefinitionId: pendingManualBracket.customGameDefinitionId,
+                        customGameDefinitionName: pendingManualBracket.customGameDefinitionName,
                         createdAt: pendingManualBracket.createdAt
                     )
                 }
@@ -375,7 +631,10 @@ struct CommunityDetailView: View {
                 bracketId: bracket.bracketId,
                 seedMethod: bracket.seedMethod,
                 teamSize: bracket.teamSize,
-                members: members
+                members: members,
+                initialBracketGameType: bracket.gameType,
+                initialCustomGameDefinitionId: bracket.customGameDefinitionId,
+                initialCustomGameDefinitionName: bracket.customGameDefinitionName
             )
         }
     }
@@ -519,9 +778,40 @@ struct CommunityDetailView: View {
                                 .foregroundStyle(.secondary)
                         }
                         Spacer(minLength: 0)
+                        if sessionManager.isPlatformAdmin {
+                            Button {
+                                kickTargetProfileId = member.profileId
+                                kickTargetDisplayName = member.displayName.isEmpty ? "Unknown" : member.displayName
+                                kickErrorMessage = nil
+                                showKickConfirm = true
+                            } label: {
+                                Text("Kick")
+                                    .font(.custom("NeueHaasDisplay-Mediu", size: 15))
+                                    .foregroundStyle(Color.red.opacity(0.9))
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(kickInProgress)
+                        }
                     }
                 }
             }
+            if sessionManager.isPlatformAdmin, let kickErrorMessage {
+                Text(kickErrorMessage)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+        }
+        .confirmationDialog(
+            "Remove \(kickTargetDisplayName) from this league?",
+            isPresented: $showKickConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Remove from league", role: .destructive) {
+                Task { await performKickMember() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("They lose access and league stats for this league. This is logged for operators.")
         }
     }
 
@@ -533,6 +823,65 @@ struct CommunityDetailView: View {
     private var hasInviteCode: Bool {
         let trimmed = inviteCode?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return !trimmed.isEmpty
+    }
+
+    @ViewBuilder
+    private var creatorVisibilitySection: some View {
+        if isCurrentUserCreator {
+            // Layout mirrors `inviteCodeSection`: centered red header, supporting copy, then full-width action.
+            VStack(alignment: .leading, spacing: 8) {
+                Text(hiddenFromMembers ? "Hidden from members" : "Visible to members")
+                    .font(.custom("NeueHaasDisplay-Bold", size: 15))
+                    .foregroundStyle(bracketAccentColor)
+                    .frame(maxWidth: .infinity, alignment: .center)
+
+                Text(
+                    hiddenFromMembers
+                        ? "Only you see this league here. Members don't see it in their lists or feeds."
+                        : "Anyone in the league can open it, log games, and use brackets."
+                )
+                .font(memberDetailFont)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity, alignment: .center)
+
+                if let visibilityErrorMessage {
+                    Text(visibilityErrorMessage)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                }
+
+                Button {
+                    if hiddenFromMembers {
+                        confirmUnhideLeague = true
+                    } else {
+                        confirmHideLeague = true
+                    }
+                } label: {
+                    HStack(spacing: 8) {
+                        if isSavingVisibility {
+                            ProgressView()
+                                .tint(.white)
+                                .scaleEffect(0.85)
+                        }
+                        Text(hiddenFromMembers ? "Unhide league for members" : "Hide league from members")
+                    }
+                    .font(.custom("NeueHaasDisplay-Mediu", size: 22))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .foregroundStyle(.white)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(bracketAccentColor)
+                    )
+                }
+                .buttonStyle(.plain)
+                .disabled(isSavingVisibility)
+                .accessibilityIdentifier("community.detail.visibilityToggle")
+            }
+        }
     }
 
     private var inviteCodeSection: some View {
@@ -585,14 +934,85 @@ struct CommunityDetailView: View {
         }
     }
 
-    private func memberOddsSubtitle(for member: CommunityMemberRosterRow) -> String {
-        let games = member.effectiveGamesPlayed(basis: rankingBasis)
-        if games == 0 {
-            return rankingBasis == .allGames
-                ? "No league games yet"
-                : "No \(rankingBasis.displayName) games in this league"
+    private var customGamesSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Custom game types")
+                .font(.custom("NeueHaasDisplay-Bold", size: 15))
+                .foregroundStyle(bracketAccentColor)
+                .frame(maxWidth: .infinity, alignment: .center)
+
+            Text("Add named rules for games unique to this league. Anyone in the league can manage these; everyone picks them when logging a game.")
+                .font(memberDetailFont)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity, alignment: .center)
+
+            NavigationLink {
+                LeagueCustomGamesSettingsView(communityId: communityId)
+                    .environmentObject(container)
+            } label: {
+                Text("Manage custom games")
+                    .font(.custom("NeueHaasDisplay-Mediu", size: 22))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(Color.white)
+                    )
+                    .foregroundStyle(bracketAccentColor)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .stroke(bracketAccentColor, lineWidth: 2)
+                    )
+            }
+            .buttonStyle(.plain)
         }
-        let odds = member.effectiveOdds(basis: rankingBasis)
+    }
+
+    private var leagueBoardSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("League board")
+                .font(.custom("NeueHaasDisplay-Bold", size: 15))
+                .foregroundStyle(bracketAccentColor)
+                .frame(maxWidth: .infinity, alignment: .center)
+
+            Text("A place to talk about past and future games.")
+                .font(.custom("NeueHaasDisplay-Light", size: 14))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+
+            NavigationLink {
+                LeagueBoardView(communityId: communityId)
+                    .environmentObject(container)
+            } label: {
+                Text("Open board")
+                    .font(.custom("NeueHaasDisplay-Mediu", size: 22))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(.white)
+                    )
+                    .foregroundStyle(bracketAccentColor)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .stroke(bracketAccentColor, lineWidth: 2)
+                    )
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("community.detail.openBoard")
+        }
+    }
+
+    private func memberOddsSubtitle(for member: CommunityMemberRosterRow) -> String {
+        let games = member.effectiveGamesPlayed(chip: rankingChip)
+        if games == 0 {
+            return rankingChip == .allGames
+                ? "No league games yet"
+                : "No \(rankingChip.displayName) games in this league"
+        }
+        let odds = member.effectiveOdds(chip: rankingChip)
         let oddsText = Self.oddsFormatter.string(from: NSNumber(value: odds)) ?? "0.000"
         let wins = winCount(fromOdds: odds, gamesPlayed: games)
         let losses = games - wins
@@ -658,7 +1078,9 @@ struct CommunityDetailView: View {
             } else {
                 LazyVStack(spacing: 24) {
                     ForEach(feedRows) { row in
-                        FeedCardView(row: row, showCommunityLabel: false)
+                        FeedCardView(row: row, showCommunityLabel: false, onRequestEdit: { r in
+                            gameLogEditSheet = CommunityDetailGameLogEditItem(id: r.gameLogId)
+                        })
                     }
                     feedFooter
                 }
@@ -688,14 +1110,83 @@ struct CommunityDetailView: View {
             // Never hit live data in UI tests.
             communityName = "UI Test League"
             inviteCode = "UI-TEST"
+            createdByProfileId = "ui-test-user"
+            hiddenFromMembers = false
             members = uiTestMembers
+            gameDefinitions = []
+            reconcileRankingChipWithDefinitions()
             return
         }
         let db = AppFirestore.db()
         let communityDoc = try await db.collection("communities").document(communityId).getDocument()
-        communityName = communityDoc.data()?["name"] as? String ?? "League"
-        inviteCode = communityDoc.data()?["inviteCode"] as? String
+        let data = communityDoc.data()
+        communityName = data?["name"] as? String ?? "League"
+        inviteCode = data?["inviteCode"] as? String
+        createdByProfileId = data?["createdByProfileId"] as? String
+        hiddenFromMembers = (data?["hiddenFromMembers"] as? Bool) ?? false
         members = try await container.communityService.fetchMembers(communityId: communityId)
+        gameDefinitions = try await container.communityService.listGameDefinitions(communityId: communityId)
+        reconcileRankingChipWithDefinitions()
+    }
+
+    private func reconcileRankingChipWithDefinitions() {
+        switch rankingChip {
+        case .allGames:
+            break
+        case .builtIn:
+            if !rankingChips.contains(rankingChip) {
+                rankingChip = .allGames
+            }
+        case .customDefinition(let id, _):
+            if let def = gameDefinitions.first(where: { $0.gameDefinitionId == id }) {
+                rankingChip = .customDefinition(id: def.gameDefinitionId, name: def.name)
+            } else {
+                rankingChip = .allGames
+            }
+        }
+        let validBracketGameIds = Set(bracketCreateGameOptions.map(\.id))
+        if !validBracketGameIds.contains(bracketCreateGameOptionId) {
+            bracketCreateGameOptionId = GameType.pong.rawValue
+        }
+    }
+
+    private func performKickMember() async {
+        guard let pid = kickTargetProfileId else { return }
+        kickInProgress = true
+        kickErrorMessage = nil
+        defer { kickInProgress = false }
+        do {
+            try await container.platformAdminService.kickMember(communityId: communityId, profileId: pid)
+            kickTargetProfileId = nil
+            await loadInitial()
+        } catch {
+            kickErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func applyCommunityVisibility(hidden: Bool) async {
+        if UITestRuntime.participatesInUiTestHarness {
+            do {
+                try await container.communityService.setCommunityHidden(communityId: communityId, hidden: hidden)
+                hiddenFromMembers = hidden
+            } catch {
+                visibilityErrorMessage = error.localizedDescription
+            }
+            confirmHideLeague = false
+            confirmUnhideLeague = false
+            return
+        }
+        isSavingVisibility = true
+        visibilityErrorMessage = nil
+        defer { isSavingVisibility = false }
+        do {
+            try await container.communityService.setCommunityHidden(communityId: communityId, hidden: hidden)
+            hiddenFromMembers = hidden
+            confirmHideLeague = false
+            confirmUnhideLeague = false
+        } catch {
+            visibilityErrorMessage = error.localizedDescription
+        }
     }
 
     private func loadInitialFeedSection() async {
@@ -761,9 +1252,16 @@ struct CommunityDetailView: View {
     private func createBracket() async {
         guard canCreateBracket else {
             bracketErrorMessage =
-                "Need at least 2 members and enough for two teams at team size \(selectedTeamSize)."
+                "Need at least 2 members and enough for two teams at team size \(effectiveBracketPlayersPerSide)."
             return
         }
+        let gameOpt = bracketCreateGameOptions.first(where: { $0.id == bracketCreateGameOptionId })
+            ?? BracketCreateGameOption(
+                id: GameType.pong.rawValue,
+                title: GameType.pong.displayName,
+                gameTypeRaw: GameType.pong.rawValue,
+                customDefinitionId: nil
+            )
         if UITestRuntime.participatesInUiTestHarness {
             let bracketId = "ui-bracket-\(brackets.count + 1)"
             let created = BracketListItem(
@@ -771,7 +1269,10 @@ struct CommunityDetailView: View {
                 communityId: communityId,
                 seedMethod: selectedSeedMethod,
                 status: selectedSeedMethod == .manual ? "DRAFT" : "ACTIVE",
-                teamSize: selectedTeamSize,
+                teamSize: effectiveBracketPlayersPerSide,
+                gameType: gameOpt.gameTypeRaw,
+                customGameDefinitionId: gameOpt.customDefinitionId,
+                customGameDefinitionName: gameDefinitions.first(where: { $0.gameDefinitionId == gameOpt.customDefinitionId })?.name,
                 createdAt: Date()
             )
             showCreateBracketPopup = false
@@ -792,14 +1293,19 @@ struct CommunityDetailView: View {
             let bracketId = try await container.bracketService.createBracket(
                 communityId: communityId,
                 seedMethod: selectedSeedMethod,
-                teamSize: selectedTeamSize
+                teamSize: effectiveBracketPlayersPerSide,
+                gameType: gameOpt.gameTypeRaw,
+                customGameDefinitionId: gameOpt.customDefinitionId
             )
             let created = BracketListItem(
                 bracketId: bracketId,
                 communityId: communityId,
                 seedMethod: selectedSeedMethod,
                 status: selectedSeedMethod == .manual ? "DRAFT" : "ACTIVE",
-                teamSize: selectedTeamSize,
+                teamSize: effectiveBracketPlayersPerSide,
+                gameType: gameOpt.gameTypeRaw,
+                customGameDefinitionId: gameOpt.customDefinitionId,
+                customGameDefinitionName: gameDefinitions.first(where: { $0.gameDefinitionId == gameOpt.customDefinitionId })?.name,
                 createdAt: Date()
             )
             showCreateBracketPopup = false
@@ -870,7 +1376,7 @@ struct CommunityDetailView: View {
         } label: {
             HStack(alignment: .center, spacing: 10) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("\(bracket.seedMethod.displayName) • \(bracket.teamSize)v\(bracket.teamSize)")
+                    Text("\(bracket.seedMethod.displayName) • \(bracket.teamSize)v\(bracket.teamSize) • \(bracket.gameTypeSummary)")
                         .font(.custom("NeueHaasDisplay-Mediu", size: 18))
                         .foregroundStyle(.black)
                     Text("Status: \(bracket.status)")

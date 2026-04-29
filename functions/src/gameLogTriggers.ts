@@ -9,7 +9,10 @@ import {
   GameLogEventKind,
   OddsRecalcContext,
 } from "./oddsRecalc.js";
-import {applyBracketOutcomeFromGameLogCreate} from "./bracketGameLogSync.js";
+import {
+  applyBracketOutcomeFromGameLogCreate,
+  applyBracketUndoFromGameLogDelete,
+} from "./bracketGameLogSync.js";
 
 const DOCUMENT_PATH = "gameLogs/{gameLogId}";
 const region = "us-central1";
@@ -96,6 +99,10 @@ async function handleGameLogChange(
 
   if (kind === "created" && afterData) {
     await applyBracketOutcomeFromGameLogCreate(gameLogId, afterData);
+  }
+
+  if (kind === "deleted" && beforeData) {
+    await applyBracketUndoFromGameLogDelete(gameLogId, beforeData);
   }
 
   await recomputeOddsForGameLogEvent(ctx);

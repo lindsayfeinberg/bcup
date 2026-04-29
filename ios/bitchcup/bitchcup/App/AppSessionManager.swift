@@ -7,6 +7,10 @@ final class AppSessionManager: ObservableObject {
     @Published private(set) var sessionState: SessionState = .loading
     @Published private(set) var currentUserId: String?
     @Published private(set) var isOnboardingComplete = false
+    /// `platformAdmin: true` on the Firebase ID token (Phase D1).
+    @Published private(set) var isPlatformAdmin: Bool = false
+    /// Set when `bcup://admin` is opened; Feed presents the platform admin shell then clears this flag.
+    @Published private(set) var adminConsolePresentationRequested: Bool = false
     @Published var errorMessage: String?
 
     private let router: AppRouter
@@ -34,6 +38,8 @@ final class AppSessionManager: ObservableObject {
         guard let userId = authService.currentUserId else {
             currentUserId = nil
             isOnboardingComplete = false
+            isPlatformAdmin = false
+            adminConsolePresentationRequested = false
             sessionState = .unauthenticated
             router.showOnboarding()
             AppDebugLog.log("ensureOnboardingCompleteOrRouteToOnboarding: no uid → onboarding")
@@ -65,6 +71,8 @@ final class AppSessionManager: ObservableObject {
             AppDebugLog.log("restoreSession: no Firebase Auth user — staying unauthenticated, route onboarding")
             currentUserId = nil
             isOnboardingComplete = false
+            isPlatformAdmin = false
+            adminConsolePresentationRequested = false
             sessionState = .unauthenticated
             router.showOnboarding()
             syncCrashlyticsUserFromAuth()
@@ -74,6 +82,7 @@ final class AppSessionManager: ObservableObject {
         AppDebugLog.log("restoreSession: found existing user uid=\(userId)")
         currentUserId = userId
         await resolveOnboardingState(for: userId)
+        await refreshPlatformAdminClaim(forceRefresh: true)
     }
 
     func signInWithGoogle() async {
@@ -93,10 +102,13 @@ final class AppSessionManager: ObservableObject {
             }
 
             await resolveOnboardingState(for: userId)
+            await refreshPlatformAdminClaim(forceRefresh: true)
         } catch {
             AppDebugLog.log("signInWithGoogle: FAILED — \(error.localizedDescription)")
             OnboardingAnalytics.logSignInFailed(message: error.localizedDescription)
             sessionState = .unauthenticated
+            isPlatformAdmin = false
+            adminConsolePresentationRequested = false
             router.showOnboarding()
             errorMessage = error.localizedDescription
             syncCrashlyticsUserFromAuth()
@@ -110,6 +122,8 @@ final class AppSessionManager: ObservableObject {
             AppAnalytics.logSignOut()
             currentUserId = nil
             isOnboardingComplete = false
+            isPlatformAdmin = false
+            adminConsolePresentationRequested = false
             sessionState = .unauthenticated
             router.showOnboarding()
             Crashlytics.crashlytics().setUserID("")
@@ -146,7 +160,36 @@ final class AppSessionManager: ObservableObject {
             router.showOnboarding()
             errorMessage = FirestoreErrorMapper.userFacingMessage(for: error)
         }
+        await refreshPlatformAdminClaim(forceRefresh: false)
         syncCrashlyticsUserFromAuth()
+    }
+
+    /// Re-fetches ID token claims (e.g. after setting `platformAdmin` in Firebase Console / Admin SDK).
+    func refreshPlatformAdminTokenFromServer() async {
+        await refreshPlatformAdminClaim(forceRefresh: true)
+    }
+
+    /// Handles `bcup://admin` — refreshes claims and, if allowed, asks home UI to open the platform admin shell.
+    func handleAdminDeepLink(url: URL) async {
+        guard url.scheme?.lowercased() == "bcup", url.host?.lowercased() == "admin" else { return }
+        await refreshPlatformAdminClaim(forceRefresh: true)
+        if isPlatformAdmin {
+            adminConsolePresentationRequested = true
+        }
+    }
+
+    func acknowledgeAdminConsolePresentationRequest() {
+        adminConsolePresentationRequested = false
+    }
+
+    private func refreshPlatformAdminClaim(forceRefresh: Bool) async {
+        do {
+            isPlatformAdmin = try await authService.fetchPlatformAdminClaimFromIDToken(forceRefresh: forceRefresh)
+            AppDebugLog.log("refreshPlatformAdminClaim: isPlatformAdmin=\(isPlatformAdmin) forceRefresh=\(forceRefresh)")
+        } catch {
+            isPlatformAdmin = false
+            AppDebugLog.log("refreshPlatformAdminClaim: FAILED — \(error.localizedDescription)")
+        }
     }
 
     /// Aligns Crashlytics with `Auth.auth().currentUser` (no routing through `DependencyContainer`).

@@ -91,7 +91,7 @@ struct bitchcupTests {
         let mean = WhatIfMatchupMath.meanResolvedOdds(
             memberIds: ["a", "b"],
             roster: roster,
-            basis: .allGames
+            chip: .allGames
         )
         #expect(mean != nil)
         #expect(abs(mean! - 0.5) < 0.0001)
@@ -117,5 +117,66 @@ struct bitchcupTests {
     @Test func percentagePointEdge() {
         let edge = WhatIfMatchupMath.percentagePointEdge(pA: 0.68, pB: 0.32)
         #expect(abs(edge - 36) < 0.0001)
+    }
+
+    @Test func effectiveOdds_customBucketUsesCustomPrefixKey() {
+        let row = CommunityMemberRosterRow(
+            profileId: "a",
+            displayName: "A",
+            profilePhotoUrl: nil,
+            communityOdds: 0.5,
+            communityGamesPlayed: 10,
+            communityOddsByGameType: ["CUSTOM:gd1": 0.72],
+            communityGamesPlayedByGameType: ["CUSTOM:gd1": 5]
+        )
+        let chip = LeagueRankingChip.customDefinition(id: "gd1", name: "House rules")
+        #expect(row.effectiveOdds(chip: chip) == 0.72)
+        #expect(row.effectiveGamesPlayed(chip: chip) == 5)
+    }
+
+    @Test func resolvedOddsForMatchup_customFallsBackWhenNoCustomGames() {
+        let row = CommunityMemberRosterRow(
+            profileId: "a",
+            displayName: "A",
+            profilePhotoUrl: nil,
+            communityOdds: 0.55,
+            communityGamesPlayed: 8,
+            communityOddsByGameType: ["CUSTOM:gd1": 0.9],
+            communityGamesPlayedByGameType: ["CUSTOM:gd1": 0]
+        )
+        let chip = LeagueRankingChip.customDefinition(id: "gd1", name: "X")
+        #expect(row.resolvedOddsForMatchup(chip: chip) == 0.55)
+    }
+
+    @Test func rankingChips_includeCustomDefinitionsSortedByName() {
+        let defs = [
+            GameDefinitionRecord(
+                gameDefinitionId: "b",
+                communityId: "c1",
+                name: "Zebra",
+                rulesText: nil,
+                createdByProfileId: "u",
+                createdAt: nil,
+                updatedAt: nil
+            ),
+            GameDefinitionRecord(
+                gameDefinitionId: "a",
+                communityId: "c1",
+                name: "Alpha",
+                rulesText: nil,
+                createdByProfileId: "u",
+                createdAt: nil,
+                updatedAt: nil
+            )
+        ]
+        let chips = LeagueRankingChip.rankingChips(gameDefinitions: defs)
+        #expect(chips.first == .allGames)
+        let customChips = chips.filter {
+            if case .customDefinition = $0 { return true }
+            return false
+        }
+        #expect(customChips.count == 2)
+        #expect(customChips[0] == .customDefinition(id: "a", name: "Alpha"))
+        #expect(customChips[1] == .customDefinition(id: "b", name: "Zebra"))
     }
 }

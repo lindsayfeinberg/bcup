@@ -11,5 +11,13 @@ struct GameLogView: View {
 
     var body: some View {
         NewGameLogFormView(frontPhotoData: frontPhotoData, backPhotoData: backPhotoData)
+            .navigationTitle("Log game")
+            .navigationBarTitleDisplayMode(.inline)
+            .communityFlowNavigationBarChrome()
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    CommunityFlowBackToolbarButton()
+                }
+            }
     }
 }

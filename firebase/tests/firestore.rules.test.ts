@@ -7,6 +7,7 @@ import {
   type RulesTestEnvironment,
 } from "@firebase/rules-unit-testing";
 import {
+  deleteField,
   doc,
   getDoc,
   setDoc,
@@ -20,6 +21,7 @@ const RULES_PATH = path.join(__dirname, "..", "firestore.rules");
 const ALICE = "alice_uid";
 const BOB = "bob_uid";
 const CHARLIE = "charlie_uid";
+const ADMIN_UID = "platform_admin_uid";
 const COMM_ID = "community_test_1";
 
 let testEnv: RulesTestEnvironment;
@@ -254,6 +256,162 @@ describe("Firestore rules — memberships", () => {
   });
 });
 
+function communityMessagePayload(
+  messageId: string,
+  authorUid: string,
+  overrides: Record<string, unknown> = {}
+) {
+  const now = ts();
+  return {
+    id: messageId,
+    communityId: COMM_ID,
+    authorProfileId: authorUid,
+    text: "Hello league",
+    createdAt: now,
+    updatedAt: now,
+    ...overrides,
+  };
+}
+
+describe("Firestore rules — community messages", () => {
+  it("allows member to create with optional deleted false", async () => {
+    const db = testEnv.authenticatedContext(ALICE).firestore();
+    const mid = "msg_001";
+    const now = ts();
+    await assertSucceeds(
+      setDoc(doc(db, "communities", COMM_ID, "messages", mid), {
+        id: mid,
+        communityId: COMM_ID,
+        authorProfileId: ALICE,
+        text: "Hi",
+        deleted: false,
+        createdAt: now,
+        updatedAt: now,
+      })
+    );
+  });
+
+  it("allows member to create without deleted key", async () => {
+    const db = testEnv.authenticatedContext(BOB).firestore();
+    const mid = "msg_002";
+    await assertSucceeds(
+      setDoc(
+        doc(db, "communities", COMM_ID, "messages", mid),
+        communityMessagePayload(mid, BOB)
+      )
+    );
+  });
+
+  it("allows another member to read a message", async () => {
+    const dbA = testEnv.authenticatedContext(ALICE).firestore();
+    const mid = "msg_read_1";
+    await setDoc(
+      doc(dbA, "communities", COMM_ID, "messages", mid),
+      communityMessagePayload(mid, ALICE)
+    );
+    const dbB = testEnv.authenticatedContext(BOB).firestore();
+    await assertSucceeds(
+      getDoc(doc(dbB, "communities", COMM_ID, "messages", mid))
+    );
+  });
+
+  it("denies create when not a community member", async () => {
+    const db = testEnv.authenticatedContext(CHARLIE).firestore();
+    const mid = "msg_no_member";
+    await assertFails(
+      setDoc(
+        doc(db, "communities", COMM_ID, "messages", mid),
+        communityMessagePayload(mid, CHARLIE)
+      )
+    );
+  });
+
+  it("denies create when communityId does not match path", async () => {
+    const db = testEnv.authenticatedContext(ALICE).firestore();
+    const mid = "msg_wrong_comm";
+    await assertFails(
+      setDoc(
+        doc(db, "communities", COMM_ID, "messages", mid),
+        communityMessagePayload(mid, ALICE, {communityId: "other_community"})
+      )
+    );
+  });
+
+  it("denies create when authorProfileId is not caller", async () => {
+    const db = testEnv.authenticatedContext(ALICE).firestore();
+    const mid = "msg_wrong_author";
+    await assertFails(
+      setDoc(
+        doc(db, "communities", COMM_ID, "messages", mid),
+        communityMessagePayload(mid, ALICE, {authorProfileId: BOB})
+      )
+    );
+  });
+
+  it("denies create when text is empty", async () => {
+    const db = testEnv.authenticatedContext(ALICE).firestore();
+    const mid = "msg_empty_text";
+    await assertFails(
+      setDoc(
+        doc(db, "communities", COMM_ID, "messages", mid),
+        communityMessagePayload(mid, ALICE, {text: ""})
+      )
+    );
+  });
+
+  it("denies create when text exceeds 4000 chars", async () => {
+    const db = testEnv.authenticatedContext(ALICE).firestore();
+    const mid = "msg_long";
+    const longText = "a".repeat(4001);
+    await assertFails(
+      setDoc(
+        doc(db, "communities", COMM_ID, "messages", mid),
+        communityMessagePayload(mid, ALICE, {text: longText})
+      )
+    );
+  });
+
+  it("denies create with unknown field", async () => {
+    const db = testEnv.authenticatedContext(ALICE).firestore();
+    const mid = "msg_extra";
+    await assertFails(
+      setDoc(doc(db, "communities", COMM_ID, "messages", mid), {
+        ...communityMessagePayload(mid, ALICE),
+        extra: "nope",
+      })
+    );
+  });
+
+  it("denies create when deleted is true", async () => {
+    const db = testEnv.authenticatedContext(ALICE).firestore();
+    const mid = "msg_deleted_true";
+    await assertFails(
+      setDoc(
+        doc(db, "communities", COMM_ID, "messages", mid),
+        communityMessagePayload(mid, ALICE, {deleted: true})
+      )
+    );
+  });
+
+  it("denies update and delete", async () => {
+    const db = testEnv.authenticatedContext(ALICE).firestore();
+    const mid = "msg_immutable";
+    await setDoc(
+      doc(db, "communities", COMM_ID, "messages", mid),
+      communityMessagePayload(mid, ALICE)
+    );
+    await assertFails(
+      updateDoc(doc(db, "communities", COMM_ID, "messages", mid), {
+        text: "changed",
+        updatedAt: ts(),
+      })
+    );
+    await assertFails(
+      deleteDoc(doc(db, "communities", COMM_ID, "messages", mid))
+    );
+  });
+});
+
 describe("Firestore rules — gameLogs", () => {
   it("allows member to create a valid game log", async () => {
     const db = testEnv.authenticatedContext(ALICE).firestore();
@@ -263,7 +421,7 @@ describe("Firestore rules — gameLogs", () => {
       setDoc(doc(db, "gameLogs", gameLogId), {
         id: gameLogId,
         communityId: COMM_ID,
-        gameType: "pong",
+        gameType: "PONG",
         createdByProfileId: ALICE,
         participantProfileIds: [ALICE, BOB],
         winnerProfileIds: [ALICE],
@@ -284,7 +442,7 @@ describe("Firestore rules — gameLogs", () => {
       setDoc(doc(db, "gameLogs", gameLogId), {
         id: gameLogId,
         communityId: COMM_ID,
-        gameType: "pong",
+        gameType: "PONG",
         createdByProfileId: CHARLIE,
         participantProfileIds: [CHARLIE, "other"],
         winnerProfileIds: [CHARLIE],
@@ -305,7 +463,7 @@ describe("Firestore rules — gameLogs", () => {
       setDoc(doc(db, "gameLogs", gameLogId), {
         id: gameLogId,
         communityId: COMM_ID,
-        gameType: "pong",
+        gameType: "PONG",
         createdByProfileId: ALICE,
         participantProfileIds: [ALICE, BOB],
         winnerProfileIds: [ALICE],
@@ -325,7 +483,7 @@ describe("Firestore rules — gameLogs", () => {
     await setDoc(doc(db, "gameLogs", gameLogId), {
       id: gameLogId,
       communityId: COMM_ID,
-      gameType: "pong",
+      gameType: "PONG",
       createdByProfileId: ALICE,
       participantProfileIds: [ALICE, BOB],
       winnerProfileIds: [ALICE],
@@ -336,6 +494,139 @@ describe("Firestore rules — gameLogs", () => {
       updatedAt: now,
     });
     await assertSucceeds(deleteDoc(doc(db, "gameLogs", gameLogId)));
+  });
+
+  it("allows member to create CUSTOM game log with customGameDefinitionId", async () => {
+    const db = testEnv.authenticatedContext(ALICE).firestore();
+    const gameLogId = "log_custom_1";
+    const now = ts();
+    await assertSucceeds(
+      setDoc(doc(db, "gameLogs", gameLogId), {
+        id: gameLogId,
+        communityId: COMM_ID,
+        gameType: "CUSTOM",
+        customGameDefinitionId: "gd_league_pong_plus",
+        createdByProfileId: ALICE,
+        participantProfileIds: [ALICE, BOB],
+        winnerProfileIds: [ALICE],
+        loserProfileIds: [BOB],
+        photoUrls: ["https://cdn.example/photo.jpg"],
+        notes: "",
+        createdAt: now,
+        updatedAt: now,
+      })
+    );
+  });
+
+  it("allows member to create CUSTOM game log with customGameDefinitionName", async () => {
+    const db = testEnv.authenticatedContext(ALICE).firestore();
+    const gameLogId = "log_custom_named";
+    const now = ts();
+    await assertSucceeds(
+      setDoc(doc(db, "gameLogs", gameLogId), {
+        id: gameLogId,
+        communityId: COMM_ID,
+        gameType: "CUSTOM",
+        customGameDefinitionId: "gd_league_pong_plus",
+        customGameDefinitionName: "Pong Plus",
+        createdByProfileId: ALICE,
+        participantProfileIds: [ALICE, BOB],
+        winnerProfileIds: [ALICE],
+        loserProfileIds: [BOB],
+        photoUrls: ["https://cdn.example/photo.jpg"],
+        notes: "",
+        createdAt: now,
+        updatedAt: now,
+      })
+    );
+  });
+
+  it("denies CUSTOM game log with empty customGameDefinitionName", async () => {
+    const db = testEnv.authenticatedContext(ALICE).firestore();
+    const gameLogId = "log_custom_empty_name";
+    const now = ts();
+    await assertFails(
+      setDoc(doc(db, "gameLogs", gameLogId), {
+        id: gameLogId,
+        communityId: COMM_ID,
+        gameType: "CUSTOM",
+        customGameDefinitionId: "gd_league_pong_plus",
+        customGameDefinitionName: "",
+        createdByProfileId: ALICE,
+        participantProfileIds: [ALICE, BOB],
+        winnerProfileIds: [ALICE],
+        loserProfileIds: [BOB],
+        photoUrls: ["https://cdn.example/photo.jpg"],
+        notes: "",
+        createdAt: now,
+        updatedAt: now,
+      })
+    );
+  });
+
+  it("denies built-in gameType with customGameDefinitionName set", async () => {
+    const db = testEnv.authenticatedContext(ALICE).firestore();
+    const gameLogId = "log_builtin_name_bad";
+    const now = ts();
+    await assertFails(
+      setDoc(doc(db, "gameLogs", gameLogId), {
+        id: gameLogId,
+        communityId: COMM_ID,
+        gameType: "PONG",
+        customGameDefinitionName: "Should not be here",
+        createdByProfileId: ALICE,
+        participantProfileIds: [ALICE, BOB],
+        winnerProfileIds: [ALICE],
+        loserProfileIds: [BOB],
+        photoUrls: ["https://cdn.example/photo.jpg"],
+        notes: "",
+        createdAt: now,
+        updatedAt: now,
+      })
+    );
+  });
+
+  it("denies CUSTOM game log without customGameDefinitionId", async () => {
+    const db = testEnv.authenticatedContext(ALICE).firestore();
+    const gameLogId = "log_custom_bad";
+    const now = ts();
+    await assertFails(
+      setDoc(doc(db, "gameLogs", gameLogId), {
+        id: gameLogId,
+        communityId: COMM_ID,
+        gameType: "CUSTOM",
+        createdByProfileId: ALICE,
+        participantProfileIds: [ALICE, BOB],
+        winnerProfileIds: [ALICE],
+        loserProfileIds: [BOB],
+        photoUrls: ["https://cdn.example/photo.jpg"],
+        notes: "",
+        createdAt: now,
+        updatedAt: now,
+      })
+    );
+  });
+
+  it("denies built-in gameType with customGameDefinitionId set", async () => {
+    const db = testEnv.authenticatedContext(ALICE).firestore();
+    const gameLogId = "log_builtin_custom_bad";
+    const now = ts();
+    await assertFails(
+      setDoc(doc(db, "gameLogs", gameLogId), {
+        id: gameLogId,
+        communityId: COMM_ID,
+        gameType: "PONG",
+        customGameDefinitionId: "gd_should_not_be_here",
+        createdByProfileId: ALICE,
+        participantProfileIds: [ALICE, BOB],
+        winnerProfileIds: [ALICE],
+        loserProfileIds: [BOB],
+        photoUrls: ["https://cdn.example/photo.jpg"],
+        notes: "",
+        createdAt: now,
+        updatedAt: now,
+      })
+    );
   });
 });
 
@@ -398,6 +689,212 @@ describe("Firestore rules — brackets", () => {
         createdAt: now,
         updatedAt: now,
       })
+    );
+  });
+});
+
+describe("Firestore rules — hidden leagues", () => {
+  const hiddenLogId = "log_hidden_league";
+
+  beforeEach(async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore();
+      const now = ts();
+      await updateDoc(doc(db, "communities", COMM_ID), {
+        hiddenFromMembers: true,
+        updatedAt: now,
+      });
+      await updateDoc(doc(db, "memberships", `${COMM_ID}_${BOB}`), {
+        leagueHiddenForMember: true,
+        updatedAt: now,
+      });
+      await setDoc(doc(db, "gameLogs", hiddenLogId), {
+        id: hiddenLogId,
+        communityId: COMM_ID,
+        gameType: "PONG",
+        createdByProfileId: ALICE,
+        participantProfileIds: [ALICE, BOB],
+        winnerProfileIds: [ALICE],
+        loserProfileIds: [BOB],
+        photoUrls: ["https://cdn.example/p.jpg"],
+        notes: "",
+        createdAt: now,
+        updatedAt: now,
+      });
+      await setDoc(doc(db, "communities", COMM_ID, "messages", "msg_hidden_1"), {
+        id: "msg_hidden_1",
+        communityId: COMM_ID,
+        authorProfileId: ALICE,
+        text: "Thread while hidden",
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+  });
+
+  afterEach(async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore();
+      await deleteDoc(doc(db, "communities", COMM_ID, "messages", "msg_hidden_1"));
+      await deleteDoc(doc(db, "gameLogs", hiddenLogId));
+      await updateDoc(doc(db, "communities", COMM_ID), {
+        hiddenFromMembers: false,
+        updatedAt: ts(),
+      });
+      await updateDoc(doc(db, "memberships", `${COMM_ID}_${BOB}`), {
+        leagueHiddenForMember: deleteField(),
+        updatedAt: ts(),
+      });
+    });
+  });
+
+  it("denies non-creator member read on community when hidden", async () => {
+    const db = testEnv.authenticatedContext(BOB).firestore();
+    await assertFails(getDoc(doc(db, "communities", COMM_ID)));
+  });
+
+  it("allows creator read on community when hidden", async () => {
+    const db = testEnv.authenticatedContext(ALICE).firestore();
+    await assertSucceeds(getDoc(doc(db, "communities", COMM_ID)));
+  });
+
+  it("denies non-creator member read on gameLogs when hidden", async () => {
+    const db = testEnv.authenticatedContext(BOB).firestore();
+    await assertFails(getDoc(doc(db, "gameLogs", hiddenLogId)));
+  });
+
+  it("allows creator read on gameLogs when hidden", async () => {
+    const db = testEnv.authenticatedContext(ALICE).firestore();
+    await assertSucceeds(getDoc(doc(db, "gameLogs", hiddenLogId)));
+  });
+
+  it("denies non-creator member read on other memberships when hidden", async () => {
+    const db = testEnv.authenticatedContext(BOB).firestore();
+    await assertFails(getDoc(doc(db, "memberships", `${COMM_ID}_${ALICE}`)));
+  });
+
+  it("allows non-creator member read on own membership when hidden", async () => {
+    const db = testEnv.authenticatedContext(BOB).firestore();
+    await assertSucceeds(getDoc(doc(db, "memberships", `${COMM_ID}_${BOB}`)));
+  });
+
+  it("denies non-creator member read on messages when league hidden", async () => {
+    const db = testEnv.authenticatedContext(BOB).firestore();
+    await assertFails(
+      getDoc(doc(db, "communities", COMM_ID, "messages", "msg_hidden_1"))
+    );
+  });
+
+  it("allows creator read on messages when league hidden", async () => {
+    const db = testEnv.authenticatedContext(ALICE).firestore();
+    await assertSucceeds(
+      getDoc(doc(db, "communities", COMM_ID, "messages", "msg_hidden_1"))
+    );
+  });
+});
+
+describe("Firestore rules — adminActions", () => {
+  const actionId = "admin_action_1";
+
+  beforeEach(async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore();
+      await setDoc(doc(db, "adminActions", actionId), {
+        actorUid: ADMIN_UID,
+        action: "deleteGameLog",
+        targetGameLogId: "log_123",
+        targetCommunityId: COMM_ID,
+        createdAt: ts(),
+      });
+    });
+  });
+
+  it("allows platform admin read", async () => {
+    const db = testEnv.authenticatedContext(
+      ADMIN_UID,
+      {platformAdmin: true}
+    ).firestore();
+    await assertSucceeds(getDoc(doc(db, "adminActions", actionId)));
+  });
+
+  it("denies non-admin read", async () => {
+    const db = testEnv.authenticatedContext(ALICE).firestore();
+    await assertFails(getDoc(doc(db, "adminActions", actionId)));
+  });
+
+  it("denies client writes even for platform admin", async () => {
+    const db = testEnv.authenticatedContext(
+      ADMIN_UID,
+      {platformAdmin: true}
+    ).firestore();
+    await assertFails(
+      setDoc(doc(db, "adminActions", "new_action"), {
+        actorUid: ADMIN_UID,
+        action: "kickMember",
+        createdAt: ts(),
+      })
+    );
+    await assertFails(
+      updateDoc(doc(db, "adminActions", actionId), {
+        action: "tamper",
+      })
+    );
+    await assertFails(deleteDoc(doc(db, "adminActions", actionId)));
+  });
+});
+
+describe("Firestore rules — gameDefinitions", () => {
+  const gameDefinitionId = "gd_pong_plus";
+
+  beforeEach(async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore();
+      await setDoc(doc(db, "communities", COMM_ID, "gameDefinitions", gameDefinitionId), {
+        id: gameDefinitionId,
+        communityId: COMM_ID,
+        name: "Pong Plus",
+        rulesText: "11 cups, bounce shots count as 2.",
+        createdByProfileId: ALICE,
+        createdAt: ts(),
+        updatedAt: ts(),
+      });
+    });
+  });
+
+  it("allows member read", async () => {
+    const db = testEnv.authenticatedContext(BOB).firestore();
+    await assertSucceeds(
+      getDoc(doc(db, "communities", COMM_ID, "gameDefinitions", gameDefinitionId))
+    );
+  });
+
+  it("denies non-member read", async () => {
+    const db = testEnv.authenticatedContext(CHARLIE).firestore();
+    await assertFails(
+      getDoc(doc(db, "communities", COMM_ID, "gameDefinitions", gameDefinitionId))
+    );
+  });
+
+  it("denies client writes", async () => {
+    const db = testEnv.authenticatedContext(ALICE).firestore();
+    await assertFails(
+      setDoc(doc(db, "communities", COMM_ID, "gameDefinitions", "gd_new"), {
+        id: "gd_new",
+        communityId: COMM_ID,
+        name: "New custom game",
+        rulesText: null,
+        createdByProfileId: ALICE,
+        createdAt: ts(),
+        updatedAt: ts(),
+      })
+    );
+    await assertFails(
+      updateDoc(doc(db, "communities", COMM_ID, "gameDefinitions", gameDefinitionId), {
+        name: "Tamper",
+      })
+    );
+    await assertFails(
+      deleteDoc(doc(db, "communities", COMM_ID, "gameDefinitions", gameDefinitionId))
     );
   });
 });

@@ -54,7 +54,7 @@ struct OnboardingProfileSetupView: View {
                 Spacer()
             }
 
-            Text("Choose a display name and profile. Please choose wisely because you cannot update them later on in this version :/")
+            Text("Choose a display name and profile photo. You can change them anytime from your profile.")
                 .font(.custom("NeueHaasDisplay-Light", size: 17))
                 .foregroundStyle(.black)
                 .multilineTextAlignment(.center)

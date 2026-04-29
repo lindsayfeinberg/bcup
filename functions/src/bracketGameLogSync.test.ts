@@ -1,5 +1,8 @@
 import type {BracketDocument} from "./bracketModel.js";
-import {applyGameLogOutcomeToBracketDoc} from "./bracketGameLogSync.js";
+import {
+  applyGameLogOutcomeToBracketDoc,
+  rebuildBracketFromRemainingGameLogs,
+} from "./bracketGameLogSync.js";
 
 function makeBracketDoc(params: {
   bracketId: string;
@@ -370,6 +373,176 @@ describe("applyGameLogOutcomeToBracketDoc", () => {
     // When both participant sides are known, the placeholder converts to a scheduled match.
     expect(updatedPlaceholder.feederMatchIds).toBeUndefined();
     expect(afterRealFeeder.updatedBracket.status).toBe("ACTIVE");
+  });
+
+  it("rebuildBracketFromRemainingGameLogs restores bye placeholder after feeder log replay", () => {
+    const bracketId = "br1";
+    const byeM = "br1_r1_m0";
+    const realM = "br1_r1_m1";
+    const placeholderM = "br1_r2_m0";
+
+    const bracket = makeBracketDoc({
+      bracketId,
+      communityId: "c1",
+      status: "ACTIVE",
+      teamSize: 1,
+      rounds: [
+        {
+          roundNumber: 1,
+          matches: [
+            {
+              matchId: byeM,
+              roundNumber: 1,
+              participantProfileIds: ["b"],
+              winnerProfileIds: ["b"],
+            },
+            {
+              matchId: realM,
+              roundNumber: 1,
+              participantProfileIds: ["c", "d"],
+            },
+          ],
+        },
+        {
+          roundNumber: 2,
+          matches: [
+            {
+              matchId: placeholderM,
+              roundNumber: 2,
+              participantProfileIds: ["b"],
+              feederMatchIds: [byeM, realM],
+            },
+          ],
+        },
+      ],
+    });
+
+    const afterReal = applyGameLogOutcomeToBracketDoc(bracket, {
+      bracketMatchId: realM,
+      communityId: "c1",
+      participantProfileIds: ["c", "d"],
+      winnerProfileIds: ["c"],
+      loserProfileIds: ["d"],
+    });
+    expect(afterReal.result.didUpdate).toBe(true);
+
+    const logRows = [
+      {
+        bracketId,
+        bracketMatchId: realM,
+        communityId: "c1",
+        participantProfileIds: ["c", "d"],
+        winnerProfileIds: ["c"],
+        loserProfileIds: ["d"],
+        createdAt: {toMillis: () => 100},
+        __gameLogId: "g1",
+      },
+    ];
+
+    const rebuilt = rebuildBracketFromRemainingGameLogs(
+      afterReal.updatedBracket,
+      logRows,
+      bracketId
+    );
+
+    expect(rebuilt.status).toBe("ACTIVE");
+    expect(rebuilt.rounds).toEqual(afterReal.updatedBracket.rounds);
+
+    const rebuiltEmpty = rebuildBracketFromRemainingGameLogs(
+      afterReal.updatedBracket,
+      [],
+      bracketId
+    );
+    expect(rebuiltEmpty.rounds).toEqual(bracket.rounds);
+  });
+
+  it("rebuildBracketFromRemainingGameLogs restores state after final log removed", () => {
+    const bracketId = "br1";
+    const m0 = "br1_r1_m0";
+    const m1 = "br1_r1_m1";
+    const finalM = "br1_r2_m0";
+
+    const bracket = makeBracketDoc({
+      bracketId,
+      communityId: "c1",
+      status: "ACTIVE",
+      teamSize: 1,
+      rounds: [
+        {
+          roundNumber: 1,
+          matches: [
+            {matchId: m0, roundNumber: 1, participantProfileIds: ["a", "b"]},
+            {matchId: m1, roundNumber: 1, participantProfileIds: ["c", "d"]},
+          ],
+        },
+        {
+          roundNumber: 2,
+          matches: [
+            {
+              matchId: finalM,
+              roundNumber: 2,
+              participantProfileIds: [],
+              feederMatchIds: [m0, m1],
+            },
+          ],
+        },
+      ],
+    });
+
+    const afterM0 = applyGameLogOutcomeToBracketDoc(bracket, {
+      bracketMatchId: m0,
+      communityId: "c1",
+      participantProfileIds: ["a", "b"],
+      winnerProfileIds: ["a"],
+      loserProfileIds: ["b"],
+    });
+    const afterM1 = applyGameLogOutcomeToBracketDoc(afterM0.updatedBracket, {
+      bracketMatchId: m1,
+      communityId: "c1",
+      participantProfileIds: ["c", "d"],
+      winnerProfileIds: ["c"],
+      loserProfileIds: ["d"],
+    });
+    const afterFinal = applyGameLogOutcomeToBracketDoc(afterM1.updatedBracket, {
+      bracketMatchId: finalM,
+      communityId: "c1",
+      participantProfileIds: ["a", "c"],
+      winnerProfileIds: ["a"],
+      loserProfileIds: ["c"],
+    });
+    expect(afterFinal.updatedBracket.status).toBe("COMPLETE");
+
+    const logRows = [
+      {
+        bracketId,
+        bracketMatchId: m0,
+        communityId: "c1",
+        participantProfileIds: ["a", "b"],
+        winnerProfileIds: ["a"],
+        loserProfileIds: ["b"],
+        createdAt: {toMillis: () => 100},
+        __gameLogId: "g1",
+      },
+      {
+        bracketId,
+        bracketMatchId: m1,
+        communityId: "c1",
+        participantProfileIds: ["c", "d"],
+        winnerProfileIds: ["c"],
+        loserProfileIds: ["d"],
+        createdAt: {toMillis: () => 200},
+        __gameLogId: "g2",
+      },
+    ];
+
+    const rebuilt = rebuildBracketFromRemainingGameLogs(
+      afterFinal.updatedBracket,
+      logRows,
+      bracketId
+    );
+
+    expect(rebuilt.status).toBe("ACTIVE");
+    expect(rebuilt.rounds).toEqual(afterM1.updatedBracket.rounds);
   });
 });
 

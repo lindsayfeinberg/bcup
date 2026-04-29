@@ -77,21 +77,10 @@ struct InviteView: View {
             .buttonStyle(.plain)
         }
         .padding()
-        .navigationBarBackButtonHidden(true)
+        .communityFlowNavigationBarChrome()
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
-                Button {
-                    dismiss()
-                } label: {
-                    Text("Back")
-                        .font(.custom("NeueHaasDisplay-Mediu", size: 16))
-                        .foregroundStyle(CommunityFlowToolbarChrome.accentRed)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.75)
-                        .fixedSize(horizontal: true, vertical: false)
-                }
-                .contentShape(Rectangle())
-                .buttonStyle(.plain)
+                CommunityFlowBackToolbarButton()
             }
         }
     }

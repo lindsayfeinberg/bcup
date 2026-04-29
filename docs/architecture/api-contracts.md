@@ -107,6 +107,145 @@
 
 ---
 
+### `listGameDefinitions`
+- **Trigger:** HTTPS callable
+- **Auth:** Must be authenticated and an eligible community member (hidden-league behavior matches other member reads)
+- **Validation:** `communityId` required
+
+**Request:**
+```json
+{
+  "apiVersion": "v1",
+  "data": {
+    "communityId": "abc123"
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "ok": true,
+  "apiVersion": "v1",
+  "data": {
+    "items": [
+      {
+        "gameDefinitionId": "gd_pong_plus",
+        "name": "Pong Plus",
+        "rulesText": "11 cups. Bounce counts as 2.",
+        "createdByProfileId": "uid_1",
+        "createdAtMillis": 1714060800000,
+        "updatedAtMillis": 1714060800000
+      }
+    ]
+  },
+  "meta": { "requestId": "req_002a" }
+}
+```
+
+**Errors:** `UNAUTHENTICATED`, `INVALID_ARGUMENT`, `PERMISSION_DENIED`, `NOT_FOUND`
+
+---
+
+### `createGameDefinition`
+- **Trigger:** HTTPS callable
+- **Auth:** Must be authenticated and an eligible community member (same hidden-league rules as `listGameDefinitions`)
+- **Validation:** `communityId` and non-empty `name` required; `name <= 80`; optional `rulesText <= 8000`
+
+**Request:**
+```json
+{
+  "apiVersion": "v1",
+  "data": {
+    "communityId": "abc123",
+    "name": "Pong Plus",
+    "rulesText": "11 cups. Bounce counts as 2."
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "ok": true,
+  "apiVersion": "v1",
+  "data": {
+    "gameDefinitionId": "gd_pong_plus"
+  },
+  "meta": { "requestId": "req_002b" }
+}
+```
+
+**Errors:** `UNAUTHENTICATED`, `INVALID_ARGUMENT`, `PERMISSION_DENIED`, `NOT_FOUND`
+
+---
+
+### `updateGameDefinition`
+- **Trigger:** HTTPS callable
+- **Auth:** Must be authenticated and an eligible community member (same hidden-league rules as `listGameDefinitions`)
+- **Validation:** `communityId`, `gameDefinitionId`, and non-empty `name` required; same length limits as create
+
+**Request:**
+```json
+{
+  "apiVersion": "v1",
+  "data": {
+    "communityId": "abc123",
+    "gameDefinitionId": "gd_pong_plus",
+    "name": "Pong Plus (v2)",
+    "rulesText": "Updated rule text"
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "ok": true,
+  "apiVersion": "v1",
+  "data": {
+    "gameDefinitionId": "gd_pong_plus"
+  },
+  "meta": { "requestId": "req_002c" }
+}
+```
+
+**Errors:** `UNAUTHENTICATED`, `INVALID_ARGUMENT`, `PERMISSION_DENIED`, `NOT_FOUND`
+
+---
+
+### `deleteGameDefinition`
+- **Trigger:** HTTPS callable
+- **Auth:** Must be authenticated and an eligible community member (same hidden-league rules as `listGameDefinitions`)
+- **Validation:** `communityId` and `gameDefinitionId` required
+
+**Request:**
+```json
+{
+  "apiVersion": "v1",
+  "data": {
+    "communityId": "abc123",
+    "gameDefinitionId": "gd_pong_plus"
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "ok": true,
+  "apiVersion": "v1",
+  "data": {
+    "gameDefinitionId": "gd_pong_plus"
+  },
+  "meta": { "requestId": "req_002d" }
+}
+```
+
+**Errors:** `UNAUTHENTICATED`, `INVALID_ARGUMENT`, `PERMISSION_DENIED`, `NOT_FOUND`
+
+---
+
 ## Game Logs
 
 ### `createGameLog`
@@ -128,6 +267,7 @@
     - `beerBallStats.newCanCountByProfileId`, optional `beerBallStats.firstFinishedByProfileId`
     - `battlePongStats.playerCupsHit`
     - `baseballStats.hitsByProfileId`
+  - **Per-league custom game (Phase E2):** `gameType` may be **`CUSTOM`** with required `customGameDefinitionId` (id of `communities/{communityId}/gameDefinitions/{id}`). Built-in `gameType` values must omit `customGameDefinitionId` or set it to `null`. Both fields are immutable after create (Firestore rules).
 
 **Request:**
 ```json
@@ -148,6 +288,29 @@
     "beerBallStats": null,
     "battlePongStats": null,
     "baseballStats": null
+  }
+}
+```
+
+**Custom game log (same write path, `setData` on `gameLogs/{gameLogId}`):**
+
+```json
+{
+  "apiVersion": "v1",
+  "data": {
+    "communityId": "abc123",
+    "gameType": "CUSTOM",
+    "customGameDefinitionId": "gd_pong_plus",
+    "participantProfileIds": ["uid_1", "uid_2"],
+    "winnerProfileIds": ["uid_1"],
+    "loserProfileIds": ["uid_2"],
+    "photoUrls": ["https://storage.firebase.com/photo1.jpg"],
+    "notes": null,
+    "pongStats": null,
+    "beerBallStats": null,
+    "battlePongStats": null,
+    "baseballStats": null,
+    "crossfireStats": null
   }
 }
 ```

@@ -1,5 +1,9 @@
 import SwiftUI
 
+private struct GameLogEditSheetItem: Identifiable {
+    let id: String
+}
+
 struct FeedView: View {
     @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var sessionManager: AppSessionManager
@@ -9,8 +13,11 @@ struct FeedView: View {
     @State private var showCommunitiesList = false
     @State private var showGameLog = false
     @State private var showProfile = false
+    @State private var showGameRulesExplainer = false
     @State private var showAccountMenu = false
+    @State private var showPlatformAdmin = false
     @State private var profilePhotoUrl: URL?
+    @State private var gameLogEditSheet: GameLogEditSheetItem?
 
     private enum FeedState {
         case loading
@@ -77,9 +84,24 @@ struct FeedView: View {
             VStack(spacing: 0) {
 
                 // MARK: Header
-                HStack {
-                    Text("Bitch Cup")
-                        .font(headerFont)
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Bitch Cup")
+                            .font(headerFont)
+                            .onLongPressGesture(minimumDuration: 0.85) {
+                                guard sessionManager.isPlatformAdmin else { return }
+                                showPlatformAdmin = true
+                            }
+                        Button {
+                            showGameRulesExplainer = true
+                        } label: {
+                            Text("How each game works")
+                                .font(.custom("NeueHaasDisplay-Mediu", size: 15))
+                                .foregroundStyle(FeedBrand.primaryButtonRed)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("feed.howGamesWork")
+                    }
                     Spacer()
                     HStack(spacing: 12) {
                         // Temporarily hidden filter control.
@@ -171,7 +193,9 @@ struct FeedView: View {
                                 ScrollView {
                                     LazyVStack(spacing: 24) {
                                         ForEach(Array(filteredRows.enumerated()), id: \.element.id) { index, row in
-                                            FeedCardView(row: row)
+                                            FeedCardView(row: row, onRequestEdit: { r in
+                                                gameLogEditSheet = GameLogEditSheetItem(id: r.gameLogId)
+                                            })
                                                 .onAppear {
                                                     Task {
                                                         await loadMoreFeedIfNeeded(currentRow: row)
@@ -212,6 +236,7 @@ struct FeedView: View {
             .fullScreenCover(isPresented: $showCommunitiesFlow) {
                 CommunitiesFlowStack()
                     .environmentObject(container)
+                    .environmentObject(sessionManager)
             }
             .navigationDestination(isPresented: $showCommunitiesList) {
                 CommunitiesListView()
@@ -221,6 +246,54 @@ struct FeedView: View {
             }
             .navigationDestination(isPresented: $showProfile) {
                 ProfileView()
+            }
+            .navigationDestination(isPresented: $showGameRulesExplainer) {
+                GameRulesExplainerView()
+            }
+            .navigationDestination(isPresented: $showPlatformAdmin) {
+                PlatformAdminRootView()
+                    .environmentObject(sessionManager)
+                    .environmentObject(container)
+            }
+            .sheet(item: $gameLogEditSheet) { item in
+                NavigationStack {
+                    NewGameLogFormView(editingGameLogId: item.id)
+                        .environmentObject(container)
+                        .environmentObject(sessionManager)
+                        .navigationTitle("Edit game")
+                        .navigationBarTitleDisplayMode(.inline)
+                        .communityFlowNavigationBarChrome()
+                        .toolbar {
+                            ToolbarItem(placement: .navigationBarLeading) {
+                                CommunityFlowCloseToolbarButton {
+                                    gameLogEditSheet = nil
+                                }
+                            }
+                        }
+                }
+            }
+            .onChange(of: sessionManager.adminConsolePresentationRequested) { _, requested in
+                guard requested else { return }
+                if sessionManager.isPlatformAdmin {
+                    showPlatformAdmin = true
+                }
+                sessionManager.acknowledgeAdminConsolePresentationRequest()
+            }
+            .onAppear {
+                // Deep link may have fired before Feed was mounted (e.g. still on onboarding).
+                guard sessionManager.adminConsolePresentationRequested else { return }
+                if sessionManager.isPlatformAdmin {
+                    showPlatformAdmin = true
+                }
+                sessionManager.acknowledgeAdminConsolePresentationRequest()
+            }
+            .onChange(of: showProfile) { wasShowing, isShowing in
+                if wasShowing && !isShowing {
+                    Task {
+                        await loadProfilePhoto()
+                        await loadInitialFeed()
+                    }
+                }
             }
             .task {
                 AppAnalytics.logFeedScreen()
@@ -274,6 +347,19 @@ struct FeedView: View {
                 showCommunitiesList = true
             } label: {
                 Text("View Leagues")
+                    .font(.custom("NeueHaasDisplay-Mediu", size: 22))
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+            }
+            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+
+            Button {
+                showAccountMenu = false
+                showGameRulesExplainer = true
+            } label: {
+                Text("How games work")
                     .font(.custom("NeueHaasDisplay-Mediu", size: 22))
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.horizontal, 12)

@@ -37,6 +37,10 @@ enum AppAnalytics {
         logScreenView("bcup_profile", screenClass: "ProfileView")
     }
 
+    static func logGameRulesExplainerScreen() {
+        logScreenView("bcup_game_rules", screenClass: "GameRulesExplainerView")
+    }
+
     // MARK: - Feed
 
     enum FeedLoadOutcome: String {

@@ -350,3 +350,47 @@ export function validateRoundsStructure(
 
   return {valid: errors.length === 0, errors};
 }
+
+/**
+ * Ensures every profile in the bracket snapshot appears in some round-1 match
+ * (and round-1 has no extras). Catches generation bugs that would strand members.
+ * Skip for empty rounds (e.g. MANUAL draft before finalize).
+ * @param {BracketRound[]} rounds Typed rounds.
+ * @param {string[]} participantProfileIds Bracket-level roster from memberships.
+ * @return {RoundsValidationResult} Whether sets match.
+ */
+export function validateRoundOneCoversParticipants(
+  rounds: BracketRound[],
+  participantProfileIds: string[]
+): RoundsValidationResult {
+  const errors: string[] = [];
+  if (rounds.length === 0) {
+    return {valid: true, errors: []};
+  }
+  const r1 = rounds.find((r) => r.roundNumber === 1);
+  if (!r1) {
+    errors.push("round 1 missing");
+    return {valid: false, errors};
+  }
+  const inMatches = new Set<string>();
+  for (const m of r1.matches) {
+    const parts = m.participantProfileIds ?? [];
+    for (const id of parts) {
+      if (typeof id === "string" && id.length > 0) {
+        inMatches.add(id);
+      }
+    }
+  }
+  const expected = new Set(participantProfileIds);
+  for (const id of expected) {
+    if (!inMatches.has(id)) {
+      errors.push(`round1 missing participant ${id}`);
+    }
+  }
+  for (const id of inMatches) {
+    if (!expected.has(id)) {
+      errors.push(`round1 unexpected participant ${id}`);
+    }
+  }
+  return {valid: errors.length === 0, errors};
+}

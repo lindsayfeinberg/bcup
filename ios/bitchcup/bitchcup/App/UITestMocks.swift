@@ -1,3 +1,4 @@
+import FirebaseFirestore
 import Foundation
 import UIKit
 
@@ -17,6 +18,11 @@ final class UITestAuthService: AuthServiceProtocol {
 
     func signOut() throws {
         currentUserId = nil
+    }
+
+    func fetchPlatformAdminClaimFromIDToken(forceRefresh: Bool) async throws -> Bool {
+        _ = forceRefresh
+        return false
     }
 }
 
@@ -63,11 +69,33 @@ final class UITestUserService: UserServiceProtocol {
             onboardingCompleteAt: Date()
         )
     }
+
+    func updateProfile(userId: String, displayName: String, profilePhotoUrl: String) async throws {
+        let prior = profile
+        profile = ProfileRecord(
+            userId: userId,
+            displayName: displayName,
+            profilePhotoUrl: profilePhotoUrl,
+            overallOdds: prior?.overallOdds ?? 0,
+            overallGamesPlayed: prior?.overallGamesPlayed ?? 0,
+            overallOddsByGameType: prior?.overallOddsByGameType ?? [:],
+            overallGamesPlayedByGameType: prior?.overallGamesPlayedByGameType ?? [:],
+            ageConfirmed21PlusAt: prior?.ageConfirmed21PlusAt,
+            onboardingCompleteAt: prior?.onboardingCompleteAt
+        )
+    }
 }
 
 @MainActor
 final class UITestCommunityService: CommunityServiceProtocol, BracketServiceProtocol {
-    private let communities: [(communityId: String, name: String)] = [("ui-community-1", "UI Test League")]
+    private var communities: [CommunityListItem] = [
+        CommunityListItem(
+            communityId: "ui-community-1",
+            name: "UI Test League",
+            hiddenFromMembers: false,
+            createdByProfileId: "ui-test-user"
+        )
+    ]
     private let members: [CommunityMemberRosterRow] = [
         .init(profileId: "ui-test-user", displayName: "You", profilePhotoUrl: nil, communityOdds: 0.75, communityGamesPlayed: 4),
         .init(profileId: "ui-opponent-1", displayName: "Alex", profilePhotoUrl: nil, communityOdds: 0.62, communityGamesPlayed: 3),
@@ -76,14 +104,14 @@ final class UITestCommunityService: CommunityServiceProtocol, BracketServiceProt
     ]
     private var brackets: [BracketListItem] = []
 
-    func fetchCommunities() async throws -> [(communityId: String, name: String)] {
+    func fetchCommunities() async throws -> [CommunityListItem] {
         communities
     }
 
     func fetchCommunitiesPage(
         cursor: CommunitiesPageCursor?,
         pageSize: Int
-    ) async throws -> PagedResponse<[(communityId: String, name: String)], CommunitiesPageCursor> {
+    ) async throws -> PagedResponse<[CommunityListItem], CommunitiesPageCursor> {
         PagedResponse(items: communities, nextCursor: nil, hasMore: false)
     }
 
@@ -107,10 +135,78 @@ final class UITestCommunityService: CommunityServiceProtocol, BracketServiceProt
         CommunityJoinPreview(communityId: "ui-community-1", name: "UI Test League", memberCount: members.count)
     }
 
+    func setCommunityHidden(communityId: String, hidden: Bool) async throws {
+        guard communityId == "ui-community-1" else { return }
+        if let idx = communities.firstIndex(where: { $0.communityId == communityId }) {
+            let prior = communities[idx]
+            communities[idx] = CommunityListItem(
+                communityId: prior.communityId,
+                name: prior.name,
+                hiddenFromMembers: hidden,
+                createdByProfileId: prior.createdByProfileId
+            )
+        }
+    }
+
+    func resolveBoardAuthorDisplayNames(communityId: String, profileIds: [String]) async -> [String: String] {
+        _ = communityId
+        var map: [String: String] = [:]
+        for id in profileIds {
+            if let row = members.first(where: { $0.profileId == id }) {
+                map[id] = row.displayName
+            } else {
+                map[id] = id
+            }
+        }
+        return map
+    }
+
+    func postLeagueBoardMessage(communityId: String, text: String) async throws {
+        _ = communityId
+        _ = text
+    }
+
+    func fetchLeagueBoardMessagesOlderThan(
+        communityId: String,
+        startAfter: DocumentSnapshot,
+        limit: Int
+    ) async throws -> [QueryDocumentSnapshot] {
+        _ = communityId
+        _ = startAfter
+        _ = limit
+        return []
+    }
+
+    func listGameDefinitions(communityId: String) async throws -> [GameDefinitionRecord] {
+        _ = communityId
+        return []
+    }
+
+    func createGameDefinition(communityId: String, name: String, rulesText: String?) async throws -> String {
+        _ = communityId
+        _ = name
+        _ = rulesText
+        return "ui-game-definition-1"
+    }
+
+    func updateGameDefinition(communityId: String, gameDefinitionId: String, name: String, rulesText: String?) async throws {
+        _ = communityId
+        _ = gameDefinitionId
+        _ = name
+        _ = rulesText
+    }
+
+    func deleteGameDefinition(communityId: String, gameDefinitionId: String) async throws {
+        _ = communityId
+        _ = gameDefinitionId
+    }
+
     func createBracket(
         communityId: String,
         seedMethod: SeedMethod,
-        teamSize: Int
+        teamSize: Int,
+        gameType: String,
+        customGameDefinitionId: String?
     ) async throws -> String {
         let id = "ui-bracket-\(brackets.count + 1)"
         brackets.insert(
@@ -120,6 +216,9 @@ final class UITestCommunityService: CommunityServiceProtocol, BracketServiceProt
                 seedMethod: seedMethod,
                 status: seedMethod == .manual ? "DRAFT" : "ACTIVE",
                 teamSize: teamSize,
+                gameType: gameType,
+                customGameDefinitionId: customGameDefinitionId,
+                customGameDefinitionName: nil,
                 createdAt: Date()
             ),
             at: 0
@@ -140,7 +239,10 @@ final class UITestGameLogService: GameLogServiceProtocol, FeedServiceProtocol {
             gameLogId: "ui-feed-1",
             communityId: "ui-community-1",
             communityName: "UI Test League",
+            createdByProfileId: "ui-test-user",
+            participantProfileIds: ["ui-test-user", "ui-opponent-1"],
             gameType: "PONG",
+            customGameDefinitionName: nil,
             winnerProfileIds: ["ui-test-user"],
             loserProfileIds: ["ui-opponent-1"],
             winnerNames: ["You"],
@@ -159,6 +261,28 @@ final class UITestGameLogService: GameLogServiceProtocol, FeedServiceProtocol {
     func fetchLogs(communityId: String) async throws {}
 
     func canCurrentUserEditDelete(createdByProfileId: String) -> Bool { true }
+
+    func fetchGameLogForEditing(gameLogId: String) async throws -> GameLogEditableSnapshot {
+        GameLogEditableSnapshot(
+            gameLogId: gameLogId,
+            communityId: "ui-community-1",
+            createdByProfileId: "ui-test-user",
+            gameType: "PONG",
+            customGameDefinitionName: nil,
+            participantProfileIds: ["ui-test-user", "ui-opponent-1"],
+            winnerProfileIds: ["ui-test-user"],
+            loserProfileIds: ["ui-opponent-1"],
+            mvpProfileId: nil,
+            lvpProfileId: nil,
+            photoUrls: ["https://example.com/game.jpg"],
+            notes: nil,
+            pongStats: nil,
+            beerBallStats: nil,
+            battlePongStats: nil,
+            baseballStats: nil,
+            crossfireStats: nil
+        )
+    }
 
     func uploadGamePhoto(
         communityId: String,
@@ -197,6 +321,57 @@ final class UITestGameLogService: GameLogServiceProtocol, FeedServiceProtocol {
 }
 
 @MainActor
+final class UITestPlatformAdminService: PlatformAdminServiceProtocol {
+    func listCommunitiesPage(startAfterCommunityId: String?, pageSize: Int) async throws -> AdminCommunitiesPageResult {
+        _ = startAfterCommunityId
+        _ = pageSize
+        return AdminCommunitiesPageResult(items: [], nextCursor: nil, hasMore: false)
+    }
+
+    func listGameLogsPage(
+        communityId: String?,
+        cursor: AdminGameLogsCursor?,
+        pageSize: Int
+    ) async throws -> AdminGameLogsPageResult {
+        _ = communityId
+        _ = cursor
+        _ = pageSize
+        return AdminGameLogsPageResult(items: [], nextCursor: nil, hasMore: false)
+    }
+
+    func listAdminActionsPage(
+        action: String?,
+        targetCommunityId: String?,
+        cursor: AdminActionsCursor?,
+        pageSize: Int
+    ) async throws -> AdminActionsPageResult {
+        _ = action
+        _ = targetCommunityId
+        _ = cursor
+        _ = pageSize
+        return AdminActionsPageResult(items: [], nextCursor: nil, hasMore: false)
+    }
+
+    func kickMember(communityId: String, profileId: String) async throws {
+        _ = communityId
+        _ = profileId
+    }
+
+    func deleteGameLog(gameLogId: String) async throws {
+        _ = gameLogId
+    }
+
+    func adminUpdateGameLog(payload: GameLogUpdatePayload) async throws {
+        _ = payload
+    }
+
+    func deleteLeagueMessage(communityId: String, messageId: String) async throws {
+        _ = communityId
+        _ = messageId
+    }
+}
+
+@MainActor
 enum UITestContainerFactory {
     static func makeContainer(for scenario: UITestScenario) -> (DependencyContainer, AppRouter, AppSessionManager) {
         let router = AppRouter()
@@ -204,6 +379,7 @@ enum UITestContainerFactory {
         let auth = UITestAuthService(currentUserId: userId)
         let community = UITestCommunityService()
         let feedAndGameLog = UITestGameLogService()
+        let platformAdmin = UITestPlatformAdminService()
 
         let initialProfile: ProfileRecord?
         switch scenario {
@@ -232,7 +408,8 @@ enum UITestContainerFactory {
             communityService: community,
             gameLogService: feedAndGameLog,
             feedService: feedAndGameLog,
-            bracketService: community
+            bracketService: community,
+            platformAdminService: platformAdmin
         )
         let sessionManager = AppSessionManager(router: router, authService: auth, userService: user)
         return (container, router, sessionManager)

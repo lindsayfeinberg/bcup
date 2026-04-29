@@ -143,7 +143,13 @@ enum BracketMatchDisplay {
                 return losers
             }
             let participants = feeder.participantProfileIds ?? []
-            return participants.count == teamSize ? participants : []
+            // One feeder slot is at most `teamSize` players (full side or short last team).
+            // `== teamSize` only missed solo short teams (e.g. 5 @ 2v2 → roster of 1), so names
+            // disappeared for 2v2 but not 1v1 where the short side is still length `teamSize`.
+            if !participants.isEmpty, participants.count <= teamSize {
+                return participants
+            }
+            return []
         }
 
         // Placeholders may have bye-prefilled `participantProfileIds` plus feeders; merge like the server

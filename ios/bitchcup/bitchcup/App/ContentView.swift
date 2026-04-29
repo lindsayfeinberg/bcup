@@ -46,6 +46,11 @@ struct ContentView: View {
                 await sessionManager.refreshOnSceneBecameActive()
             }
         }
+        .onOpenURL { url in
+            Task {
+                await sessionManager.handleAdminDeepLink(url: url)
+            }
+        }
     }
 
     @ViewBuilder

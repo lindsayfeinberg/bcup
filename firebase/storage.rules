@@ -18,6 +18,10 @@ service firebase.storage {
         firestore.exists(/databases/(default)/documents/memberships/$(membershipIdFor(communityId, uid())));
     }
 
+    function isPlatformAdmin() {
+      return signedIn() && request.auth.token.platformAdmin == true;
+    }
+
     function validImageUpload(maxMb) {
       return request.resource != null &&
         request.resource.contentType.matches('image/.*') &&
@@ -36,15 +40,22 @@ service firebase.storage {
     // Game photos: only community members can read.
     // Create/update/delete restricted to uploader via createdByProfileId metadata.
     match /gamePhotos/{communityId}/{gameLogId}/{fileName} {
-      allow read: if isCommunityMember(communityId);
-      allow create: if isCommunityMember(communityId) &&
-        validImageUpload(15) &&
-        request.resource.metadata.createdByProfileId == uid();
-      allow update: if isCommunityMember(communityId) &&
-        resource.metadata.createdByProfileId == uid() &&
-        validImageUpload(15);
-      allow delete: if isCommunityMember(communityId) &&
-        resource.metadata.createdByProfileId == uid();
+      allow read: if isCommunityMember(communityId) || isPlatformAdmin();
+      allow create: if validImageUpload(15) && (
+        (isCommunityMember(communityId) &&
+          request.resource.metadata.createdByProfileId == uid()) ||
+        isPlatformAdmin()
+      );
+      allow update: if validImageUpload(15) && (
+        (isCommunityMember(communityId) &&
+          resource.metadata.createdByProfileId == uid()) ||
+        isPlatformAdmin()
+      );
+      allow delete: if (
+        (isCommunityMember(communityId) &&
+          resource.metadata.createdByProfileId == uid()) ||
+        isPlatformAdmin()
+      );
     }
 
     // Deny everything else by default.

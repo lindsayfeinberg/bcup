@@ -89,6 +89,42 @@ Canonical valid sample:
 
 ---
 
+## `communities/{communityId}/gameDefinitions/{gameDefinitionId}`
+
+Custom game-type schema entries scoped to one league (Phase E1). These are league-managed definitions for naming + rules text; game logs can later reference them in Phase E2+.
+
+| Field | Type | Required | Nullable | Default | Set by | Immutable | Notes |
+|---|---|---|---|---|---|---|---|
+| `id` | string | yes | no | none | server | yes | Must equal `gameDefinitionId`. |
+| `communityId` | string | yes | no | none | server | yes | Must equal parent `communityId`. |
+| `name` | string | yes | no | none | server | no | Non-empty display name; max length 80 (callable validation). |
+| `rulesText` | string | no | yes | `null` | server | no | Optional markdown/plaintext rules body; max length 8000 (callable validation). |
+| `createdByProfileId` | string | yes | no | none | server | yes | Member who created the definition (callable caller uid). |
+| `createdAt` | timestamp | yes | no | server timestamp | server | yes | Global rule. |
+| `updatedAt` | timestamp | yes | no | server timestamp | server | no | Global rule. |
+
+Canonical valid sample:
+
+```json
+{
+  "id": "gd_pong_plus",
+  "communityId": "community_001",
+  "name": "Pong Plus",
+  "rulesText": "11 cups. Bounce counts as 2.",
+  "createdByProfileId": "uid_abc123",
+  "createdAt": "SERVER_TIMESTAMP",
+  "updatedAt": "SERVER_TIMESTAMP"
+}
+```
+
+### `gameDefinitions` invariants
+
+- `name` is required and must be non-empty after trim.
+- `communityId` must match the parent path segment.
+- Definitions are create/update/delete via trusted callables in v1; clients are read-only.
+
+---
+
 ## `memberships/{membershipId}`
 
 Recommended ID format: `{communityId}_{profileId}` for uniqueness.
@@ -125,6 +161,51 @@ Canonical valid sample:
 
 ---
 
+## `communities/{communityId}/messages/{messageId}`
+
+Single chronological thread per league (Phase C). Document ID `messageId` is typically a Firestore auto-generated id from the client on create.
+
+| Field | Type | Required | Nullable | Default | Set by | Immutable | Notes |
+|---|---|---|---|---|---|---|---|
+| `id` | string | yes | no | none | either | yes | Must equal `messageId`. |
+| `communityId` | string | yes | no | none | client | yes | Must equal parent `communityId`; denormalized for queries and rules. |
+| `authorProfileId` | string | yes | no | none | client | yes | Must equal `auth.uid` on create (enforced in Firestore rules in Phase C2). |
+| `text` | string | yes | no | none | client | no | Non-empty body; recommend max length **4000** characters (enforce in rules / client in C2/C3). |
+| `deleted` | boolean | no | no | `false` | either | no | When `true`, message is soft-hidden for moderation / UX; list queries may filter `deleted == false` (C3). |
+| `createdAt` | timestamp | yes | no | server timestamp | server | yes | Global rule. |
+| `updatedAt` | timestamp | yes | no | server timestamp | server | no | Global rule. |
+
+Canonical valid sample:
+
+```json
+{
+  "id": "msg_auto_id_001",
+  "communityId": "community_001",
+  "authorProfileId": "uid_abc123",
+  "text": "Anyone up for doubles tonight?",
+  "deleted": false,
+  "createdAt": "SERVER_TIMESTAMP",
+  "updatedAt": "SERVER_TIMESTAMP"
+}
+```
+
+### `messages` invariants
+
+- `authorProfileId` must match the authenticated user on create (`profileId == auth.uid` V1 identity model).
+- `communityId` must match the parent community document id.
+- `text` must be non-empty after trim; max length 4000 (recommended contract for rules in C2).
+- `deleted` is optional on legacy docs; when absent, treat as `false` in clients.
+
+### `messages` security (Phase C2)
+
+Rules in [firebase/firestore.rules](../../firebase/firestore.rules): community **members** may **read** and **create** messages under `communities/{communityId}/messages/*` when not blocked by `leagueHiddenForMember`; **no client update/delete** in v1 (moderation via Admin SDK / Phase D).
+
+### `messages` indexes (Phase C3)
+
+Composite **collection group** indexes on `messages` are in [firebase/firestore.indexes.json](../../firebase/firestore.indexes.json): `deleted ASC` + `createdAt DESC`, and a three-field index adding `__name__ DESC` for stable pagination with `orderBy(documentId)` (matches iOS `LeagueBoardView` queries).
+
+---
+
 ## `gameLogs/{gameLogId}`
 
 | Field | Type | Required | Nullable | Default | Set by | Immutable | Notes |
@@ -133,7 +214,9 @@ Canonical valid sample:
 | `communityId` | string | yes | no | none | client | yes | Community where game occurred. |
 | `bracketId` | string | no | yes | `null` | client | yes | Optional; when set, `bracketMatchId` must also be set and both values are immutable. |
 | `bracketMatchId` | string | no | yes | `null` | client | yes | Optional; when set, `bracketId` must also be set and it must match a `matchId` within `brackets/{bracketId}`. |
-| `gameType` | string enum | yes | no | none | client | yes | `PONG \| BEER_BALL \| BATTLE_PONG \| BASEBALL`. |
+| `gameType` | string enum | yes | no | none | client | yes | Built-ins: `PONG \| BEER_BALL \| BATTLE_PONG \| BASEBALL \| CROSSFIRE`. Per-league custom: literal **`CUSTOM`** (Phase E2–E3). |
+| `customGameDefinitionId` | string | no | yes | `null` | client | yes | When `gameType == CUSTOM`, required non-empty string (doc id under `communities/{communityId}/gameDefinitions/*`). Omitted or `null` for built-in types. |
+| `customGameDefinitionName` | string | no | yes | `null` | client | yes | Optional when `gameType == CUSTOM`: denormalized definition display name at create time (feed / profile history). Max length 80; must not be set for built-in `gameType` values. Immutable after create. |
 | `createdByProfileId` | string | yes | no | none | server | yes | Creator/owner of log. |
 | `participantProfileIds` | array<string> | yes | no | none | client | no | Must be unique IDs. |
 | `winnerProfileIds` | array<string> | yes | no | none | client | no | Min length 1. |
@@ -204,6 +287,8 @@ Canonical valid sample:
 - `pongStats.cupMode` is either `6` or `10` when `gameType == PONG`
 - Sum of `pongStats.playerCupsHit` equals `pongStats.cupMode` when `gameType == PONG`
 - `pongStats.lastCupByProfileId` must be in `participantProfileIds` when present
+- **Custom games (E2):** When `gameType == CUSTOM`, `customGameDefinitionId` must be a non-empty string (Firestore rules). Built-in `gameType` values must not set `customGameDefinitionId` to a non-null value. `gameType` and `customGameDefinitionId` are immutable after create. When present, `customGameDefinitionName` is a non-empty string (max 80) for `CUSTOM` only; built-in logs must not set it; it is immutable after create.
+- **Odds maps:** `profiles.overallOddsByGameType` / `memberships.communityOddsByGameType` include built-in keys plus dynamic keys `CUSTOM:{customGameDefinitionId}` for custom logs, and optionally `OTHER:{gameType}` for legacy unknown `gameType` strings without a definition id (server `functions/src/oddsRecalc.ts`).
 
 ---
 
@@ -312,6 +397,7 @@ Clients should treat derived fields as read-only.
 - `gameLogs`: `createdByProfileId ASC, createdAt DESC` — **not** referenced by current client/functions queries; keep for documented “my logs” listing if added later (`data-contracts` / specs).
 - `brackets`: `communityId ASC, createdAt DESC` — **not** referenced by current codebase (bracket UI uses document listener by id); keep for future list-by-community queries.
 - `communities`: `inviteCode ASC` (single-field; typically auto-indexed for equality + `limit(1)` in `functions/src/communities.ts`)
+- `communities/{communityId}/gameDefinitions`: `createdAt DESC` (single-field index for ordered list)
 
 ### Firestore performance notes (T11.5)
 

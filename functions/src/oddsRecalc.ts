@@ -12,13 +12,19 @@ export interface OddsRecalcContext {
 }
 
 /** Matches iOS `GameType` raw values in game logs. */
-const KNOWN_GAME_TYPES = [
+export const KNOWN_GAME_TYPES = [
   "PONG",
   "BEER_BALL",
   "BATTLE_PONG",
   "BASEBALL",
   "CROSSFIRE",
 ] as const;
+
+/** `gameLogs.gameType` sentinel when `customGameDefinitionId` is set (Phase E). */
+export const CUSTOM_GAME_TYPE_SENTINEL = "CUSTOM";
+
+/** Prefix for per–game-type odds maps (`profiles` / `memberships`). */
+const CUSTOM_ODDS_KEY_PREFIX = "CUSTOM:";
 
 type KnownGameType = (typeof KNOWN_GAME_TYPES)[number];
 
@@ -50,14 +56,51 @@ function isEligible(data: Record<string, unknown>): boolean {
   );
 }
 
+function normalizedGameTypeString(data: Record<string, unknown>): string {
+  const gt = data.gameType;
+  if (typeof gt !== "string") return "";
+  return gt.trim().toUpperCase();
+}
+
 function knownGameTypeFromData(
   data: Record<string, unknown>
 ): KnownGameType | null {
-  const gt = data.gameType;
-  if (typeof gt !== "string") return null;
-  return (KNOWN_GAME_TYPES as readonly string[]).includes(gt) ?
-    (gt as KnownGameType) :
+  const u = normalizedGameTypeString(data);
+  if (!u) return null;
+  return (KNOWN_GAME_TYPES as readonly string[]).includes(u) ?
+    (u as KnownGameType) :
     null;
+}
+
+/**
+ * Per-type odds bucket: built-in enum string, or `CUSTOM:{definitionId}`,
+ * or `OTHER:{sanitized}` for unknown legacy `gameType` without a definition id.
+ * @param {Record<string, unknown>} data Game log document fields.
+ * @return {string | null} Map key, or null if no per-type attribution.
+ */
+export function oddsBucketKeyFromData(
+  data: Record<string, unknown>
+): string | null {
+  const known = knownGameTypeFromData(data);
+  if (known) {
+    return known;
+  }
+  const customIdRaw = data.customGameDefinitionId;
+  const customId =
+    typeof customIdRaw === "string" ? customIdRaw.trim() : "";
+  if (customId) {
+    return `${CUSTOM_ODDS_KEY_PREFIX}${customId}`;
+  }
+  const rawGt = normalizedGameTypeString(data);
+  if (
+    rawGt &&
+    rawGt !== CUSTOM_GAME_TYPE_SENTINEL &&
+    !(KNOWN_GAME_TYPES as readonly string[]).includes(rawGt)
+  ) {
+    const capped = rawGt.length > 64 ? rawGt.slice(0, 64) : rawGt;
+    return `OTHER:${capped}`;
+  }
+  return null;
 }
 
 function emptyPerTypeMaps(): {
@@ -73,9 +116,15 @@ function emptyPerTypeMaps(): {
   return {gamesByType, winsByType};
 }
 
-function buildOddsAndGamesMaps(
+function isKnownGameTypeKey(key: string): key is KnownGameType {
+  return (KNOWN_GAME_TYPES as readonly string[]).includes(key);
+}
+
+function mergeOddsAndGamesMaps(
   gamesByType: Record<KnownGameType, number>,
-  winsByType: Record<KnownGameType, number>
+  winsByType: Record<KnownGameType, number>,
+  customGames: Record<string, number>,
+  customWins: Record<string, number>
 ): {
   oddsByGameType: Record<string, number>;
   gamesPlayedByGameType: Record<string, number>;
@@ -87,6 +136,15 @@ function buildOddsAndGamesMaps(
     const w = winsByType[t];
     gamesPlayedByGameType[t] = g;
     oddsByGameType[t] = g === 0 ? 0 : w / g;
+  }
+  for (const k of Object.keys(customGames)) {
+    const g = customGames[k] ?? 0;
+    const w = customWins[k] ?? 0;
+    if (isKnownGameTypeKey(k)) {
+      continue;
+    }
+    gamesPlayedByGameType[k] = g;
+    oddsByGameType[k] = g === 0 ? 0 : w / g;
   }
   return {oddsByGameType, gamesPlayedByGameType};
 }
@@ -116,6 +174,8 @@ async function computeOverallOdds(
   let games = 0;
   let wins = 0;
   const {gamesByType, winsByType} = emptyPerTypeMaps();
+  const customGames: Record<string, number> = {};
+  const customWins: Record<string, number> = {};
 
   for (const doc of snap.docs) {
     const data = doc.data() as Record<string, unknown>;
@@ -126,19 +186,28 @@ async function computeOverallOdds(
     if (won) {
       wins++;
     }
-    const gt = knownGameTypeFromData(data);
-    if (gt) {
-      gamesByType[gt]++;
-      if (won) {
-        winsByType[gt]++;
+    const bucket = oddsBucketKeyFromData(data);
+    if (bucket) {
+      if (isKnownGameTypeKey(bucket)) {
+        gamesByType[bucket]++;
+        if (won) {
+          winsByType[bucket]++;
+        }
+      } else {
+        customGames[bucket] = (customGames[bucket] ?? 0) + 1;
+        if (won) {
+          customWins[bucket] = (customWins[bucket] ?? 0) + 1;
+        }
       }
     }
   }
 
   const odds = games === 0 ? 0 : wins / games;
-  const {oddsByGameType, gamesPlayedByGameType} = buildOddsAndGamesMaps(
+  const {oddsByGameType, gamesPlayedByGameType} = mergeOddsAndGamesMaps(
     gamesByType,
-    winsByType
+    winsByType,
+    customGames,
+    customWins
   );
   logger.debug("computeOverallOdds result", {
     profileId,
@@ -186,6 +255,8 @@ async function computeCommunityOdds(
   let games = 0;
   let wins = 0;
   const {gamesByType, winsByType} = emptyPerTypeMaps();
+  const customGames: Record<string, number> = {};
+  const customWins: Record<string, number> = {};
 
   for (const doc of snap.docs) {
     const data = doc.data() as Record<string, unknown>;
@@ -196,19 +267,28 @@ async function computeCommunityOdds(
     if (won) {
       wins++;
     }
-    const gt = knownGameTypeFromData(data);
-    if (gt) {
-      gamesByType[gt]++;
-      if (won) {
-        winsByType[gt]++;
+    const bucket = oddsBucketKeyFromData(data);
+    if (bucket) {
+      if (isKnownGameTypeKey(bucket)) {
+        gamesByType[bucket]++;
+        if (won) {
+          winsByType[bucket]++;
+        }
+      } else {
+        customGames[bucket] = (customGames[bucket] ?? 0) + 1;
+        if (won) {
+          customWins[bucket] = (customWins[bucket] ?? 0) + 1;
+        }
       }
     }
   }
 
   const odds = games === 0 ? 0 : wins / games;
-  const {oddsByGameType, gamesPlayedByGameType} = buildOddsAndGamesMaps(
+  const {oddsByGameType, gamesPlayedByGameType} = mergeOddsAndGamesMaps(
     gamesByType,
-    winsByType
+    winsByType,
+    customGames,
+    customWins
   );
   logger.debug("computeCommunityOdds result", {
     profileId,

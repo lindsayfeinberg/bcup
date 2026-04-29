@@ -39,8 +39,11 @@ private struct FeedPhotoAreaWidthKey: PreferenceKey {
 struct FeedCardView: View {
     let row: FeedRow
     var showCommunityLabel: Bool = true
+    /// When set, log creators see **Edit game** on the card back to fix outcomes and details.
+    var onRequestEdit: ((FeedRow) -> Void)?
 
     @Environment(\.colorScheme) private var colorScheme
+    @EnvironmentObject private var container: DependencyContainer
 
     @State private var photoAreaWidth: CGFloat = FeedCardLayout.assumedStripWidth
     @State private var isBackVisible = false
@@ -231,6 +234,31 @@ struct FeedCardView: View {
                 cardBackDetailsSection(rows: row.backDetailRows(), detailValueSize: 9)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+
+            if let onRequestEdit,
+               container.gameLogService.canCurrentUserEditDelete(createdByProfileId: row.createdByProfileId) {
+                Button {
+                    onRequestEdit(row)
+                } label: {
+                    Text("Edit game")
+                        .font(.custom("NeueHaasDisplay-Mediu", size: 18))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .foregroundStyle(Color(red: 180.0 / 255.0, green: 61.0 / 255.0, blue: 37.0 / 255.0))
+                        .background(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(Color.white)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .stroke(Color(red: 180.0 / 255.0, green: 61.0 / 255.0, blue: 37.0 / 255.0), lineWidth: 2)
+                        )
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 12)
+                .padding(.bottom, 12)
+                .accessibilityIdentifier("feed.card.editGame")
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(cardBackgroundColor)
@@ -416,7 +444,14 @@ struct FeedCardView: View {
     }
 
     private var gameTypeDisplay: String {
-        row.gameType
+        if row.gameType == "CUSTOM" {
+            if let name = row.customGameDefinitionName?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !name.isEmpty {
+                return name
+            }
+            return "Custom game"
+        }
+        return row.gameType
             .replacingOccurrences(of: "_", with: " ")
             .capitalized
     }

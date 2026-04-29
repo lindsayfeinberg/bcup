@@ -31,6 +31,30 @@ struct GameLogBracketContext {
     let communityId: String
     let participantProfileIds: [String]
     let teamSize: Int
+    /// From `brackets/{bracketId}.gameType` — locks the log form when bracket-linked.
+    let bracketGameType: String
+    let bracketCustomGameDefinitionId: String?
+    let bracketCustomGameDefinitionName: String?
+
+    init(
+        bracketId: String,
+        bracketMatchId: String,
+        communityId: String,
+        participantProfileIds: [String],
+        teamSize: Int,
+        bracketGameType: String = "PONG",
+        bracketCustomGameDefinitionId: String? = nil,
+        bracketCustomGameDefinitionName: String? = nil
+    ) {
+        self.bracketId = bracketId
+        self.bracketMatchId = bracketMatchId
+        self.communityId = communityId
+        self.participantProfileIds = participantProfileIds
+        self.teamSize = teamSize
+        self.bracketGameType = bracketGameType
+        self.bracketCustomGameDefinitionId = bracketCustomGameDefinitionId
+        self.bracketCustomGameDefinitionName = bracketCustomGameDefinitionName
+    }
 }
 
 struct NewGameLogFormView: View {
@@ -60,11 +84,19 @@ struct NewGameLogFormView: View {
 
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var container: DependencyContainer
+    @EnvironmentObject private var sessionManager: AppSessionManager
     @State private var frontPhotoData: Data?
     @State private var backPhotoData: Data?
     @State private var showDualCapture = false
 
     let bracketContext: GameLogBracketContext?
+    /// When set, the form loads that `gameLogs` doc and **Save** runs `updateGameLog` instead of create.
+    private let editingGameLogId: String?
+
+    private var isEditingExistingLog: Bool { editingGameLogId != nil }
+
+    /// Operator correcting another user’s log: adjust winner/loser sides only — not framed as the operator’s win/loss.
+    private var isOperatorNeutralEdit: Bool { isEditingExistingLog && sessionManager.isPlatformAdmin }
 
     private var isBracketLinked: Bool { bracketContext != nil }
     private var bracketParticipantProfileIdsInOrder: [String] {
@@ -102,9 +134,22 @@ struct NewGameLogFormView: View {
     }
 
     private var participantSelectionMatchesExpectedTeamSizes: Bool {
+        if isOperatorNeutralEdit {
+            return operatorRecordedParticipantSelectionValid
+        }
         if isBracketLinked { return bracketSelectionMatchesSideSizes }
         return selectedWinnerProfileIds.count == teamSize &&
             selectedLoserProfileIds.count == teamSize
+    }
+
+    /// Operator edit: trust stored winner/loser sets (allows uneven sides, e.g. 2v3); still validate bracket shape when bracket-linked.
+    private var operatorRecordedParticipantSelectionValid: Bool {
+        let w = selectedWinnerProfileIds
+        let l = selectedLoserProfileIds
+        guard !w.isEmpty, !l.isEmpty else { return false }
+        guard w.isDisjoint(with: l) else { return false }
+        if isBracketLinked { return bracketSelectionMatchesSideSizes }
+        return true
     }
 
     /// Roster rows for everyone in the bracket match (order preserved). Unknown ids get a placeholder row so pickers and counts stay correct when the league fetch is incomplete.
@@ -124,21 +169,74 @@ struct NewGameLogFormView: View {
     init(
         frontPhotoData: Data? = nil,
         backPhotoData: Data? = nil,
-        bracketContext: GameLogBracketContext? = nil
+        bracketContext: GameLogBracketContext? = nil,
+        editingGameLogId: String? = nil
     ) {
         self.bracketContext = bracketContext
+        self.editingGameLogId = editingGameLogId
         _frontPhotoData = State(initialValue: frontPhotoData)
         _backPhotoData = State(initialValue: backPhotoData)
         _selectedCommunityId = State(initialValue: bracketContext?.communityId ?? "")
         _teamSize = State(initialValue: bracketContext?.teamSize ?? 1)
+
+        if let ctx = bracketContext,
+           ctx.bracketGameType == "CUSTOM",
+           let rawCustom = ctx.bracketCustomGameDefinitionId?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !rawCustom.isEmpty {
+            _selectedCustomDefinitionId = State(initialValue: rawCustom)
+            _selectedCustomDefinitionName = State(
+                initialValue: ctx.bracketCustomGameDefinitionName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            )
+        } else if let ctx = bracketContext, let gt = GameType(rawValue: ctx.bracketGameType) {
+            _selectedGameType = State(initialValue: gt)
+        }
     }
 
-    @State private var communities: [(communityId: String, name: String)] = []
+    @State private var communities: [CommunityListItem] = []
+
+    /// Leagues the user may log games in (excludes hidden leagues for non-creators).
+    private var loggableCommunities: [CommunityListItem] {
+        guard let uid = container.authService.currentUserId else {
+            return communities.filter { !$0.hiddenFromMembers }
+        }
+        return communities.filter { !$0.hiddenFromMembers || $0.createdByProfileId == uid }
+    }
+
+    private var isLoggingCustomGame: Bool {
+        let id = selectedCustomDefinitionId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return !id.isEmpty
+    }
+
+    private var gameSummaryTitle: String {
+        if isLoggingCustomGame {
+            let n = selectedCustomDefinitionName.trimmingCharacters(in: .whitespacesAndNewlines)
+            return n.isEmpty ? "Custom game" : n
+        }
+        return selectedGameType.displayName
+    }
+
+    /// Team size bounds for the current game selection (built-in vs league custom).
+    private func currentTeamSizeRange() -> ClosedRange<Int> {
+        if isBracketLinked, let ctx = bracketContext {
+            return ctx.teamSize...ctx.teamSize
+        }
+        if isLoggingCustomGame {
+            return LeagueRankingBasis.allGames.validTeamSizeRange(memberCount: members.count)
+        }
+        return validTeamSizeRange(for: selectedGameType)
+    }
+
     @State private var isLoading = true
     @State private var errorMessage: String?
 
     @State private var selectedCommunityId: String = ""
     @State private var selectedGameType: GameType = .pong
+    /// When set, log uses `gameType == "CUSTOM"` and `customGameDefinitionId` (Phase E3).
+    @State private var selectedCustomDefinitionId: String?
+    @State private var selectedCustomDefinitionName: String = ""
+    @State private var customGameDefinitions: [GameDefinitionRecord] = []
+    @State private var customDefinitionsError: String?
+    @State private var isLoadingCustomDefinitions = false
 
     // Members used for winners/losers and stat entry.
     @State private var members: [CommunityMemberRosterRow] = []
@@ -190,6 +288,10 @@ struct NewGameLogFormView: View {
     @State private var isSubmitting = false
     @State private var showOpenSettingsAction = false
     @State private var submitAfterCapture = false
+    @State private var isLoadingEditDocument = false
+    @State private var editDocumentLoadError: String?
+    /// Filled for platform-admin edits when the league isn’t in `communities` / `loggableCommunities` (e.g. not a member).
+    @State private var editingResolvedLeagueName: String = ""
 
     private var widgetOutlineBackground: some View {
         Color.clear
@@ -216,9 +318,11 @@ struct NewGameLogFormView: View {
         return LazyVGrid(columns: columns, spacing: GameLogFormLayout.gameTypeGridSpacing) {
             ForEach(GameType.allCases) { type in
                 let available = isGameTypeAvailable(type)
-                let selected = selectedGameType == type
+                let selected = !isLoggingCustomGame && selectedGameType == type
                 Button {
                     guard available else { return }
+                    selectedCustomDefinitionId = nil
+                    selectedCustomDefinitionName = ""
                     selectedGameType = type
                 } label: {
                     Text(type.displayName)
@@ -247,32 +351,139 @@ struct NewGameLogFormView: View {
                         }
                 }
                 .buttonStyle(.plain)
-                .disabled(!available)
+                .disabled(!available || isEditingExistingLog)
                 .opacity(available ? 1.0 : 0.45)
                 .accessibilityLabel(type.displayName)
                 .accessibilityAddTraits(selected && available ? .isSelected : [])
             }
         }
+        .disabled(isBracketLinked)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Game type")
+    }
+
+    @ViewBuilder
+    private var customLeagueGameDefinitionsContent: some View {
+        let chipAccent = GameLogBrandColor.lostRed
+        let columns = [
+            GridItem(.flexible(), spacing: GameLogFormLayout.gameTypeGridSpacing),
+            GridItem(.flexible(), spacing: GameLogFormLayout.gameTypeGridSpacing),
+            GridItem(.flexible(), spacing: GameLogFormLayout.gameTypeGridSpacing)
+        ]
+        VStack(alignment: .leading, spacing: 10) {
+            Text("League custom games")
+                .font(Self.gameTypeSectionTitleFont)
+                .foregroundStyle(GameLogBrandColor.lostRed)
+            if isLoadingCustomDefinitions {
+                HStack(spacing: 8) {
+                    ProgressView()
+                    Text("Loading…")
+                        .font(AppFont.caption)
+                        .foregroundStyle(.secondary)
+                }
+            } else if let defErr = customDefinitionsError {
+                Text(defErr)
+                    .font(AppFont.caption)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if customGameDefinitions.isEmpty {
+                Text("No custom games yet. Open this league and tap “Manage custom games” to add one.")
+                .font(AppFont.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            } else {
+                LazyVGrid(columns: columns, spacing: GameLogFormLayout.gameTypeGridSpacing) {
+                    ForEach(customGameDefinitions) { def in
+                        let selected = selectedCustomDefinitionId == def.gameDefinitionId
+                        Button {
+                            selectedCustomDefinitionId = def.gameDefinitionId
+                            selectedCustomDefinitionName = def.name
+                            resetSelectionForScopeChange(preserveCustomDefinition: true)
+                        } label: {
+                            Text(def.name)
+                                .font(Self.gameTypeChipLabelFont)
+                                .multilineTextAlignment(.center)
+                                .lineLimit(2)
+                                .minimumScaleFactor(0.85)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 10)
+                                .padding(.horizontal, 6)
+                                .foregroundStyle(selected ? chipAccent : Color.primary)
+                                .background {
+                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                        .fill(selected ? Color.white : Color(UIColor.secondarySystemGroupedBackground))
+                                }
+                                .overlay {
+                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                        .strokeBorder(
+                                            selected ? chipAccent : Color.primary.opacity(0.12),
+                                            lineWidth: selected ? 2 : 1
+                                        )
+                                }
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isEditingExistingLog || isBracketLinked)
+                        .opacity((isEditingExistingLog || isBracketLinked) ? 0.45 : 1.0)
+                    }
+                }
+            }
+        }
     }
 
     @ViewBuilder
     private var gameLogFormSections: some View {
         Section {
             VStack(alignment: .leading, spacing: 12) {
-                concatenatedPhotoStrip(front: frontPhotoData, back: backPhotoData)
+                if isEditingExistingLog,
+                   frontPhotoData == nil,
+                   backPhotoData == nil,
+                   let urlString = photoUrls.first,
+                   let url = URL(string: urlString) {
+                    AsyncImage(url: url) { phase in
+                        switch phase {
+                        case .empty:
+                            ProgressView()
+                                .frame(maxWidth: .infinity, minHeight: Self.gameLogPhotoPreviewHeight * 0.5)
+                        case .success(let image):
+                            image
+                                .resizable()
+                                .scaledToFit()
+                                .frame(maxWidth: .infinity)
+                                .frame(height: Self.gameLogPhotoPreviewHeight)
+                        case .failure:
+                            Text("Couldn’t load saved photo")
+                                .font(AppFont.subheadline)
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, minHeight: Self.gameLogPhotoPreviewHeight * 0.4)
+                        @unknown default:
+                            EmptyView()
+                        }
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                } else {
+                    concatenatedPhotoStrip(front: frontPhotoData, back: backPhotoData)
+                }
 
                 HStack {
                     Spacer()
                     if frontPhotoData == nil && backPhotoData == nil {
-                        Button {
-                            showDualCapture = true
-                        } label: {
-                            Text("Capture both cameras")
-                                .font(AppFont.buttonProminent)
+                        if isEditingExistingLog, !photoUrls.isEmpty {
+                            Button {
+                                showDualCapture = true
+                            } label: {
+                                Text("Replace photos")
+                                    .font(AppFont.buttonProminent)
+                            }
+                            .buttonStyle(BrandPrimaryButtonStyle())
+                        } else {
+                            Button {
+                                showDualCapture = true
+                            } label: {
+                                Text("Capture both cameras")
+                                    .font(AppFont.buttonProminent)
+                            }
+                            .buttonStyle(.borderedProminent)
                         }
-                        .buttonStyle(.borderedProminent)
                     } else {
                         Button {
                             showDualCapture = true
@@ -294,7 +505,7 @@ struct NewGameLogFormView: View {
 
         Section {
             Picker(selection: $selectedCommunityId) {
-                ForEach(communities, id: \.communityId) { community in
+                ForEach(loggableCommunities, id: \.communityId) { community in
                     Text(community.name)
                         .font(AppFont.body)
                         .foregroundStyle(.black)
@@ -304,7 +515,7 @@ struct NewGameLogFormView: View {
                 Text("League")
                     .font(AppFont.headline)
             }
-            .disabled(isBracketLinked)
+            .disabled(isBracketLinked || isEditingExistingLog)
         } header: {
             Text("Choose League")
                 .font(Self.widgetTitleFont)
@@ -316,6 +527,23 @@ struct NewGameLogFormView: View {
             gameTypeGrid
                 .padding(.horizontal, GameLogFormLayout.gameTypeSegmentedInnerHorizontalPadding)
                 .padding(.vertical, GameLogFormLayout.gameTypeSegmentedInnerVerticalPadding)
+
+            if isEditingExistingLog, isLoggingCustomGame {
+                Text("Custom game: \(gameSummaryTitle)")
+                    .font(AppFont.subheadline)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, 4)
+            } else if isBracketLinked, let ctx = bracketContext {
+                Text(bracketLockedGameTypeCaption(ctx: ctx))
+                    .font(AppFont.subheadline)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, 4)
+            } else if !isBracketLinked {
+                customLeagueGameDefinitionsContent
+                    .padding(.top, 8)
+            }
         } header: {
             Text("Choose Game Type")
                 .font(Self.gameTypeSectionTitleFont)
@@ -325,55 +553,86 @@ struct NewGameLogFormView: View {
         .listRowBackground(widgetOutlineBackground)
 
         Section {
-            if isGameTypeAvailable(selectedGameType) {
-                HStack(spacing: 12) {
-                    Button {
-                        outcome = .won
-                        lockUserIntoOutcome()
-                    } label: {
-                        Text("I won")
-                            .font(AppFont.buttonProminent)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 10)
-                            .background(
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .fill(outcome == .won ? GameLogBrandColor.wonGreen : .white)
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .stroke(GameLogBrandColor.wonGreen, lineWidth: 2)
-                            )
-                            .contentShape(Rectangle())
-                    }
-                    .foregroundStyle(outcome == .won ? .white : GameLogBrandColor.wonGreen)
-                    .frame(maxWidth: .infinity)
-                    .buttonStyle(.plain)
-                    .disabled(isBracketLinked && !currentUserIsGameMember)
-                    .accessibilityIdentifier("gamelog.outcome.won")
+            if isLoggingCustomGame || isGameTypeAvailable(selectedGameType) {
+                if isOperatorNeutralEdit {
+                    Text(
+                        "Update which side won this logged game. This only changes the saved result for these players — it is not your personal win or loss."
+                    )
+                    .font(AppFont.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
 
                     Button {
-                        outcome = .lost
-                        lockUserIntoOutcome()
+                        swapWinningAndLosingTeams()
                     } label: {
-                        Text("I lost")
+                        Text("Swap winning team")
                             .font(AppFont.buttonProminent)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 10)
-                            .background(
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .fill(outcome == .lost ? GameLogBrandColor.lostRed : .white)
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .stroke(GameLogBrandColor.lostRed, lineWidth: 2)
-                            )
-                            .contentShape(Rectangle())
                     }
-                    .foregroundStyle(outcome == .lost ? .white : GameLogBrandColor.lostRed)
-                    .frame(maxWidth: .infinity)
-                    .buttonStyle(.plain)
-                    .disabled(isBracketLinked && !currentUserIsGameMember)
-                    .accessibilityIdentifier("gamelog.outcome.lost")
+                    .buttonStyle(BrandPrimaryButtonStyle())
+                    .disabled(!participantSelectionMatchesExpectedTeamSizes)
+                    .accessibilityIdentifier("gamelog.operator.swapWinningTeam")
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Winners: \(namesList(for: selectedWinnerProfileIds))")
+                            .font(AppFont.subheadlineBold)
+                            .foregroundStyle(.black)
+                        Text("Losers: \(namesList(for: selectedLoserProfileIds))")
+                            .font(AppFont.subheadlineBold)
+                            .foregroundStyle(.black)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    HStack(spacing: 12) {
+                        Button {
+                            outcome = .won
+                            lockUserIntoOutcome()
+                        } label: {
+                            Text("I won")
+                                .font(AppFont.buttonProminent)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 10)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .fill(outcome == .won ? GameLogBrandColor.wonGreen : .white)
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .stroke(GameLogBrandColor.wonGreen, lineWidth: 2)
+                                )
+                                .contentShape(Rectangle())
+                        }
+                        .foregroundStyle(outcome == .won ? .white : GameLogBrandColor.wonGreen)
+                        .frame(maxWidth: .infinity)
+                        .buttonStyle(.plain)
+                        .disabled(isBracketLinked && !currentUserIsGameMember && !isEditingExistingLog)
+                        .accessibilityIdentifier("gamelog.outcome.won")
+
+                        Button {
+                            outcome = .lost
+                            lockUserIntoOutcome()
+                        } label: {
+                            Text("I lost")
+                                .font(AppFont.buttonProminent)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 10)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .fill(outcome == .lost ? GameLogBrandColor.lostRed : .white)
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .stroke(GameLogBrandColor.lostRed, lineWidth: 2)
+                                )
+                                .contentShape(Rectangle())
+                        }
+                        .foregroundStyle(outcome == .lost ? .white : GameLogBrandColor.lostRed)
+                        .frame(maxWidth: .infinity)
+                        .buttonStyle(.plain)
+                        .disabled(isBracketLinked && !currentUserIsGameMember && !isEditingExistingLog)
+                        .accessibilityIdentifier("gamelog.outcome.lost")
+                    }
                 }
             } else {
                 Text(unavailableGameTypeMessage)
@@ -381,7 +640,7 @@ struct NewGameLogFormView: View {
                     .foregroundStyle(.black)
             }
         } header: {
-            Text("Outcome")
+            Text(isOperatorNeutralEdit ? "Recorded result" : "Outcome")
                 .font(Self.widgetTitleFont)
                 .foregroundStyle(GameLogBrandColor.red)
         }
@@ -389,13 +648,13 @@ struct NewGameLogFormView: View {
 
         if outcome != nil {
             Section {
-                let range = validTeamSizeRange(for: selectedGameType)
+                let range = currentTeamSizeRange()
                 Stepper(value: $teamSize, in: range, step: 1) {
                     Text("\(teamSize)")
                         .font(AppFont.headline)
                         .foregroundStyle(.black)
                 }
-                .disabled(isBracketLinked)
+                .disabled(isBracketLinked || isOperatorNeutralEdit)
             } header: {
                 Text("Team size")
                     .font(Self.widgetTitleFont)
@@ -514,7 +773,7 @@ struct NewGameLogFormView: View {
                         if isSubmitting {
                             HStack(spacing: 8) {
                                 ProgressView()
-                                Text("Submitting game log...")
+                                Text(isEditingExistingLog ? "Saving…" : "Submitting game log...")
                                     .font(AppFont.footnote)
                                     .foregroundStyle(.secondary)
                             }
@@ -522,7 +781,7 @@ struct NewGameLogFormView: View {
                         Button {
                             Task { await handleSubmitTapped() }
                         } label: {
-                            Text("Submit Game")
+                            Text(isEditingExistingLog ? "Save changes" : "Submit Game")
                                 .font(AppFont.buttonProminent)
                                 .frame(maxWidth: .infinity)
                         }
@@ -536,7 +795,13 @@ struct NewGameLogFormView: View {
 
     var body: some View {
         Group {
-            if isLoading {
+            if isLoadingEditDocument {
+                LoadingView(message: "Loading game…")
+            } else if let editDocumentLoadError {
+                ErrorView(message: editDocumentLoadError) {
+                    Task { await loadExistingGameLogForEditingIfNeeded() }
+                }
+            } else if isLoading {
                 LoadingView(message: "Loading leagues...")
             } else if let errorMessage {
                 ErrorView(message: errorMessage) {
@@ -546,6 +811,12 @@ struct NewGameLogFormView: View {
                 EmptyStateView(
                     title: "No leagues yet",
                     message: "Create or join a league to log a game.",
+                    actionLabel: nil
+                )
+            } else if loggableCommunities.isEmpty {
+                EmptyStateView(
+                    title: "No league to log in",
+                    message: "Leagues hidden by the host aren't available for new logs unless you're the host.",
                     actionLabel: nil
                 )
             } else {
@@ -582,15 +853,33 @@ struct NewGameLogFormView: View {
                 }
             }
         }
-        .task { await loadIfNeeded() }
+        .task {
+            await loadExistingGameLogForEditingIfNeeded()
+            await loadIfNeeded()
+            if !selectedCommunityId.isEmpty {
+                async let defsLoaded: Void = loadCustomGameDefinitions()
+                async let membersLoaded: Void = loadMembers()
+                _ = await (defsLoaded, membersLoaded)
+            }
+            applyBracketLockedGameTypeIfNeeded()
+        }
         .onChange(of: selectedCommunityId) { _, _ in
             resetSelectionForScopeChange()
-            Task { await loadMembers() }
+            Task {
+                async let defsLoaded: Void = loadCustomGameDefinitions()
+                async let membersLoaded: Void = loadMembers()
+                _ = await (defsLoaded, membersLoaded)
+            }
         }
         .onChange(of: selectedGameType) { _, _ in
-            let newRange = validTeamSizeRange(for: selectedGameType)
+            let newRange = currentTeamSizeRange()
             teamSize = min(max(teamSize, newRange.lowerBound), newRange.upperBound)
             resetSelectionForScopeChange()
+            syncStatsWithParticipants()
+        }
+        .onChange(of: selectedCustomDefinitionId) { _, _ in
+            let newRange = currentTeamSizeRange()
+            teamSize = min(max(teamSize, newRange.lowerBound), newRange.upperBound)
             syncStatsWithParticipants()
         }
         .onChange(of: teamSize) { _, newValue in
@@ -629,6 +918,74 @@ struct NewGameLogFormView: View {
         }
     }
 
+    /// Read-only roster for operator edits (no “your team” pickers tied to the signed-in user).
+    @ViewBuilder
+    private func operatorNeutralRecordedRosterContent(
+        selectionPoolMembers: [CommunityMemberRosterRow],
+        hasEnoughMembers: Bool
+    ) -> some View {
+        if !hasEnoughMembers {
+            Section {
+                Text(
+                    isBracketLinked
+                        ? "This bracket match doesn’t list a valid two-sided roster yet."
+                        : "League doesn’t have enough members for a team of size \(teamSize)."
+                )
+                .font(AppFont.subheadline)
+                .foregroundStyle(.black)
+            }
+            .listRowBackground(widgetOutlineBackground)
+        } else if bracketTeamsAreFixed && teamSize > 1 {
+            Section {
+                bracketFixedTeamRosterBlock(
+                    title: "Winning team",
+                    profileIds: sortedProfileIdsForBracketDisplay(selectedWinnerProfileIds),
+                    pool: selectionPoolMembers
+                )
+            }
+            .listRowBackground(widgetOutlineBackground)
+
+            Section {
+                bracketFixedTeamRosterBlock(
+                    title: "Losing team",
+                    profileIds: sortedProfileIdsForBracketDisplay(selectedLoserProfileIds),
+                    pool: selectionPoolMembers
+                )
+            }
+            .listRowBackground(widgetOutlineBackground)
+        } else {
+            Section {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Winning team")
+                        .font(Self.widgetTitleFont)
+                        .foregroundStyle(GameLogBrandColor.wonGreen)
+                    ForEach(sortedProfileIds(for: selectedWinnerProfileIds), id: \.self) { profileId in
+                        Text(displayName(for: profileId))
+                            .font(Self.participantPickerRowNameFont)
+                            .foregroundStyle(.black)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .listRowBackground(widgetOutlineBackground)
+
+            Section {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Losing team")
+                        .font(Self.widgetTitleFont)
+                        .foregroundStyle(GameLogBrandColor.lostRed)
+                    ForEach(sortedProfileIds(for: selectedLoserProfileIds), id: \.self) { profileId in
+                        Text(displayName(for: profileId))
+                            .font(Self.participantPickerRowNameFont)
+                            .foregroundStyle(.black)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .listRowBackground(widgetOutlineBackground)
+        }
+    }
+
     /// Teammates + opponents; opponents use a `Section` header so the title sits outside the white widget row.
     @ViewBuilder
     private var fillSlotsFormSections: some View {
@@ -640,7 +997,11 @@ struct NewGameLogFormView: View {
         } else if let membersErrorMessage {
             Section {
                 ErrorView(message: membersErrorMessage) {
-                    Task { await loadMembers() }
+                    Task {
+                        async let defsLoaded: Void = loadCustomGameDefinitions()
+                        async let membersLoaded: Void = loadMembers()
+                        _ = await (defsLoaded, membersLoaded)
+                    }
                 }
             }
             .listRowBackground(widgetOutlineBackground)
@@ -657,7 +1018,12 @@ struct NewGameLogFormView: View {
             let hasEnoughMembers = isBracketLinked
                 ? bracketTeamsAreFixed
                 : (selectionPoolMembers.count >= (2 * teamSize))
-            if let outcome, let myUserId = currentUserId {
+            if isOperatorNeutralEdit {
+                operatorNeutralRecordedRosterContent(
+                    selectionPoolMembers: selectionPoolMembers,
+                    hasEnoughMembers: hasEnoughMembers
+                )
+            } else if let outcome, let myUserId = currentUserId {
                 let isMySideWinners = (outcome == .won)
                 let teammateSet = isMySideWinners ? selectedWinnerProfileIds : selectedLoserProfileIds
                 let opponentSet = isMySideWinners ? selectedLoserProfileIds : selectedWinnerProfileIds
@@ -977,7 +1343,7 @@ struct NewGameLogFormView: View {
                 .font(AppFont.subheadlineBold)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .fixedSize(horizontal: false, vertical: true)
-            Text("Game: \(selectedGameType.displayName)")
+            Text("Game: \(gameSummaryTitle)")
                 .font(AppFont.subheadlineBold)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .fixedSize(horizontal: false, vertical: true)
@@ -1010,7 +1376,12 @@ struct NewGameLogFormView: View {
 
     @ViewBuilder
     private var summaryStatsDetailContent: some View {
-        if !participantProfileIds.isEmpty {
+        if isLoggingCustomGame, !participantProfileIds.isEmpty {
+            Text("Add optional notes below for how this custom game went.")
+                .font(AppFont.subheadlineBold)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+        } else if !participantProfileIds.isEmpty {
             switch selectedGameType {
             case .pong:
                 if teamSize > 1 {
@@ -1098,6 +1469,11 @@ struct NewGameLogFormView: View {
             Text("Select winners and losers to enter game stats.")
                 .font(AppFont.subheadline)
                 .foregroundStyle(.secondary)
+        } else if isLoggingCustomGame {
+            Text("This custom game only records winners, losers, and optional notes — no extra stat fields.")
+                .font(AppFont.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         } else {
             switch selectedGameType {
             case .pong:
@@ -1440,24 +1816,25 @@ struct NewGameLogFormView: View {
 
     private var canSubmitGameLog: Bool {
         !selectedCommunityId.isEmpty &&
-        outcome != nil &&
+        (outcome != nil || isEditingExistingLog) &&
         participantSelectionMatchesExpectedTeamSizes &&
         hasRequiredPhotos &&
         currentStatsValidationError == nil &&
-        (!isBracketLinked || currentUserIsGameMember)
+        (!isBracketLinked || currentUserIsGameMember || isEditingExistingLog)
     }
 
     private var canSubmitWithoutPhotos: Bool {
         !selectedCommunityId.isEmpty &&
-        outcome != nil &&
+        (outcome != nil || isEditingExistingLog) &&
         participantSelectionMatchesExpectedTeamSizes &&
         currentStatsValidationError == nil &&
-        (!isBracketLinked || currentUserIsGameMember)
+        (!isBracketLinked || currentUserIsGameMember || isEditingExistingLog)
     }
 
     private var submitDisableReasons: [String] {
         var reasons: [String] = []
-        if frontPhotoData == nil || backPhotoData == nil {
+        let needsNewCapture = frontPhotoData == nil || backPhotoData == nil
+        if needsNewCapture, !isEditingExistingLog || photoUrls.isEmpty {
             reasons.append("Photos are required and will be captured when you submit")
         }
         if !participantSelectionMatchesExpectedTeamSizes {
@@ -1467,7 +1844,7 @@ struct NewGameLogFormView: View {
                     : "Winners and losers must each equal team size"
             )
         }
-        if selectedGameType == .pong, teamSize > 1, isPongCupBreakdownEnabled {
+        if !isLoggingCustomGame, selectedGameType == .pong, teamSize > 1, isPongCupBreakdownEnabled {
             let hasAnyPongCups = pongTotalCups > 0
             if hasAnyPongCups, pongWinnersTotalCups != pongCupMode.rawValue {
                 reasons.append("Winning team cups must equal \(pongCupMode.rawValue)")
@@ -1524,6 +1901,9 @@ struct NewGameLogFormView: View {
     }
 
     private var shouldShowPostSelectionSections: Bool {
+        if isOperatorNeutralEdit {
+            return participantSelectionMatchesExpectedTeamSizes
+        }
         guard let outcome else { return false }
         guard !selectedOpponentSet(for: outcome).isEmpty else { return false }
         if teamSize == 1 {
@@ -1559,6 +1939,9 @@ struct NewGameLogFormView: View {
     private var currentStatsValidationError: String? {
         let participantSet = Set(participantProfileIds)
         guard !participantSet.isEmpty else { return nil }
+        if isLoggingCustomGame {
+            // No type-specific stat requirements; optional detail lives in Notes.
+        } else {
         switch selectedGameType {
         case .pong:
             if teamSize == 1 {
@@ -1606,6 +1989,7 @@ struct NewGameLogFormView: View {
                 }
             }
         }
+        }
         if !selectedMVPProfileId.isEmpty && !participantSet.contains(selectedMVPProfileId) {
             return "MVP must be one of the selected participants."
         }
@@ -1639,7 +2023,14 @@ struct NewGameLogFormView: View {
         GameType.allCases.first(where: isGameTypeAvailable) ?? .pong
     }
 
-    private func resetSelectionForScopeChange() {
+    private func resetSelectionForScopeChange(preserveCustomDefinition: Bool = false) {
+        // Edit flow sets `selectedCommunityId` / `selectedGameType` from the snapshot; `onChange` would
+        // otherwise run and clear restored winners/losers (empty "Winners: —" and a dead swap button).
+        guard !isEditingExistingLog else { return }
+        if !preserveCustomDefinition {
+            selectedCustomDefinitionId = nil
+            selectedCustomDefinitionName = ""
+        }
         outcome = nil
         selectedWinnerProfileIds.removeAll()
         selectedLoserProfileIds.removeAll()
@@ -1661,10 +2052,21 @@ struct NewGameLogFormView: View {
         participantSelectionRecency.removeValue(forKey: profileId)
     }
 
+    /// Operator-only: exchange recorded winner and loser sides (same players, flipped result).
+    private func swapWinningAndLosingTeams() {
+        let w = selectedWinnerProfileIds
+        selectedWinnerProfileIds = selectedLoserProfileIds
+        selectedLoserProfileIds = w
+        if !pongLastCupByProfileId.isEmpty && !selectedWinnerProfileIds.contains(pongLastCupByProfileId) {
+            pongLastCupByProfileId = ""
+        }
+        syncStatsWithParticipants()
+    }
+
     private func syncStatsWithParticipants() {
         let ids = Set(participantProfileIds)
 
-        if selectedGameType == .pong, teamSize > 1, !isPongCupBreakdownEnabled {
+        if !isLoggingCustomGame, selectedGameType == .pong, teamSize > 1, !isPongCupBreakdownEnabled {
             pongCupsByProfileId = [:]
         } else {
             pongCupsByProfileId = keepOnly(ids: ids, from: pongCupsByProfileId)
@@ -1691,7 +2093,7 @@ struct NewGameLogFormView: View {
         }
 
         // Solo Pong defaults: fixed 10-cup mode and last cup = winner.
-        if selectedGameType == .pong, teamSize == 1, let winnerId = soloWinnerProfileId {
+        if !isLoggingCustomGame, selectedGameType == .pong, teamSize == 1, let winnerId = soloWinnerProfileId {
             isPongCupBreakdownEnabled = true
             pongCupMode = .ten
             pongLastCupByProfileId = winnerId
@@ -1703,6 +2105,7 @@ struct NewGameLogFormView: View {
     }
 
     private func prefillPongWinningTeamCupsIfEmpty() {
+        guard !isLoggingCustomGame else { return }
         guard selectedGameType == .pong, teamSize > 1, isPongCupBreakdownEnabled else { return }
         guard !selectedWinnerProfileIds.isEmpty else { return }
         guard pongTotalCups == 0 else { return }
@@ -1753,14 +2156,24 @@ struct NewGameLogFormView: View {
     }
 
     private func namesList(for ids: Set<String>) -> String {
-        let names = members
-            .filter { ids.contains($0.profileId) }
-            .map { $0.displayName.isEmpty ? "Unknown" : $0.displayName }
-        return names.isEmpty ? "—" : names.joined(separator: ", ")
+        guard !ids.isEmpty else { return "—" }
+        // Use roster when present, but still list every id (e.g. admin before members load, or ex-members).
+        return sortedProfileIds(for: ids).map { displayName(for: $0) }.joined(separator: ", ")
     }
 
     private var selectedLeagueNameForSummary: String {
-        communities.first { $0.communityId == selectedCommunityId }?.name ?? "—"
+        let resolved = editingResolvedLeagueName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !resolved.isEmpty { return resolved }
+        if let name = loggableCommunities.first(where: { $0.communityId == selectedCommunityId })?.name,
+           !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return name
+        }
+        // Operators may edit logs for leagues they’re not a member of (hidden or not in “loggable” list).
+        if let name = communities.first(where: { $0.communityId == selectedCommunityId })?.name,
+           !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return name
+        }
+        return "—"
     }
 
     private var totalBeerBallNewCans: Int {
@@ -1963,14 +2376,15 @@ struct NewGameLogFormView: View {
             showOpenSettingsAction = false
         }
         guard canSubmitGameLog else { return }
-        guard let uid = currentUserId else {
+        guard currentUserId != nil else {
             await MainActor.run {
                 submitErrorMessage = "Sign in again, then try submitting."
             }
             return
         }
+        let loggingCustom = isLoggingCustomGame
         AppDebugLog.log(
-            "submitGameLog: start bracketLinked=\(isBracketLinked) communityId=\(selectedCommunityId) teamSize=\(teamSize) gameType=\(selectedGameType.rawValue) bracketId=\(bracketContext?.bracketId ?? "nil") bracketMatchId=\(bracketContext?.bracketMatchId ?? "nil")"
+            "submitGameLog: start editing=\(isEditingExistingLog) bracketLinked=\(isBracketLinked) communityId=\(selectedCommunityId) teamSize=\(teamSize) gameType=\(loggingCustom ? "CUSTOM" : selectedGameType.rawValue) customDef=\(selectedCustomDefinitionId ?? "nil") bracketId=\(bracketContext?.bracketId ?? "nil") bracketMatchId=\(bracketContext?.bracketMatchId ?? "nil")"
         )
         let participants = participantProfileIds
         let winners = Array(selectedWinnerProfileIds).sorted()
@@ -1981,6 +2395,75 @@ struct NewGameLogFormView: View {
             }
             return
         }
+
+        let gameLogService = container.gameLogService
+        let pongStats = !loggingCustom && selectedGameType == .pong ? buildPongStats() : nil
+        let beerBallStats = !loggingCustom && selectedGameType == .beerBall ? buildBeerBallStats() : nil
+        let battlePongStats = !loggingCustom && selectedGameType == .battlePong ? buildBattlePongStats() : nil
+        let baseballStats = !loggingCustom && selectedGameType == .baseball ? buildBaseballStats() : nil
+        let crossfireStats = !loggingCustom && selectedGameType == .crossfire ? buildCrossfireStats() : nil
+        let trimmedNotes = gameLogNotes.trimmingCharacters(in: .whitespacesAndNewlines)
+        let notesPayload: String? = trimmedNotes.isEmpty ? nil : trimmedNotes
+
+        if let editId = editingGameLogId {
+            await MainActor.run { isSubmitting = true }
+            defer { Task { @MainActor in isSubmitting = false } }
+            do {
+                var finalPhotoUrls = photoUrls
+                if let frontData = frontPhotoData,
+                   let backData = backPhotoData,
+                   let combinedPhotoData = makeCombinedPhotoData(frontData: frontData, backData: backData) {
+                    AppDebugLog.log("submitGameLog: edit upload gameLogId=\(editId)")
+                    let combinedUrl = try await gameLogService.uploadGamePhoto(
+                        communityId: selectedCommunityId,
+                        gameLogId: editId,
+                        side: "combined",
+                        data: combinedPhotoData,
+                        contentType: "image/jpeg"
+                    )
+                    finalPhotoUrls = [combinedUrl]
+                }
+                guard finalPhotoUrls.count == 1 else {
+                    await MainActor.run {
+                        submitErrorMessage = "Game photos must be saved as a single combined image."
+                    }
+                    return
+                }
+                let updatePayload = GameLogUpdatePayload(
+                    gameLogId: editId,
+                    participantProfileIds: participants,
+                    winnerProfileIds: winners,
+                    loserProfileIds: losers,
+                    mvpProfileId: selectedMVPProfileId.isEmpty ? nil : selectedMVPProfileId,
+                    lvpProfileId: selectedLVPProfileId.isEmpty ? nil : selectedLVPProfileId,
+                    photoUrls: finalPhotoUrls,
+                    notes: notesPayload,
+                    pongStats: pongStats,
+                    beerBallStats: beerBallStats,
+                    battlePongStats: battlePongStats,
+                    baseballStats: baseballStats,
+                    crossfireStats: crossfireStats
+                )
+                if sessionManager.isPlatformAdmin {
+                    try await container.platformAdminService.adminUpdateGameLog(payload: updatePayload)
+                    AppDebugLog.log("submitGameLog: adminUpdateGameLog success ms=\(Int(Date().timeIntervalSince(t0) * 1000))")
+                } else {
+                    try await gameLogService.updateGameLog(payload: updatePayload)
+                    AppDebugLog.log("submitGameLog: updateGameLog success ms=\(Int(Date().timeIntervalSince(t0) * 1000))")
+                }
+                await MainActor.run { dismiss() }
+            } catch {
+                await MainActor.run {
+                    submitErrorMessage = error.localizedDescription
+                }
+                let ns = error as NSError
+                AppDebugLog.log(
+                    "submitGameLog update failed ms=\(Int(Date().timeIntervalSince(t0) * 1000)) domain=\(ns.domain) code=\(ns.code) message=\(ns.localizedDescription)"
+                )
+            }
+            return
+        }
+
         guard let frontData = frontPhotoData, let backData = backPhotoData else {
             await MainActor.run {
                 submitErrorMessage = "Capture both front and back photos before submitting."
@@ -1996,22 +2479,37 @@ struct NewGameLogFormView: View {
             }
             return
         }
+        if loggingCustom {
+            let defId = selectedCustomDefinitionId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !defId.isEmpty else {
+                await MainActor.run {
+                    submitErrorMessage = "Pick a league custom game before submitting."
+                }
+                return
+            }
+        }
         AppDebugLog.log("submitGameLog: combinedPhotoBytes=\(combinedPhotoData.count)")
 
         let gameLogId = AppFirestore.db().collection("gameLogs").document().documentID
         let communityId = selectedCommunityId
-        let gameType = selectedGameType
-        let pongStats = selectedGameType == .pong ? buildPongStats() : nil
-        let beerBallStats = selectedGameType == .beerBall ? buildBeerBallStats() : nil
-        let battlePongStats = selectedGameType == .battlePong ? buildBattlePongStats() : nil
-        let baseballStats = selectedGameType == .baseball ? buildBaseballStats() : nil
-        let crossfireStats = selectedGameType == .crossfire ? buildCrossfireStats() : nil
-        let trimmedNotes = gameLogNotes.trimmingCharacters(in: .whitespacesAndNewlines)
-        let notesPayload: String? = trimmedNotes.isEmpty ? nil : trimmedNotes
-        let gameLogService = container.gameLogService
+        let gameTypeRaw = loggingCustom ? "CUSTOM" : selectedGameType.rawValue
+        let customDefIdForCreate: String? = loggingCustom
+            ? selectedCustomDefinitionId?.trimmingCharacters(in: .whitespacesAndNewlines)
+            : nil
+        let customDefNameTrimmed = selectedCustomDefinitionName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let customDefNameForCreate: String? = loggingCustom && !customDefNameTrimmed.isEmpty
+            ? String(customDefNameTrimmed.prefix(80))
+            : nil
 
         await MainActor.run { isSubmitting = true }
         defer { Task { @MainActor in isSubmitting = false } }
+
+        guard let authUid = Auth.auth().currentUser?.uid else {
+            await MainActor.run {
+                submitErrorMessage = "Sign in again, then try submitting."
+            }
+            return
+        }
 
         do {
             AppDebugLog.log("submitGameLog: upload start gameLogId=\(gameLogId) path=gamePhotos/\(communityId)/\(gameLogId)/combined_*.jpg")
@@ -2031,8 +2529,10 @@ struct NewGameLogFormView: View {
                 communityId: communityId,
                 bracketId: bracketContext?.bracketId,
                 bracketMatchId: bracketContext?.bracketMatchId,
-                gameType: gameType.rawValue,
-                createdByProfileId: uid,
+                gameType: gameTypeRaw,
+                customGameDefinitionId: customDefIdForCreate,
+                customGameDefinitionName: customDefNameForCreate,
+                createdByProfileId: authUid,
                 participantProfileIds: participants,
                 winnerProfileIds: winners,
                 loserProfileIds: losers,
@@ -2071,6 +2571,11 @@ struct NewGameLogFormView: View {
         AppDebugLog.log(
             "handleSubmitTapped: bracketLinked=\(isBracketLinked) canSubmitWithoutPhotos=\(canSubmitWithoutPhotos) hasRequiredPhotos=\(hasRequiredPhotos) currentUserIsGameMember=\(currentUserIsGameMember)"
         )
+
+        if isEditingExistingLog && hasRequiredPhotos {
+            await submitGameLog()
+            return
+        }
 
         if isBracketLinked && !currentUserIsGameMember {
             submitErrorMessage = "Only participants can log this match."
@@ -2218,6 +2723,115 @@ struct NewGameLogFormView: View {
         .frame(maxHeight: .infinity)
     }
 
+    private func loadExistingGameLogForEditingIfNeeded() async {
+        guard let gameLogId = editingGameLogId else { return }
+        isLoadingEditDocument = true
+        editDocumentLoadError = nil
+        editingResolvedLeagueName = ""
+        defer { isLoadingEditDocument = false }
+        do {
+            let snap = try await container.gameLogService.fetchGameLogForEditing(gameLogId: gameLogId)
+            let isCreator = container.gameLogService.canCurrentUserEditDelete(createdByProfileId: snap.createdByProfileId)
+            guard isCreator || sessionManager.isPlatformAdmin else {
+                editDocumentLoadError = "You can only edit games that you logged."
+                return
+            }
+            applyEditableSnapshot(snap)
+            if sessionManager.isPlatformAdmin {
+                await fetchLeagueNameForOperatorEditSummary(communityId: snap.communityId)
+            }
+        } catch {
+            editDocumentLoadError = error.localizedDescription
+        }
+    }
+
+    private func fetchLeagueNameForOperatorEditSummary(communityId: String) async {
+        let cid = communityId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cid.isEmpty else { return }
+        let snap = try? await AppFirestore.db().collection("communities").document(cid).getDocument()
+        guard let raw = snap?.data()?["name"] as? String else { return }
+        let name = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        await MainActor.run { editingResolvedLeagueName = name }
+    }
+
+    private func applyEditableSnapshot(_ snap: GameLogEditableSnapshot) {
+        selectedCommunityId = snap.communityId
+        if snap.gameType == "CUSTOM" {
+            selectedCustomDefinitionId = snap.customGameDefinitionId
+            let fromDoc = snap.customGameDefinitionName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            selectedCustomDefinitionName = fromDoc
+            selectedGameType = .pong
+        } else {
+            selectedCustomDefinitionId = nil
+            selectedCustomDefinitionName = ""
+            if let gt = GameType(rawValue: snap.gameType) {
+                selectedGameType = gt
+            }
+        }
+        selectedWinnerProfileIds = Set(snap.winnerProfileIds)
+        selectedLoserProfileIds = Set(snap.loserProfileIds)
+        let w = snap.winnerProfileIds.count
+        let l = snap.loserProfileIds.count
+        if w > 0, w == l {
+            teamSize = w
+        } else if w > 0 {
+            teamSize = max(1, w)
+        }
+        selectedMVPProfileId = snap.mvpProfileId ?? ""
+        selectedLVPProfileId = snap.lvpProfileId ?? ""
+        photoUrls = snap.photoUrls
+        gameLogNotes = snap.notes?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if isOperatorNeutralEdit {
+            // Sentinel for form gates; operator UI does not frame this as the operator’s win/loss.
+            outcome = .won
+        } else if let uid = currentUserId {
+            if snap.winnerProfileIds.contains(uid) {
+                outcome = .won
+            } else if snap.loserProfileIds.contains(uid) {
+                outcome = .lost
+            }
+        }
+        hydrateStatsFromSnapshot(snap)
+    }
+
+    private func hydrateStatsFromSnapshot(_ snap: GameLogEditableSnapshot) {
+        if let p = snap.pongStats {
+            if let mode = p["cupMode"] as? Int, let m = PongCupMode(rawValue: mode) {
+                pongCupMode = m
+            }
+            if let cups = p["playerCupsHit"] as? [String: Int] {
+                pongCupsByProfileId = cups
+                isPongCupBreakdownEnabled = !cups.isEmpty
+            }
+            if let last = p["lastCupByProfileId"] as? String {
+                pongLastCupByProfileId = last
+            }
+        }
+        if let bb = snap.beerBallStats {
+            if let cans = bb["newCanCountByProfileId"] as? [String: Int] {
+                beerBallNewCansByProfileId = cans
+            }
+            if let first = bb["firstFinishedByProfileId"] as? String {
+                beerBallFirstFinishedByProfileId = first
+            }
+        }
+        if let bp = snap.battlePongStats, let cups = bp["playerCupsHit"] as? [String: Int] {
+            battlePongCupsByProfileId = cups
+        }
+        if let b = snap.baseballStats, let hits = b["hitsByProfileId"] as? [String: Int] {
+            baseballHitsByProfileId = hits
+        }
+        if let cf = snap.crossfireStats {
+            if let cups = cf["playerCupsHit"] as? [String: Int] {
+                crossfireCupsByProfileId = cups
+            }
+            if let last = cf["lastCupByProfileId"] as? String {
+                crossfireLastCupByProfileId = last
+            }
+        }
+    }
+
     private func loadIfNeeded() async {
         guard communities.isEmpty && isLoading else { return }
         await load()
@@ -2229,16 +2843,86 @@ struct NewGameLogFormView: View {
         do {
             let page = try await container.communityService.fetchCommunitiesPage(cursor: nil, pageSize: 25)
             communities = page.items
-            if selectedCommunityId.isEmpty {
-                selectedCommunityId = communities.first?.communityId ?? ""
+            let loggable = communities.filter { item in
+                guard let uid = container.authService.currentUserId else { return !item.hiddenFromMembers }
+                return !item.hiddenFromMembers || item.createdByProfileId == uid
+            }
+            let leagueMissingOrForbidden =
+                selectedCommunityId.isEmpty
+                || !loggable.contains(where: { $0.communityId == selectedCommunityId })
+            // Bracket-linked logs must stay on `bracketContext.communityId` even if that league isn’t in the first page of `fetchCommunitiesPage`.
+            if leagueMissingOrForbidden, !isEditingExistingLog, bracketContext == nil {
+                selectedCommunityId = loggable.first?.communityId ?? ""
             }
             isLoading = false
-            if !selectedCommunityId.isEmpty {
-                Task { await loadMembers() }
-            }
         } catch {
             errorMessage = error.localizedDescription
             isLoading = false
+        }
+    }
+
+    private func bracketLockedGameTypeCaption(ctx: GameLogBracketContext) -> String {
+        if ctx.bracketGameType == "CUSTOM" {
+            let name = ctx.bracketCustomGameDefinitionName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return name.isEmpty
+                ? "This bracket uses a league custom game."
+                : "This bracket uses \(name)."
+        }
+        if let gt = GameType(rawValue: ctx.bracketGameType) {
+            return "This bracket uses \(gt.displayName)."
+        }
+        return "This bracket uses \(ctx.bracketGameType)."
+    }
+
+    /// When logging from a bracket, match type + optional custom definition are fixed by the bracket document.
+    private func applyBracketLockedGameTypeIfNeeded() {
+        guard let ctx = bracketContext else { return }
+        if ctx.bracketGameType == "CUSTOM",
+           let cid = ctx.bracketCustomGameDefinitionId?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !cid.isEmpty {
+            selectedCustomDefinitionId = cid
+            let n = ctx.bracketCustomGameDefinitionName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            selectedCustomDefinitionName = n
+            selectedGameType = .pong
+        } else if let gt = GameType(rawValue: ctx.bracketGameType) {
+            selectedCustomDefinitionId = nil
+            selectedCustomDefinitionName = ""
+            selectedGameType = gt
+        }
+    }
+
+    private func loadCustomGameDefinitions() async {
+        let cid = await MainActor.run {
+            selectedCommunityId.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        guard !cid.isEmpty else {
+            await MainActor.run {
+                customGameDefinitions = []
+                customDefinitionsError = nil
+                isLoadingCustomDefinitions = false
+            }
+            return
+        }
+        await MainActor.run {
+            isLoadingCustomDefinitions = true
+            customDefinitionsError = nil
+        }
+        do {
+            let rows = try await container.communityService.listGameDefinitions(communityId: cid)
+            await MainActor.run {
+                customGameDefinitions = rows
+                isLoadingCustomDefinitions = false
+                if let sid = selectedCustomDefinitionId?.trimmingCharacters(in: .whitespacesAndNewlines), !sid.isEmpty,
+                   let match = rows.first(where: { $0.gameDefinitionId == sid }) {
+                    selectedCustomDefinitionName = match.name
+                }
+            }
+        } catch {
+            await MainActor.run {
+                customDefinitionsError = error.localizedDescription
+                customGameDefinitions = []
+                isLoadingCustomDefinitions = false
+            }
         }
     }
 
@@ -2248,10 +2932,10 @@ struct NewGameLogFormView: View {
         membersErrorMessage = nil
         if UITestRuntime.participatesInUiTestHarness {
             members = uiTestMembers
-            if !isGameTypeAvailable(selectedGameType) {
+            if !isLoggingCustomGame, !isGameTypeAvailable(selectedGameType) {
                 selectedGameType = firstAvailableGameType()
             }
-            let range = validTeamSizeRange(for: selectedGameType)
+            let range = currentTeamSizeRange()
             if isBracketLinked, let ctx = bracketContext {
                 teamSize = ctx.teamSize
             } else {
@@ -2262,14 +2946,15 @@ struct NewGameLogFormView: View {
             if isBracketLinked, outcome != nil {
                 lockUserIntoOutcome()
             }
+            applyBracketLockedGameTypeIfNeeded()
             return
         }
         do {
             members = try await container.communityService.fetchMembers(communityId: selectedCommunityId)
-            if !isGameTypeAvailable(selectedGameType) {
+            if !isLoggingCustomGame, !isGameTypeAvailable(selectedGameType) {
                 selectedGameType = firstAvailableGameType()
             }
-            let range = validTeamSizeRange(for: selectedGameType)
+            let range = currentTeamSizeRange()
             if isBracketLinked, let ctx = bracketContext {
                 teamSize = ctx.teamSize
             } else {
@@ -2284,6 +2969,7 @@ struct NewGameLogFormView: View {
         if isBracketLinked, outcome != nil {
             lockUserIntoOutcome()
         }
+        applyBracketLockedGameTypeIfNeeded()
     }
 }
 
@@ -2328,36 +3014,6 @@ private struct BrandPrimaryButtonStyle: ButtonStyle {
             )
             .opacity(configuration.isPressed ? 0.85 : 1.0)
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
-    }
-}
-
-private enum GameType: String, CaseIterable, Identifiable {
-    case pong = "PONG"
-    case beerBall = "BEER_BALL"
-    case battlePong = "BATTLE_PONG"
-    case baseball = "BASEBALL"
-    case crossfire = "CROSSFIRE"
-
-    var id: String { rawValue }
-
-    var displayName: String {
-        switch self {
-        case .pong: return "Pong"
-        case .beerBall: return "Beer Ball"
-        case .battlePong: return "Battle Pong"
-        case .baseball: return "Baseball"
-        case .crossfire: return "Crossfire"
-        }
-    }
-
-    var leagueRankingBasis: LeagueRankingBasis {
-        switch self {
-        case .pong: return .pong
-        case .beerBall: return .beerBall
-        case .battlePong: return .battlePong
-        case .baseball: return .baseball
-        case .crossfire: return .crossfire
-        }
     }
 }
 
