@@ -170,13 +170,14 @@ struct NewGameLogFormView: View {
         frontPhotoData: Data? = nil,
         backPhotoData: Data? = nil,
         bracketContext: GameLogBracketContext? = nil,
-        editingGameLogId: String? = nil
+        editingGameLogId: String? = nil,
+        preselectedCommunityId: String? = nil
     ) {
         self.bracketContext = bracketContext
         self.editingGameLogId = editingGameLogId
         _frontPhotoData = State(initialValue: frontPhotoData)
         _backPhotoData = State(initialValue: backPhotoData)
-        _selectedCommunityId = State(initialValue: bracketContext?.communityId ?? "")
+        _selectedCommunityId = State(initialValue: bracketContext?.communityId ?? preselectedCommunityId ?? "")
         _teamSize = State(initialValue: bracketContext?.teamSize ?? 1)
 
         if let ctx = bracketContext,

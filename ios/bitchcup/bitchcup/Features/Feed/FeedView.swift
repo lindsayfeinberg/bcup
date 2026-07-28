@@ -4,6 +4,13 @@ private struct GameLogEditSheetItem: Identifiable {
     let id: String
 }
 
+private struct ViewingLiveStream: Identifiable {
+    let stream: LiveStreamSummary
+    let communityName: String
+    let session: LiveStreamSession
+    var id: String { stream.streamId }
+}
+
 struct FeedView: View {
     @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var sessionManager: AppSessionManager
@@ -12,12 +19,20 @@ struct FeedView: View {
     @State private var showCommunitiesFlow = false
     @State private var showCommunitiesList = false
     @State private var showGameLog = false
+    @State private var showGoLive = false
+    @State private var pendingLiveStreamCommunityId: String?
     @State private var showProfile = false
     @State private var showGameRulesExplainer = false
     @State private var showAccountMenu = false
     @State private var showPlatformAdmin = false
     @State private var profilePhotoUrl: URL?
     @State private var gameLogEditSheet: GameLogEditSheetItem?
+    @State private var liveStreams: [LiveStreamSummary] = []
+    @State private var liveStreamCommunityNames: [String: String] = [:]
+    @State private var liveStreamCommunityIds: [String] = []
+    @State private var viewingLiveStream: ViewingLiveStream?
+    @State private var joiningStreamId: String?
+    @State private var joinLiveStreamErrorMessage: String?
 
     private enum FeedState {
         case loading
@@ -49,26 +64,41 @@ struct FeedView: View {
 
     @ViewBuilder
     private var feedBottomActions: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 10) {
             Button {
                 showCommunitiesFlow = true
             } label: {
                 Text("Leagues")
-                    .font(.custom("NeueHaasDisplay-Mediu", size: 20))
-                    .frame(width: 150)
+                    .font(.custom("NeueHaasDisplay-Mediu", size: 18))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    .frame(maxWidth: .infinity)
                     .padding(.vertical, 10)
             }
             .buttonStyle(FeedPrimaryActionButtonStyle())
             .accessibilityIdentifier("feed.leagues")
 
-            Spacer(minLength: 28)
+            Button {
+                showGoLive = true
+            } label: {
+                Text("Go Live")
+                    .font(.custom("NeueHaasDisplay-Mediu", size: 18))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+            }
+            .buttonStyle(FeedPrimaryActionButtonStyle())
+            .accessibilityIdentifier("feed.goLive")
 
             Button {
                 showGameLog = true
             } label: {
                 Text("Log Game")
-                    .font(.custom("NeueHaasDisplay-Mediu", size: 20))
-                    .frame(width: 150)
+                    .font(.custom("NeueHaasDisplay-Mediu", size: 18))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    .frame(maxWidth: .infinity)
                     .padding(.vertical, 10)
             }
             .buttonStyle(FeedPrimaryActionButtonStyle())
@@ -146,6 +176,25 @@ struct FeedView: View {
                 .padding(.bottom, 10)
                 .background(Color(.systemBackground).opacity(0.92))
 
+                if !liveStreams.isEmpty {
+                    LiveNowBannerView(
+                        streams: liveStreams,
+                        communityName: { liveStreamCommunityNames[$0] ?? "League" },
+                        joiningStreamId: joiningStreamId,
+                        onSelect: { stream in
+                            Task { await joinLiveStream(stream) }
+                        }
+                    )
+                    .padding(.top, 4)
+                    if let joinLiveStreamErrorMessage {
+                        Text(joinLiveStreamErrorMessage)
+                            .font(.custom("NeueHaasDisplay-Light", size: 13))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal)
+                            .padding(.bottom, 4)
+                    }
+                }
+
                 // MARK: Body
                 Group {
                     switch feedState {
@@ -214,6 +263,7 @@ struct FeedView: View {
                                 .refreshable {
                                     AppAnalytics.logFeedRefresh()
                                     await refreshFeed()
+                                    await loadLiveStreamCommunities()
                                 }
                             }
                         }
@@ -242,7 +292,14 @@ struct FeedView: View {
                 CommunitiesListView()
             }
             .navigationDestination(isPresented: $showGameLog) {
-                GameLogCaptureEntryView()
+                GameLogCaptureEntryView(preselectedCommunityId: pendingLiveStreamCommunityId)
+            }
+            .navigationDestination(isPresented: $showGoLive) {
+                GoLiveCommunityPickerView(onStreamEnded: { communityId in
+                    pendingLiveStreamCommunityId = communityId
+                    showGoLive = false
+                    showGameLog = true
+                })
             }
             .navigationDestination(isPresented: $showProfile) {
                 ProfileView()
@@ -254,6 +311,15 @@ struct FeedView: View {
                 PlatformAdminRootView()
                     .environmentObject(sessionManager)
                     .environmentObject(container)
+            }
+            .fullScreenCover(item: $viewingLiveStream) { viewing in
+                LiveViewerView(
+                    stream: viewing.stream,
+                    communityName: viewing.communityName,
+                    session: viewing.session,
+                    onLeave: { viewingLiveStream = nil }
+                )
+                .environmentObject(container)
             }
             .sheet(item: $gameLogEditSheet) { item in
                 NavigationStack {
@@ -292,6 +358,7 @@ struct FeedView: View {
                     Task {
                         await loadProfilePhoto()
                         await loadInitialFeed()
+                        await loadLiveStreamCommunities()
                     }
                 }
             }
@@ -300,15 +367,34 @@ struct FeedView: View {
                 await sessionManager.ensureOnboardingCompleteOrRouteToOnboarding()
                 await loadInitialFeed()
                 await loadProfilePhoto()
+                await loadLiveStreamCommunities()
+            }
+            .task(id: liveStreamCommunityIds) {
+                guard !liveStreamCommunityIds.isEmpty else {
+                    liveStreams = []
+                    return
+                }
+                for await streams in container.liveStreamService.observeActiveLiveStreams(
+                    communityIds: liveStreamCommunityIds
+                ) {
+                    liveStreams = streams
+                }
             }
             .onChange(of: showGameLog) { wasShowing, isShowing in
                 if wasShowing && !isShowing {
-                    Task { await loadInitialFeed() }
+                    pendingLiveStreamCommunityId = nil
+                    Task {
+                        await loadInitialFeed()
+                        await loadLiveStreamCommunities()
+                    }
                 }
             }
             .onChange(of: showCommunitiesFlow) { wasShowing, isShowing in
                 if wasShowing && !isShowing {
-                    Task { await loadInitialFeed() }
+                    Task {
+                        await loadInitialFeed()
+                        await loadLiveStreamCommunities()
+                    }
                 }
             }
             .onChange(of: scenePhase) { _, newPhase in
@@ -498,6 +584,35 @@ extension FeedView {
 
     private func refreshFeed() async {
         await loadInitialFeed()
+    }
+
+    /// Refreshes the community id/name map that drives the "live now" banner listener
+    /// (`.task(id: liveStreamCommunityIds)`) — changing `liveStreamCommunityIds` restarts it.
+    private func loadLiveStreamCommunities() async {
+        do {
+            let communities = try await container.communityService.fetchCommunities()
+            liveStreamCommunityNames = Dictionary(uniqueKeysWithValues: communities.map { ($0.communityId, $0.name) })
+            liveStreamCommunityIds = communities.map(\.communityId)
+        } catch {
+            liveStreamCommunityIds = []
+            AppDebugLog.log("FeedView.loadLiveStreamCommunities error: \(error.localizedDescription)")
+        }
+    }
+
+    private func joinLiveStream(_ stream: LiveStreamSummary) async {
+        joiningStreamId = stream.streamId
+        joinLiveStreamErrorMessage = nil
+        defer { joiningStreamId = nil }
+        do {
+            let session = try await container.liveStreamService.joinLiveStreamAsViewer(streamId: stream.streamId)
+            viewingLiveStream = ViewingLiveStream(
+                stream: stream,
+                communityName: liveStreamCommunityNames[stream.communityId] ?? "League",
+                session: session
+            )
+        } catch {
+            joinLiveStreamErrorMessage = error.localizedDescription
+        }
     }
 
     private func loadMoreFeedIfNeeded(currentRow: FeedRow) async {

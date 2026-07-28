@@ -299,6 +299,43 @@ service cloud.firestore {
       ]);
     }
 
+    function liveStreamCommunityId(streamId) {
+      return get(/databases/$(database)/documents/liveStreams/$(streamId)).data.communityId;
+    }
+
+    function isLiveStreamCommunityMember(streamId) {
+      let communityId = liveStreamCommunityId(streamId);
+      return isCommunityMember(communityId) && !currentUserLeagueHiddenFromMembers(communityId);
+    }
+
+    function hasLiveStreamMessageKeysOnCreate() {
+      return request.resource.data.keys().hasOnly([
+        "id",
+        "streamId",
+        "authorProfileId",
+        "type",
+        "text",
+        "emoji",
+        "createdAt"
+      ]);
+    }
+
+    // "chat" rows carry text (no emoji); "reaction" rows carry emoji (no text).
+    function liveStreamMessageCreateValid(streamId, messageId) {
+      let d = request.resource.data;
+      return d.id == messageId &&
+        d.streamId == streamId &&
+        d.authorProfileId == uid() &&
+        d.type is string &&
+        (d.type == "chat" || d.type == "reaction") &&
+        d.createdAt is timestamp &&
+        (d.type == "chat" ?
+          (d.text is string && d.text.size() > 0 && d.text.size() <= 500 &&
+            (!d.keys().hasAny(["emoji"]) || d.emoji == null)) :
+          (d.keys().hasAny(["emoji"]) && d.emoji is string && d.emoji.size() > 0 && d.emoji.size() <= 8 &&
+            (!d.keys().hasAny(["text"]) || d.text == null)));
+    }
+
     match /profiles/{profileId} {
       allow read: if isOwnProfile(profileId);
 
@@ -461,6 +498,25 @@ service cloud.firestore {
         request.resource.data.createdAt == resource.data.createdAt;
 
       allow delete: if false;
+    }
+
+    match /liveStreams/{streamId} {
+      allow read: if isPlatformAdmin() || (signedIn() && isLiveStreamCommunityMember(streamId));
+
+      // Created/ended only by Cloud Functions (Admin SDK) — LiveKit room + token issuance stay server-controlled.
+      allow create, update, delete: if false;
+
+      match /messages/{messageId} {
+        allow read: if isPlatformAdmin() || (signedIn() && isLiveStreamCommunityMember(streamId));
+
+        allow create: if signedIn() &&
+          isLiveStreamCommunityMember(streamId) &&
+          hasLiveStreamMessageKeysOnCreate() &&
+          liveStreamMessageCreateValid(streamId, messageId);
+
+        // V1: no client edits; moderation via Admin SDK.
+        allow update, delete: if false;
+      }
     }
 
     // D3 audit log: append-only via Admin SDK callables/triggers.

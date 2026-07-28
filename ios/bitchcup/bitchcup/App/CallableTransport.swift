@@ -24,15 +24,51 @@ enum CallableTransport {
         callable.timeoutInterval = 120
         AppDebugLog.log("CallableTransport.post: httpsCallable(\(functionName)) region=\(callableRegion)")
         do {
-            let result = try await callable.call(payload)
-            guard let dict = result.data as? [String: Any] else {
-                throw CommunityServiceError.invalidResponse
-            }
-            AppDebugLog.log("CallableTransport.post: \(functionName) response keys=\(dict.keys.sorted())")
-            return dict
+            return try await call(callable, functionName: functionName, payload: payload)
         } catch {
-            throw mapFirebaseCallableError(error)
+            // Cold-started / just-deployed functions can transiently reject a still-valid ID token on
+            // their first invocation. One forced-refresh retry clears it instead of surfacing a false
+            // "sign in again" (mirrors `UserService.fetchProfileOnceWithPermissionRetry`).
+            guard isUnauthenticated(error), let user = Auth.auth().currentUser else {
+                throw mapFirebaseCallableError(error)
+            }
+            AppDebugLog.log("CallableTransport.post: \(functionName) unauthenticated — forcing ID token refresh and retrying once")
+            _ = try? await forceRefreshIDToken(user: user)
+            do {
+                return try await call(callable, functionName: functionName, payload: payload)
+            } catch {
+                throw mapFirebaseCallableError(error)
+            }
         }
+    }
+
+    private static func call(_ callable: HTTPSCallable, functionName: String, payload: [String: Any]) async throws -> Any {
+        let result = try await callable.call(payload)
+        guard let dict = result.data as? [String: Any] else {
+            throw CommunityServiceError.invalidResponse
+        }
+        AppDebugLog.log("CallableTransport.post: \(functionName) response keys=\(dict.keys.sorted())")
+        return dict
+    }
+
+    /// Matches `UserService.forceRefreshIDToken` — this Firebase Auth SDK only exposes the
+    /// completion-handler form of `getIDTokenForcingRefresh`, so it's wrapped manually.
+    private static func forceRefreshIDToken(user: User) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            user.getIDTokenForcingRefresh(true) { _, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume()
+                }
+            }
+        }
+    }
+
+    /// gRPC code 16 == UNAUTHENTICATED (matches `grpcCodeToCallableStatus` below).
+    private static func isUnauthenticated(_ error: Error) -> Bool {
+        let ns = error as NSError
+        return ns.domain == FunctionsErrorDomain && ns.code == 16
     }
 
     /// Maps Firebase callable errors to the same `CommunityService` NSError shape as the legacy HTTP parser.

@@ -13,7 +13,6 @@ private func communityFlowToolbarLabelStyle(_ title: String) -> some View {
         .foregroundStyle(CommunityFlowToolbarChrome.accentRed)
         .lineLimit(1)
         .minimumScaleFactor(0.75)
-        .fixedSize(horizontal: true, vertical: false)
 }
 
 /// Accent-styled toolbar text (Cancel, etc.) matching `CommunityFlowBackToolbarButton` typography.

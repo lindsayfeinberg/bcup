@@ -561,6 +561,7 @@ final class DependencyContainer: ObservableObject {
     let feedService: FeedServiceProtocol
     let bracketService: BracketServiceProtocol
     let platformAdminService: PlatformAdminServiceProtocol
+    let liveStreamService: LiveStreamServiceProtocol
 
     init() {
         self.authService = GoogleAuthService()
@@ -572,6 +573,7 @@ final class DependencyContainer: ObservableObject {
         self.feedService = gls
         self.bracketService = cs
         self.platformAdminService = PlatformAdminService()
+        self.liveStreamService = LiveStreamService()
     }
 
     init(
@@ -581,7 +583,8 @@ final class DependencyContainer: ObservableObject {
         gameLogService: GameLogServiceProtocol,
         feedService: FeedServiceProtocol,
         bracketService: BracketServiceProtocol,
-        platformAdminService: PlatformAdminServiceProtocol
+        platformAdminService: PlatformAdminServiceProtocol,
+        liveStreamService: LiveStreamServiceProtocol
     ) {
         self.authService = authService
         self.userService = userService
@@ -590,6 +593,7 @@ final class DependencyContainer: ObservableObject {
         self.feedService = feedService
         self.bracketService = bracketService
         self.platformAdminService = platformAdminService
+        self.liveStreamService = liveStreamService
     }
 }
 

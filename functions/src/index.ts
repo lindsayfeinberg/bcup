@@ -44,3 +44,9 @@ export {
   adminListGameLogs,
 } from "./platformAdmin.js";
 export {onProfileDisplayFieldsUpdated} from "./profileMembershipSync.js";
+export {
+  startLiveStream,
+  endLiveStream,
+  joinLiveStreamAsViewer,
+  leaveLiveStreamAsViewer,
+} from "./liveStreams.js";

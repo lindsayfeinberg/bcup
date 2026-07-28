@@ -372,6 +372,54 @@ final class UITestPlatformAdminService: PlatformAdminServiceProtocol {
 }
 
 @MainActor
+final class UITestLiveStreamService: LiveStreamServiceProtocol {
+    func startLiveStream(communityId: String) async throws -> LiveStreamSession {
+        _ = communityId
+        return LiveStreamSession(streamId: "ui-test-stream", roomName: "ui-test-room", livekitUrl: "", token: "")
+    }
+
+    func endLiveStream(streamId: String) async throws {
+        _ = streamId
+    }
+
+    func joinLiveStreamAsViewer(streamId: String) async throws -> LiveStreamSession {
+        LiveStreamSession(streamId: streamId, roomName: "ui-test-room", livekitUrl: "", token: "")
+    }
+
+    func leaveLiveStreamAsViewer(streamId: String) async throws {
+        _ = streamId
+    }
+
+    func observeActiveLiveStreams(communityIds: [String]) -> AsyncStream<[LiveStreamSummary]> {
+        _ = communityIds
+        return AsyncStream { continuation in
+            continuation.yield([])
+            continuation.finish()
+        }
+    }
+
+    func sendChatMessage(streamId: String, text: String) async throws {
+        _ = streamId
+        _ = text
+    }
+
+    func sendReaction(streamId: String, emoji: String) async throws {
+        _ = streamId
+        _ = emoji
+    }
+
+    func observeMessages(streamId: String) -> AsyncStream<[LiveStreamMessage]> {
+        _ = streamId
+        return AsyncStream { $0.finish() }
+    }
+
+    func observeStream(streamId: String) -> AsyncStream<LiveStreamStatusUpdate> {
+        _ = streamId
+        return AsyncStream { $0.finish() }
+    }
+}
+
+@MainActor
 enum UITestContainerFactory {
     static func makeContainer(for scenario: UITestScenario) -> (DependencyContainer, AppRouter, AppSessionManager) {
         let router = AppRouter()
@@ -380,6 +428,7 @@ enum UITestContainerFactory {
         let community = UITestCommunityService()
         let feedAndGameLog = UITestGameLogService()
         let platformAdmin = UITestPlatformAdminService()
+        let liveStream = UITestLiveStreamService()
 
         let initialProfile: ProfileRecord?
         switch scenario {
@@ -409,7 +458,8 @@ enum UITestContainerFactory {
             gameLogService: feedAndGameLog,
             feedService: feedAndGameLog,
             bracketService: community,
-            platformAdminService: platformAdmin
+            platformAdminService: platformAdmin,
+            liveStreamService: liveStream
         )
         let sessionManager = AppSessionManager(router: router, authService: auth, userService: user)
         return (container, router, sessionManager)

@@ -14,6 +14,7 @@
 		7A6A8E9B4C1D2E3F00112233 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 7A6A8E9B4C1D2E3F00112232 /* FirebaseFirestore */; };
 		7B6B9F0C5D3E4F5A00112231 /* FirebaseStorage in Frameworks */ = {isa = PBXBuildFile; productRef = 7B6B9F0C5D3E4F5A00112230 /* FirebaseStorage */; };
 		8FA7BF912F6F047B00E50DBB /* FirebaseAnalytics in Frameworks */ = {isa = PBXBuildFile; productRef = 8FA7BF902F6F047B00E50DBB /* FirebaseAnalytics */; };
+		A1B2C3D42F7100000000AA01 /* LiveKit in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D42F7100000000AA02 /* LiveKit */; };
 		C1A2B3C52F6F050000E50DB1 /* FirebaseCrashlytics in Frameworks */ = {isa = PBXBuildFile; productRef = C1A2B3C42F6F050000E50DB1 /* FirebaseCrashlytics */; };
 		D4E5F6A82F70000000E50DB2 /* FirebaseFunctions in Frameworks */ = {isa = PBXBuildFile; productRef = D4E5F6A82F70000000E50DB1 /* FirebaseFunctions */; };
 /* End PBXBuildFile section */
@@ -86,6 +87,7 @@
 				6DA7BF8E2F6F0A0200E50DBB /* GoogleSignIn in Frameworks */,
 				6DA7BF902F6F0A0200E50DBB /* GoogleSignInSwift in Frameworks */,
 				D4E5F6A82F70000000E50DB2 /* FirebaseFunctions in Frameworks */,
+				A1B2C3D42F7100000000AA01 /* LiveKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -156,6 +158,7 @@
 				6DA7BF8D2F6F0A0200E50DBB /* GoogleSignIn */,
 				6DA7BF8F2F6F0A0200E50DBB /* GoogleSignInSwift */,
 				D4E5F6A82F70000000E50DB1 /* FirebaseFunctions */,
+				A1B2C3D42F7100000000AA02 /* LiveKit */,
 			);
 			productName = bitchcup;
 			productReference = E25B4CF42F6EEF060072C53A /* bitchcup.app */;
@@ -242,6 +245,7 @@
 			packageReferences = (
 				6DA7BF7F2F6F047B00E50DBB /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
 				6DA7BF8C2F6F0A0200E50DBB /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
+				E2AAE19D301855D700DC6BA1 /* XCRemoteSwiftPackageReference "client-sdk-swift" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = E25B4CF52F6EEF060072C53A /* Products */;
@@ -474,7 +478,8 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = bitchcup/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
-				INFOPLIST_KEY_NSCameraUsageDescription = "bcup needs camera access to capture photos for your game log.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "bcup needs camera access to capture photos for your game log and to broadcast when you go live.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "bcup needs microphone access to broadcast audio when you go live.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "bcup needs access to your photo library to set your profile picture and to attach photos to game logs.";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
@@ -520,7 +525,8 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = bitchcup/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
-				INFOPLIST_KEY_NSCameraUsageDescription = "bcup needs camera access to capture photos for your game log.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "bcup needs camera access to capture photos for your game log and to broadcast when you go live.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "bcup needs microphone access to broadcast audio when you go live.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "bcup needs access to your photo library to set your profile picture and to attach photos to game logs.";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
@@ -698,6 +704,14 @@
 				minimumVersion = 9.1.0;
 			};
 		};
+		E2AAE19D301855D700DC6BA1 /* XCRemoteSwiftPackageReference "client-sdk-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/livekit/client-sdk-swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.15.3;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -735,6 +749,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 6DA7BF7F2F6F047B00E50DBB /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
 			productName = FirebaseAnalytics;
+		};
+		A1B2C3D42F7100000000AA02 /* LiveKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = E2AAE19D301855D700DC6BA1 /* XCRemoteSwiftPackageReference "client-sdk-swift" */;
+			productName = LiveKit;
 		};
 		C1A2B3C42F6F050000E50DB1 /* FirebaseCrashlytics */ = {
 			isa = XCSwiftPackageProductDependency;
